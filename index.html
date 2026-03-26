@@ -1444,7 +1444,7 @@ function openUM(eid) {
   b += "<div class='fg2'><div class='field'><label>Senha "+(ed?"(deixe em branco para manter)":"")+"</label><input id='uSn' type='password' placeholder='"+(ed?"••••••••":"Nova senha")+"'></div>";
   b += "<div class='field'><label>Perfil de Acesso</label><select id='uRl'>";
   Object.keys(RL).forEach(function(r){
-    b += "<option value='"+r+"'"+(ed&&ed.role===r?" selected":"")+">"+RE[r]+" "+RL[r]+"</option>";
+    b += "<option value='"+r+"'"+(ed ? ed.role===r : r==="agenda" ? " selected" : "")+">"+RE[r]+" "+RL[r]+"</option>";
   });
   b += "</select></div></div>";
   b += "<div class='fg2'><div class='field'><label>Iniciais (2 letras)</label><input id='uIn' value='"+(ed?esc(ed.ini):"")+"' placeholder='AB' maxlength='2'></div>";
