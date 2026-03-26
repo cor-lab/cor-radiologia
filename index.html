@@ -534,26 +534,33 @@ async function dbSaveUser(u, senha, isNew) {
   var ini  = (u.ini || u.nome.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2)).toUpperCase();
   var bg   = bgMap[role] || bgMap["agenda"];
 
-  if (isNew) {
-    var perfil = { nome:u.nome, email:u.email, role:role, ini:ini, bg:bg, cor:"#fff", ativo:true, dent_id:u.dentId||null };
-    var r = await supa.from("usuarios").insert(perfil).select().single();
-    if (r.error) {
-      await supa.from("usuarios").update({nome:u.nome,role:role,ini:ini,bg:bg,ativo:true}).eq("email",u.email);
+  try {
+    if (isNew) {
+      // 1. Inserir perfil no banco
+      var perfil = {nome:u.nome, email:u.email, role:role, ini:ini, bg:bg, cor:"#fff", ativo:true, dent_id:u.dentId||null};
+      var r = await supa.from("usuarios").insert(perfil).select().single();
+      if (r.error) {
+        // Já existe — atualizar
+        await supa.from("usuarios").update({nome:u.nome,role:role,ini:ini,bg:bg,ativo:true}).eq("email",u.email);
+      } else {
+        if (r.data) u.id = r.data.id;
+      }
+      // 2. Criar conta auth (não-fatal — não bloqueia se falhar)
+      if (senha) {
+        supa.auth.signUp({email:u.email, password:senha}).catch(function(e){
+          console.warn("signUp (ignorado):", e.message);
+        });
+      }
+      return true;
     } else {
-      if (r.data) u.id = r.data.id;
+      var upd = {nome:u.nome, role:role, ini:ini, bg:bg, ativo:u.ativo!==false, dent_id:u.dentId||null};
+      var r3 = await supa.from("usuarios").update(upd).eq("email",u.email);
+      if (r3.error) { console.error("edit:", r3.error.message); return false; }
+      return true;
     }
-    if (senha) {
-      try {
-        var sr = await supa.auth.signUp({email:u.email, password:senha});
-        if (sr.error) console.warn("signUp:", sr.error.message);
-      } catch(e) { console.warn("signUp:", e.message); }
-    }
-    return true;
-  } else {
-    var upd = {nome:u.nome, role:role, ini:ini, bg:bg, ativo:u.ativo!==false, dent_id:u.dentId||null};
-    var r3 = await supa.from("usuarios").update(upd).eq("email",u.email);
-    if (r3.error) { console.error("edit:", r3.error.message); return false; }
-    return true;
+  } catch(e) {
+    console.error("dbSaveUser exception:", e.message);
+    return false;
   }
 }
 
@@ -1445,23 +1452,18 @@ function openUM(eid) {
     if(!nm||!em){toast("⚠️","Nome e email obrigatórios");return;}
     if(!ed&&!sn){toast("⚠️","Informe uma senha");return;}
 
-    // Mostrar loading no botão
-    var btnSalvar = document.querySelector("#MF .btng");
-    if(btnSalvar){ btnSalvar.disabled=true; btnSalvar.textContent="⏳ Salvando..."; }
+    // Mostrar loading
+    var btnEl=document.querySelector("#MF .btng");
+    if(btnEl){btnEl.disabled=true;btnEl.textContent="⏳ Salvando...";}
 
     var uObj={nome:nm,email:em,role:rl,ini:ini,bg:bgm[rl]||bgm.agenda,cor:"#fff",ativo:at};
-    if(ed){ ed.nome=nm;ed.role=rl;ed.ini=ini;ed.ativo=at;ed.bg=bgm[rl]||ed.bg; uObj=ed; }
-    else{ uObj.id=Date.now(); USERS.push(uObj); }
+    if(ed){ed.nome=nm;ed.role=rl;ed.ini=ini;ed.ativo=at;ed.bg=bgm[rl]||ed.bg;uObj=ed;}
+    else{uObj.id=Date.now();USERS.push(uObj);}
 
     dbSaveUser(uObj,sn,!ed).then(function(ok){
-      // Restaurar botão
-      if(btnSalvar){ btnSalvar.disabled=false; btnSalvar.textContent=ed?"Salvar":"Criar Usuário"; }
+      if(btnEl){btnEl.disabled=false;btnEl.textContent=ed?"Salvar":"Criar Usuário";}
       closeM(); rusrs();
       toast(ok?"✅":"⚠️", nm+(ed?" atualizado":" criado")+(ok?"":"! Tente novamente."));
-    }).catch(function(e){
-      if(btnSalvar){ btnSalvar.disabled=false; btnSalvar.textContent=ed?"Salvar":"Criar Usuário"; }
-      closeM();
-      toast("⚠️","Erro: "+e.message);
     });
   }}]);
 }
