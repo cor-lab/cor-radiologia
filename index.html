@@ -534,32 +534,41 @@ async function dbSaveUser(u, senha, isNew) {
   var ini  = (u.ini || u.nome.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2)).toUpperCase();
   var bg   = bgMap[role] || bgMap["agenda"];
 
-  try {
-    if (isNew) {
-      // Inserir perfil no banco primeiro
-      var perfil = {nome:u.nome, email:u.email, role:role, ini:ini, bg:bg, cor:"#fff", ativo:true, dent_id:u.dentId||null};
-      var r = await supa.from("usuarios").insert(perfil).select().single();
-      if (r.error) {
-        await supa.from("usuarios").update({nome:u.nome,role:role,ini:ini,bg:bg,ativo:true}).eq("email",u.email);
-      } else {
-        if (r.data) u.id = r.data.id;
-      }
-      // signUp sem await - nao bloqueia
-      if (senha) {
-        supa.auth.signUp({email:u.email, password:senha}).then(function(sr){
-          if(sr.error) console.warn("signUp:", sr.error.message);
-        }).catch(function(e){ console.warn("signUp err:", e.message); });
-      }
-      return true;
+  if (isNew) {
+    // Inserir perfil direto na tabela com role correto
+    var perfil = {
+      nome: u.nome, email: u.email,
+      role: role, ini: ini, bg: bg,
+      cor: "#fff", ativo: true, dent_id: u.dentId || null
+    };
+
+    var r = await supa.from("usuarios").insert(perfil).select().single();
+    if (r.error) {
+      // Se ja existe, só atualiza
+      var r2 = await supa.from("usuarios")
+        .update({ nome: u.nome, role: role, ini: ini, bg: bg, ativo: true })
+        .eq("email", u.email)
+        .select().single();
+      if (r2.error) { console.error("insert+update failed:", r2.error.message); return false; }
+      if (r2.data) u.id = r2.data.id;
     } else {
-      var upd = {nome:u.nome, role:role, ini:ini, bg:bg, ativo:u.ativo!==false, dent_id:u.dentId||null};
-      var r3 = await supa.from("usuarios").update(upd).eq("email",u.email);
-      if (r3.error) { console.error("edit:", r3.error.message); return false; }
-      return true;
+      if (r.data) u.id = r.data.id;
     }
-  } catch(e) {
-    console.error("dbSaveUser:", e.message);
-    return false;
+
+    // Criar conta auth separadamente (se falhar, perfil já está salvo)
+    if (senha) {
+      try {
+        await supa.auth.signUp({ email: u.email, password: senha });
+      } catch(e) { console.warn("signUp warn (non-fatal):", e.message); }
+    }
+    return true;
+
+  } else {
+    // Editar — UPDATE direto com role escolhido
+    var upd = { nome: u.nome, role: role, ini: ini, bg: bg, ativo: u.ativo !== false };
+    var r3 = await supa.from("usuarios").update(upd).eq("email", u.email);
+    if (r3.error) { console.error("update error:", r3.error.message); return false; }
+    return true;
   }
 }
 
@@ -739,14 +748,7 @@ function openM(title, body, btns) {
   var f = document.getElementById("MF"); f.innerHTML = "";
   (btns || []).forEach(function(b) {
     var btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn " + b.cls;
-    btn.textContent = b.lbl;
-    btn.addEventListener("click", function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      b.fn();
-    });
+    btn.className = "btn " + b.cls; btn.textContent = b.lbl; btn.onclick = b.fn;
     f.appendChild(btn);
   });
   document.getElementById("MO").classList.add("open");
@@ -1433,46 +1435,105 @@ function rusrs(){
 
 function togU(email){var u=USERS.find(function(x){return x.email===email||String(x.id)===String(email);});if(!u)return;u.ativo=!u.ativo;dbToggleUser(u.email,u.ativo);rusrs();toast(u.ativo?"🔓":"🔒",u.nome+(u.ativo?" ativado":" desativado"));}
 function openUM(eid) {
-  var ed = eid ? USERS.find(function(u){ return u.email===eid||String(u.id)===String(eid); }) : null;
-  var bgm = {admin:"linear-gradient(135deg,#4ab848,#7dcf6e)",agenda:"linear-gradient(135deg,#2dd4bf,#0d9488)",cashback:"linear-gradient(135deg,#a78bfa,#7c3aed)",dentista:"linear-gradient(135deg,#fbbf24,#f59e0b)"};
-  var b="<div style='display:flex;flex-direction:column;gap:10px'>";
-  b+="<div class='field'><label>Nome completo</label><input id='uNm' value='"+(ed?esc(ed.nome):"")+"' placeholder='Nome'></div>";
-  b+="<div class='field'><label>Email (login)</label><input id='uEm' type='email' value='"+(ed?esc(ed.email):"")+"' placeholder='email@corsm.com.br'"+(ed?" readonly style='opacity:.6'":"")+" ></div>";
-  b+="<div class='fg2'><div class='field'><label>Senha"+(ed?" (em branco = manter)":"")+"</label><input id='uSn' type='password' placeholder='"+(ed?"••••••••":"Nova senha")+"'></div>";
-  b+="<div class='field'><label>Perfil de Acesso</label><select id='uRl'>";
-  Object.keys(RL).forEach(function(r){
-    var sel = ed ? ed.role===r : r==="agenda";
-    b+="<option value='"+r+"'"+(sel?" selected":"")+">"+RE[r]+" "+RL[r]+"</option>";
-  });
-  b+="</select></div></div>";
-  b+="<div class='fg2'><div class='field'><label>Iniciais (2 letras)</label><input id='uIn' value='"+(ed?esc(ed.ini):"")+"' placeholder='AB' maxlength='2'></div>";
-  b+="<div class='field'><label>Status</label><select id='uAt'><option value='true'"+(!ed||ed.ativo?" selected":"")+">Ativo</option><option value='false'"+(ed&&!ed.ativo?" selected":"")+">Inativo</option></select></div></div></div>";
+  var ed = eid ? USERS.find(function(u){ return u.email === eid || String(u.id) === String(eid); }) : null;
+  var bgm = {
+    admin:"linear-gradient(135deg,#4ab848,#7dcf6e)",
+    agenda:"linear-gradient(135deg,#2dd4bf,#0d9488)",
+    cashback:"linear-gradient(135deg,#a78bfa,#7c3aed)",
+    dentista:"linear-gradient(135deg,#fbbf24,#f59e0b)"
+  };
 
-  openM(ed?"Editar Usuário":"Novo Usuário", b, [
+  var b = "<div style='display:flex;flex-direction:column;gap:10px'>";
+  b += "<div class='field'><label>Nome completo</label><input id='uNm' value='"+(ed?esc(ed.nome):"")+"' placeholder='Nome do usuario'></div>";
+  b += "<div class='field'><label>Email (login)</label><input id='uEm' type='email' value='"+(ed?esc(ed.email):"")+"' placeholder='usuario@cor.com.br'"+(ed?" readonly style='opacity:.6'":"")+" ></div>";
+  b += "<div class='fg2'><div class='field'><label>Senha "+(ed?"(deixe em branco para manter)":"")+"</label><input id='uSn' type='password' placeholder='"+(ed?"••••••••":"Nova senha")+"'></div>";
+  b += "<div class='field'><label>Perfil de Acesso</label><select id='uRl'>";
+  Object.keys(RL).forEach(function(r){
+    b += "<option value='"+r+"'"+(ed ? ed.role===r : r==="agenda" ? " selected" : "")+">"+RE[r]+" "+RL[r]+"</option>";
+  });
+  b += "</select></div></div>";
+  b += "<div class='fg2'><div class='field'><label>Iniciais (2 letras)</label><input id='uIn' value='"+(ed?esc(ed.ini):"")+"' placeholder='AB' maxlength='2'></div>";
+  b += "<div class='field'><label>Status</label><select id='uAt'><option value='true'"+(!ed||ed.ativo?" selected":"")+">Ativo</option><option value='false'"+(ed&&!ed.ativo?" selected":"")+">Inativo</option></select></div></div>";
+  b += "</div>";
+
+  openM(ed ? "Editar Usuário" : "Novo Usuário", b, [
     {lbl:"Cancelar", cls:"btno", fn:closeM},
-    {lbl:ed?"Salvar":"Criar Usuário", cls:"btng", fn:function(){
-      var nm=document.getElementById("uNm").value.trim();
-      var em=ed?ed.email:document.getElementById("uEm").value.trim();
-      var sn=document.getElementById("uSn").value;
-      var rl=document.getElementById("uRl").value;
-      var at=document.getElementById("uAt").value==="true";
-      var ini=(document.getElementById("uIn").value||"").toUpperCase()||nm.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2).toUpperCase();
-      if(!nm||!em){toast("⚠️","Nome e email obrigatórios");return;}
-      if(!ed&&!sn){toast("⚠️","Informe uma senha");return;}
-      var btnEl=document.querySelector("#MF .btng");
-      if(btnEl){btnEl.disabled=true;btnEl.textContent="⏳ Salvando...";}
-      var uObj={nome:nm,email:em,role:rl,ini:ini,bg:bgm[rl]||bgm.agenda,cor:"#fff",ativo:at};
-      if(ed){ed.nome=nm;ed.role=rl;ed.ini=ini;ed.ativo=at;ed.bg=bgm[rl]||ed.bg;uObj=ed;}
-      else{uObj.id=Date.now();USERS.push(uObj);}
-      dbSaveUser(uObj,sn,!ed).then(function(ok){
-        if(btnEl){btnEl.disabled=false;btnEl.textContent=ed?"Salvar":"Criar Usuário";}
-        closeM(); rusrs();
-        toast(ok?"✅":"⚠️", nm+(ed?" atualizado":" criado")+(ok?"":"! Tente novamente."));
-      });
+    {lbl: ed ? "Salvar Alterações" : "Criar Usuário", cls:"btng", fn: async function(){
+      var btn = document.querySelector("#MF .btng");
+      var btnCancel = document.querySelector("#MF .btno");
+      if (btn) { btn.disabled = true; btn.textContent = "Salvando..."; }
+      if (btnCancel) btnCancel.disabled = true;
+
+      try {
+        var nm  = document.getElementById("uNm").value.trim();
+        var em  = ed ? ed.email : document.getElementById("uEm").value.trim().toLowerCase();
+        var sn  = document.getElementById("uSn").value;
+        var rl  = document.getElementById("uRl").value;
+        var at  = document.getElementById("uAt").value === "true";
+        var ini = (document.getElementById("uIn").value || "").toUpperCase() ||
+                  nm.split(" ").map(function(x){ return x[0] || ""; }).join("").slice(0,2).toUpperCase();
+
+        if (!nm || !em) {
+          toast("⚠️","Nome e email são obrigatórios");
+          return;
+        }
+
+        if (!ed && !sn) {
+          toast("⚠️","Informe uma senha para o novo usuário");
+          return;
+        }
+
+        if (ed) {
+          ed.nome  = nm;
+          ed.role  = rl;
+          ed.ini   = ini;
+          ed.ativo = at;
+          ed.bg    = bgm[rl] || ed.bg;
+          if (sn) ed.senha = sn;
+        } else {
+          USERS.push({
+            id: Date.now(),
+            nome: nm,
+            email: em,
+            senha: sn,
+            role: rl,
+            ini: ini,
+            bg: bgm[rl] || "linear-gradient(135deg,#4ab848,#7dcf6e)",
+            cor: "#fff",
+            ativo: at
+          });
+        }
+
+        var uObj = ed || USERS[USERS.length - 1];
+        uObj.role = rl;
+        uObj.ini  = ini;
+        uObj.nome = nm;
+        uObj.ativo = at;
+
+        var ok = await dbSaveUser(uObj, sn, !ed);
+
+        if (!ok) {
+          toast("⚠️","Erro ao salvar usuário. Veja o console.");
+          return;
+        }
+
+        await loadAllData();
+        closeM();
+        rusrs();
+
+        toast("✅", ed ? ("Usuário " + nm + " atualizado.") : ("Usuário " + nm + " criado com sucesso."));
+      } catch (e) {
+        console.error("Erro inesperado ao salvar usuário:", e);
+        toast("⚠️","Falha inesperada ao salvar usuário.");
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = ed ? "Salvar Alterações" : "Criar Usuário"; }
+        if (btnCancel) btnCancel.disabled = false;
+      }
     }}
   ]);
 }
 
+ 
 
 // ══ CONFIG ══
 function rcfg(){
