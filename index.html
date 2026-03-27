@@ -1435,13 +1435,22 @@ function rusrs(){
 
 function togU(email){var u=USERS.find(function(x){return x.email===email||String(x.id)===String(email);});if(!u)return;u.ativo=!u.ativo;dbToggleUser(u.email,u.ativo);rusrs();toast(u.ativo?"🔓":"🔒",u.nome+(u.ativo?" ativado":" desativado"));}
 function openUM(eid) {
-  var ed = eid ? USERS.find(function(u){ return u.email === eid || String(u.id) === String(eid); }) : null;
+  var ed = eid ? USERS.find(function(u){
+    return u.email === eid || String(u.id) === String(eid);
+  }) : null;
+
   var bgm = {
-    admin:"linear-gradient(135deg,#4ab848,#7dcf6e)",
-    agenda:"linear-gradient(135deg,#2dd4bf,#0d9488)",
-    cashback:"linear-gradient(135deg,#a78bfa,#7c3aed)",
-    dentista:"linear-gradient(135deg,#fbbf24,#f59e0b)"
+    admin: "linear-gradient(135deg,#4ab848,#7dcf6e)",
+    agenda: "linear-gradient(135deg,#2dd4bf,#0d9488)",
+    cashback: "linear-gradient(135deg,#a78bfa,#7c3aed)",
+    dentista: "linear-gradient(135deg,#fbbf24,#f59e0b)"
   };
+
+  function v(id) {
+    var el = document.getElementById(id);
+    if (!el) return "";
+    return (typeof el.value === "string") ? el.value : "";
+  }
 
   var b = "<div style='display:flex;flex-direction:column;gap:10px'>";
   b += "<div class='field'><label>Nome completo</label><input id='uNm' value='"+(ed?esc(ed.nome):"")+"' placeholder='Nome do usuario'></div>";
@@ -1457,21 +1466,25 @@ function openUM(eid) {
   b += "</div>";
 
   openM(ed ? "Editar Usuário" : "Novo Usuário", b, [
-    {lbl:"Cancelar", cls:"btno", fn:closeM},
-    {lbl: ed ? "Salvar Alterações" : "Criar Usuário", cls:"btng", fn: async function(){
+    { lbl:"Cancelar", cls:"btno", fn:closeM },
+    { lbl: ed ? "Salvar Alterações" : "Criar Usuário", cls:"btng", fn: async function() {
       var btn = document.querySelector("#MF .btng");
       var btnCancel = document.querySelector("#MF .btno");
-      if (btn) { btn.disabled = true; btn.textContent = "Salvando..."; }
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Salvando...";
+      }
       if (btnCancel) btnCancel.disabled = true;
 
       try {
-        var nm  = document.getElementById("uNm").value.trim();
-        var em  = ed ? ed.email : document.getElementById("uEm").value.trim().toLowerCase();
-        var sn  = document.getElementById("uSn").value;
-        var rl  = document.getElementById("uRl").value;
-        var at  = document.getElementById("uAt").value === "true";
-        var ini = (document.getElementById("uIn").value || "").toUpperCase() ||
-                  nm.split(" ").map(function(x){ return x[0] || ""; }).join("").slice(0,2).toUpperCase();
+        var nm = v("uNm").trim();
+        var em = ed ? String(ed.email || "").trim().toLowerCase() : v("uEm").trim().toLowerCase();
+        var sn = v("uSn");
+        var rl = v("uRl") || "agenda";
+        var at = v("uAt") === "true";
+        var iniDigitado = v("uIn").toUpperCase().trim();
+        var ini = iniDigitado || nm.split(" ").map(function(x){ return x[0] || ""; }).join("").slice(0,2).toUpperCase();
 
         if (!nm || !em) {
           toast("⚠️","Nome e email são obrigatórios");
@@ -1483,15 +1496,17 @@ function openUM(eid) {
           return;
         }
 
+        var uObj;
         if (ed) {
-          ed.nome  = nm;
-          ed.role  = rl;
-          ed.ini   = ini;
+          ed.nome = nm;
+          ed.role = rl;
+          ed.ini = ini;
           ed.ativo = at;
-          ed.bg    = bgm[rl] || ed.bg;
+          ed.bg = bgm[rl] || ed.bg;
           if (sn) ed.senha = sn;
+          uObj = ed;
         } else {
-          var novoUsuario = {
+          uObj = {
             id: Date.now(),
             nome: nm,
             email: em,
@@ -1504,14 +1519,6 @@ function openUM(eid) {
           };
         }
 
-        var uObj = ed || novoUsuario;
-
-
-        uObj.role = rl;
-        uObj.ini  = ini;
-        uObj.nome = nm;
-        uObj.ativo = at;
-
         var ok = await dbSaveUser(uObj, sn, !ed);
 
         if (!ok) {
@@ -1522,19 +1529,20 @@ function openUM(eid) {
         await loadAllData();
         closeM();
         rusrs();
-
         toast("✅", ed ? ("Usuário " + nm + " atualizado.") : ("Usuário " + nm + " criado com sucesso."));
       } catch (e) {
         console.error("Erro inesperado ao salvar usuário:", e);
         toast("⚠️","Falha inesperada ao salvar usuário.");
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = ed ? "Salvar Alterações" : "Criar Usuário"; }
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = ed ? "Salvar Alterações" : "Criar Usuário";
+        }
         if (btnCancel) btnCancel.disabled = false;
       }
     }}
   ]);
 }
-
  
 
 // ══ CONFIG ══
