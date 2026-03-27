@@ -1446,23 +1446,22 @@ function openUM(eid) {
     dentista: "linear-gradient(135deg,#fbbf24,#f59e0b)"
   };
 
-  function v(id) {
+  function val(id) {
     var el = document.getElementById(id);
-    if (!el) return "";
-    return (typeof el.value === "string") ? el.value : "";
+    return el && typeof el.value === "string" ? el.value : "";
   }
 
   var b = "<div style='display:flex;flex-direction:column;gap:10px'>";
-  b += "<div class='field'><label>Nome completo</label><input id='uNm' value='"+(ed?esc(ed.nome):"")+"' placeholder='Nome do usuario'></div>";
-  b += "<div class='field'><label>Email (login)</label><input id='uEm' type='email' value='"+(ed?esc(ed.email):"")+"' placeholder='usuario@cor.com.br'"+(ed?" readonly style='opacity:.6'":"")+" ></div>";
-  b += "<div class='fg2'><div class='field'><label>Senha "+(ed?"(deixe em branco para manter)":"")+"</label><input id='uSn' type='password' placeholder='"+(ed?"••••••••":"Nova senha")+"'></div>";
-  b += "<div class='field'><label>Perfil de Acesso</label><select id='uRl'>";
+  b += "<div class='field'><label>Nome completo</label><input id='usrNm' value='"+(ed?esc(ed.nome):"")+"' placeholder='Nome do usuario'></div>";
+  b += "<div class='field'><label>Email (login)</label><input id='usrEm' type='email' value='"+(ed?esc(ed.email):"")+"' placeholder='usuario@cor.com.br'"+(ed?" readonly style='opacity:.6'":"")+" ></div>";
+  b += "<div class='fg2'><div class='field'><label>Senha "+(ed?"(deixe em branco para manter)":"")+"</label><input id='usrSn' type='password' placeholder='"+(ed?"••••••••":"Nova senha")+"'></div>";
+  b += "<div class='field'><label>Perfil de Acesso</label><select id='usrRl'>";
   Object.keys(RL).forEach(function(r){
     b += "<option value='"+r+"'"+(ed ? ed.role===r : r==="agenda" ? " selected" : "")+">"+RE[r]+" "+RL[r]+"</option>";
   });
   b += "</select></div></div>";
-  b += "<div class='fg2'><div class='field'><label>Iniciais (2 letras)</label><input id='uIn' value='"+(ed?esc(ed.ini):"")+"' placeholder='AB' maxlength='2'></div>";
-  b += "<div class='field'><label>Status</label><select id='uAt'><option value='true'"+(!ed||ed.ativo?" selected":"")+">Ativo</option><option value='false'"+(ed&&!ed.ativo?" selected":"")+">Inativo</option></select></div></div>";
+  b += "<div class='fg2'><div class='field'><label>Iniciais (2 letras)</label><input id='usrIn' value='"+(ed?esc(ed.ini):"")+"' placeholder='AB' maxlength='2'></div>";
+  b += "<div class='field'><label>Status</label><select id='usrAt'><option value='true'"+(!ed||ed.ativo?" selected":"")+">Ativo</option><option value='false'"+(ed&&!ed.ativo?" selected":"")+">Inativo</option></select></div></div>";
   b += "</div>";
 
   openM(ed ? "Editar Usuário" : "Novo Usuário", b, [
@@ -1478,12 +1477,12 @@ function openUM(eid) {
       if (btnCancel) btnCancel.disabled = true;
 
       try {
-        var nm = v("uNm").trim();
-        var em = ed ? String(ed.email || "").trim().toLowerCase() : v("uEm").trim().toLowerCase();
-        var sn = v("uSn");
-        var rl = v("uRl") || "agenda";
-        var at = v("uAt") === "true";
-        var iniDigitado = v("uIn").toUpperCase().trim();
+        var nm = val("usrNm").trim();
+        var em = ed ? String(ed.email || "").trim().toLowerCase() : val("usrEm").trim().toLowerCase();
+        var sn = val("usrSn");
+        var rl = val("usrRl") || "agenda";
+        var at = val("usrAt") === "true";
+        var iniDigitado = val("usrIn").toUpperCase().trim();
         var ini = iniDigitado || nm.split(" ").map(function(x){ return x[0] || ""; }).join("").slice(0,2).toUpperCase();
 
         if (!nm || !em) {
@@ -1529,6 +1528,7 @@ function openUM(eid) {
         await loadAllData();
         closeM();
         rusrs();
+
         toast("✅", ed ? ("Usuário " + nm + " atualizado.") : ("Usuário " + nm + " criado com sucesso."));
       } catch (e) {
         console.error("Erro inesperado ao salvar usuário:", e);
