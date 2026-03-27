@@ -1491,7 +1491,7 @@ function openUM(eid) {
           ed.bg    = bgm[rl] || ed.bg;
           if (sn) ed.senha = sn;
         } else {
-          USERS.push({
+          var novoUsuario = {
             id: Date.now(),
             nome: nm,
             email: em,
@@ -1501,10 +1501,12 @@ function openUM(eid) {
             bg: bgm[rl] || "linear-gradient(135deg,#4ab848,#7dcf6e)",
             cor: "#fff",
             ativo: at
-          });
+          };
         }
 
-        var uObj = ed || USERS[USERS.length - 1];
+        var uObj = ed || novoUsuario;
+
+
         uObj.role = rl;
         uObj.ini  = ini;
         uObj.nome = nm;
