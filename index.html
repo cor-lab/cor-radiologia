@@ -536,20 +536,19 @@ async function dbSaveUser(u, senha, isNew) {
 
   try {
     if (isNew) {
-      // 1. Inserir perfil no banco
+      // Inserir perfil no banco primeiro
       var perfil = {nome:u.nome, email:u.email, role:role, ini:ini, bg:bg, cor:"#fff", ativo:true, dent_id:u.dentId||null};
       var r = await supa.from("usuarios").insert(perfil).select().single();
       if (r.error) {
-        // Já existe — atualizar
         await supa.from("usuarios").update({nome:u.nome,role:role,ini:ini,bg:bg,ativo:true}).eq("email",u.email);
       } else {
         if (r.data) u.id = r.data.id;
       }
-      // 2. Criar conta auth (não-fatal — não bloqueia se falhar)
+      // signUp sem await - nao bloqueia
       if (senha) {
-        supa.auth.signUp({email:u.email, password:senha}).catch(function(e){
-          console.warn("signUp (ignorado):", e.message);
-        });
+        supa.auth.signUp({email:u.email, password:senha}).then(function(sr){
+          if(sr.error) console.warn("signUp:", sr.error.message);
+        }).catch(function(e){ console.warn("signUp err:", e.message); });
       }
       return true;
     } else {
@@ -559,7 +558,7 @@ async function dbSaveUser(u, senha, isNew) {
       return true;
     }
   } catch(e) {
-    console.error("dbSaveUser exception:", e.message);
+    console.error("dbSaveUser:", e.message);
     return false;
   }
 }
@@ -740,7 +739,14 @@ function openM(title, body, btns) {
   var f = document.getElementById("MF"); f.innerHTML = "";
   (btns || []).forEach(function(b) {
     var btn = document.createElement("button");
-    btn.className = "btn " + b.cls; btn.textContent = b.lbl; btn.onclick = b.fn;
+    btn.type = "button";
+    btn.className = "btn " + b.cls;
+    btn.textContent = b.lbl;
+    btn.addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      b.fn();
+    });
     f.appendChild(btn);
   });
   document.getElementById("MO").classList.add("open");
@@ -1442,30 +1448,29 @@ function openUM(eid) {
   b+="<div class='fg2'><div class='field'><label>Iniciais (2 letras)</label><input id='uIn' value='"+(ed?esc(ed.ini):"")+"' placeholder='AB' maxlength='2'></div>";
   b+="<div class='field'><label>Status</label><select id='uAt'><option value='true'"+(!ed||ed.ativo?" selected":"")+">Ativo</option><option value='false'"+(ed&&!ed.ativo?" selected":"")+">Inativo</option></select></div></div></div>";
 
-  openM(ed?"Editar Usuário":"Novo Usuário", b, [{lbl:"Cancelar", cls:"btno", fn:closeM},{lbl:ed?"Salvar":"Criar Usuário", cls:"btng", fn:function(){
-    var nm=document.getElementById("uNm").value.trim();
-    var em=ed?ed.email:document.getElementById("uEm").value.trim();
-    var sn=document.getElementById("uSn").value;
-    var rl=document.getElementById("uRl").value;
-    var at=document.getElementById("uAt").value==="true";
-    var ini=(document.getElementById("uIn").value||"").toUpperCase()||nm.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2).toUpperCase();
-    if(!nm||!em){toast("⚠️","Nome e email obrigatórios");return;}
-    if(!ed&&!sn){toast("⚠️","Informe uma senha");return;}
-
-    // Mostrar loading
-    var btnEl=document.querySelector("#MF .btng");
-    if(btnEl){btnEl.disabled=true;btnEl.textContent="⏳ Salvando...";}
-
-    var uObj={nome:nm,email:em,role:rl,ini:ini,bg:bgm[rl]||bgm.agenda,cor:"#fff",ativo:at};
-    if(ed){ed.nome=nm;ed.role=rl;ed.ini=ini;ed.ativo=at;ed.bg=bgm[rl]||ed.bg;uObj=ed;}
-    else{uObj.id=Date.now();USERS.push(uObj);}
-
-    dbSaveUser(uObj,sn,!ed).then(function(ok){
-      if(btnEl){btnEl.disabled=false;btnEl.textContent=ed?"Salvar":"Criar Usuário";}
-      closeM(); rusrs();
-      toast(ok?"✅":"⚠️", nm+(ed?" atualizado":" criado")+(ok?"":"! Tente novamente."));
-    });
-  }}]);
+  openM(ed?"Editar Usuário":"Novo Usuário", b, [
+    {lbl:"Cancelar", cls:"btno", fn:closeM},
+    {lbl:ed?"Salvar":"Criar Usuário", cls:"btng", fn:function(){
+      var nm=document.getElementById("uNm").value.trim();
+      var em=ed?ed.email:document.getElementById("uEm").value.trim();
+      var sn=document.getElementById("uSn").value;
+      var rl=document.getElementById("uRl").value;
+      var at=document.getElementById("uAt").value==="true";
+      var ini=(document.getElementById("uIn").value||"").toUpperCase()||nm.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2).toUpperCase();
+      if(!nm||!em){toast("⚠️","Nome e email obrigatórios");return;}
+      if(!ed&&!sn){toast("⚠️","Informe uma senha");return;}
+      var btnEl=document.querySelector("#MF .btng");
+      if(btnEl){btnEl.disabled=true;btnEl.textContent="⏳ Salvando...";}
+      var uObj={nome:nm,email:em,role:rl,ini:ini,bg:bgm[rl]||bgm.agenda,cor:"#fff",ativo:at};
+      if(ed){ed.nome=nm;ed.role=rl;ed.ini=ini;ed.ativo=at;ed.bg=bgm[rl]||ed.bg;uObj=ed;}
+      else{uObj.id=Date.now();USERS.push(uObj);}
+      dbSaveUser(uObj,sn,!ed).then(function(ok){
+        if(btnEl){btnEl.disabled=false;btnEl.textContent=ed?"Salvar":"Criar Usuário";}
+        closeM(); rusrs();
+        toast(ok?"✅":"⚠️", nm+(ed?" atualizado":" criado")+(ok?"":"! Tente novamente."));
+      });
+    }}
+  ]);
 }
 
 
