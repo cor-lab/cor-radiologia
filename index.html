@@ -354,7 +354,32 @@ function calcCb(valor, nivel){
   var bns = nivel==="Ouro"?1.10:nivel==="Diamante"?1.20:nivel==="Prata"?1.05:1.0;
   return Math.round(b*bns);
 }
+function exChecklistHtml(idBase, selectedIds, onChangeFn){
+  selectedIds = selectedIds || [];
 
+  var h = "";
+  h += "<div style='display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto'>";
+
+  (exT||[]).forEach(function(ex){
+    var checked = selectedIds.indexOf(ex.id)>=0 ? "checked" : "";
+
+    h += "<label style='display:flex;gap:8px;align-items:center'>";
+    h += "<input type='checkbox' value='"+ex.id+"' "+checked+" onchange=\""+onChangeFn+"()\">";
+    h += "<span>"+esc(ex.n)+"</span>";
+    h += "</label>";
+  });
+
+  h += "</div>";
+  return h;
+}
+
+function getCheckedExIds(baseId){
+  var root = document.getElementById(baseId);
+  if(!root) return [];
+
+  return Array.from(root.querySelectorAll("input[type='checkbox']:checked"))
+    .map(function(x){ return x.value; });
+}
 // ── AUTH ──
 async function doLoginSupa(){
   var em=document.getElementById("lEmail").value.trim().toLowerCase();
@@ -510,14 +535,72 @@ async function dbDelPrem(id){return !(await supa.from("premios").update({ativo:f
 
 // ── AGENDAMENTOS ──
 async function dbSaveAg(ag){
-  var d={paciente_nome:ag.pac,paciente_tel:ag.tel,exame_id:ag.ex,
-    data_exame:br2iso(ag.dt),hora_exame:ag.hr,duracao:ag.dur,
-    dentista_id:ag.dId,convenio_id:ag.cv||null,valor:ag.vl,cashback_pts:ag.cb,status:ag.st};
-  var r=ag._new?await supa.from("agendamentos").insert(d).select().single():await supa.from("agendamentos").update(d).eq("id",ag.id);
-  if(!r.error&&ag._new&&r.data)ag.id=r.data.id;
-  if(r.error){console.error("dbSaveAg:",r.error);return false;}
-  var dent=fdent(ag.dId);
-  if(dent)await supa.from("dentistas").update({pontos:dent.pts,indicacoes:dent.ind}).eq("id",dent.id);
+  var d = {
+    paciente_nome: ag.pac,
+    paciente_tel: ag.tel,
+    exame_id: ag.ex,
+    data_exame: br2iso(ag.dt),
+    hora_exame: ag.hr,
+    duracao: ag.dur,
+    dentista_id: ag.dId,
+    convenio_id: ag.cv || null,
+    valor: ag.vl,
+    cashback_pts: ag.cb,
+    status: ag.st
+  };
+
+  var r = ag._new
+    ? await supa.from("agendamentos").insert(d).select().single()
+    : await supa.from("agendamentos").update(d).eq("id", ag.id).select().single();
+
+  if (!r.error && ag._new && r.data) ag.id = r.data.id;
+  if (r.error) {
+    console.error("dbSaveAg:", r.error);
+    return false;
+  }
+
+  // salva os múltiplos exames na tabela filha
+  if (ag.id && Array.isArray(ag.exames)) {
+    // apaga os vínculos antigos desse agendamento
+    var del = await supa.from("agendamento_exames")
+      .delete()
+      .eq("agendamento_id", ag.id);
+
+    if (del.error) {
+      console.error("dbSaveAg delete filhos:", del.error);
+      return false;
+    }
+
+    // insere os exames atuais
+    if (ag.exames.length) {
+      var rows = ag.exames.map(function(exId, idx){
+        var ex = fex(exId);
+        return {
+          agendamento_id: ag.id,
+          exame_id: exId,
+          convenio_id: ag.cv || null,
+          preco: epreco(exId, ag.cv || ""),
+          nome_exame: ex ? ex.n : exId,
+          ordem: idx + 1
+        };
+      });
+
+      var ins = await supa.from("agendamento_exames").insert(rows);
+
+      if (ins.error) {
+        console.error("dbSaveAg insert filhos:", ins.error);
+        return false;
+      }
+    }
+  }
+
+  var dent = fdent(ag.dId);
+  if (dent) {
+    await supa.from("dentistas")
+      .update({ pontos: dent.pts, indicacoes: dent.ind })
+      .eq("id", dent.id);
+  }
+
   return true;
 }
 async function dbUpdAgSt(id,st){await supa.from("agendamentos").update({status:st}).eq("id",id);}
@@ -913,8 +996,15 @@ function rdash() {
 
 // ══ AGENDAR ══
 function ragendar() {
-  if (!canAcc("agendar")) { deny(document.getElementById("pgAg")); return; }
-  sExId=null; sDate=null; sSlot=null;
+  if (!canAcc("agendar")) {
+    deny(document.getElementById("pgAg"));
+    return;
+  }
+
+  sExId = null;
+  sDate = null;
+  sSlot = null;
+
   var h = "";
   h += "<div class=\"ag-wrap2\"><div class=\"ag-main2\">";
   h += "<div class=\"ag-toolbar\">";
@@ -927,34 +1017,73 @@ function ragendar() {
   h += "<div class=\"ag-vb\"><button id=\"agBD\" class=\"active\" onclick=\"setAgV('dia')\">DIA</button><button id=\"agBS\" onclick=\"setAgV('semana')\">SEMANA</button></div>";
   h += "<button class=\"btn btng bsm\" style=\"margin-left:8px\" onclick=\"document.getElementById('agSd').scrollTop=0\">+ Agendar</button>";
   h += "</div>";
+
   h += "<div class=\"ag-gw\" id=\"agGW\"></div>";
   h += "</div>";
+
   h += "<div class=\"ag-sd\" id=\"agSd\">";
   h += "<div class=\"ag-st2\">Novo Agendamento</div>";
   h += "<div class=\"ag-si\" id=\"agSI\"></div>";
+
   h += "<div class=\"field\"><label>Paciente</label><input type=\"text\" id=\"pNome\" placeholder=\"Nome completo\"></div>";
   h += "<div class=\"field\"><label>Telefone</label><input type=\"text\" id=\"pTel\" placeholder=\"49 9 9999-9999\"></div>";
-  h += "<div class=\"fg2\"><div class=\"field\"><label>Data</label><input type=\"date\" id=\"pData\"></div><div class=\"field\"><label>Hora</label><input type=\"time\" id=\"pHora\" value=\"08:00\"></div></div>";
-  h += "<div class=\"fg2\"><div class=\"field\"><label>Duracao</label><select id=\"pDur\"><option value=\"10\">10 min</option><option value=\"15\">15 min</option><option value=\"20\">20 min</option><option value=\"30\">30 min</option><option value=\"60\">1h</option><option value=\"90\">1h 30min</option></select></div><div class=\"field\"><label>CPF</label><input type=\"text\" id=\"pCpf\" placeholder=\"000.000.000-00\"></div></div>";
-  h += "<div class=\"field\"><label>Exame</label><select id=\"pExame\" onchange=\"updAgSum()\"><option value=\"\">— Selecione —</option>";
-  exT.forEach(function(e){h+="<option value=\""+e.id+"\">"+esc(e.ico)+" "+esc(e.n)+" (R$ "+e.p+")</option>";});
+
+  h += "<div class=\"fg2\">";
+  h += "<div class=\"field\"><label>Data</label><input type=\"date\" id=\"pData\"></div>";
+  h += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"pHora\" value=\"08:00\"></div>";
+  h += "</div>";
+
+  h += "<div class=\"fg2\">";
+  h += "<div class=\"field\"><label>Duracao</label><select id=\"pDur\">";
+  h += "<option value=\"10\">10 min</option>";
+  h += "<option value=\"15\">15 min</option>";
+  h += "<option value=\"20\">20 min</option>";
+  h += "<option value=\"30\">30 min</option>";
+  h += "<option value=\"60\">1h</option>";
+  h += "<option value=\"90\">1h 30min</option>";
   h += "</select></div>";
-  h += "<div class=\"field\"><label>Dentista</label><select id=\"dSel\"><option value=\"\">— Selecione —</option>";
-  dents.forEach(function(d){h+="<option value=\""+d.id+"\">"+esc(d.n)+"</option>";});
+  h += "<div class=\"field\"><label>CPF</label><input type=\"text\" id=\"pCpf\" placeholder=\"000.000.000-00\"></div>";
+  h += "</div>";
+
+  h += "<div class='field'><label>Exames</label>";
+  h += "<div id='pExWrap'></div>";
+  h += "</div>";
+
+  h += "<div class=\"field\"><label>Dentista</label><select id=\"dSel\">";
+  h += "<option value=\"\">— Selecione —</option>";
+  dents.forEach(function(d){
+    h += "<option value=\"" + d.id + "\">" + esc(d.n) + "</option>";
+  });
   h += "</select></div>";
-  h += "<div class=\"field\"><label>Convenio</label><select id=\"pConv\" onchange=\"updAgSum()\"><option value=\"\">Particular</option>";
-  convs.forEach(function(c){h+="<option value=\""+c.id+"\">"+esc(c.n)+"</option>";});
+
+  h += "<div class=\"field\"><label>Convenio</label><select id=\"pConv\" onchange=\"updAgSum()\">";
+  h += "<option value=\"\">Particular</option>";
+  convs.forEach(function(c){
+    h += "<option value=\"" + c.id + "\">" + esc(c.n) + "</option>";
+  });
   h += "</select></div>";
+
   h += "<div class=\"field\"><label>Observacoes</label><textarea id=\"pObs\" style=\"min-height:52px\"></textarea></div>";
   h += "<button class=\"btn btng\" style=\"width:100%;justify-content:center;padding:11px\" onclick=\"confAg()\">Confirmar Agendamento</button>";
+  h += "<div id=\"agSumDiv\"></div>";
   h += "</div></div>";
+
   document.getElementById("pgAg").innerHTML = h;
+
+  document.getElementById("pExWrap").innerHTML =
+    exChecklistHtml("pExames", [], "updAgSum");
+
   var td = new Date();
   var df2 = document.getElementById("pData");
-  if(df2) df2.value = td.getFullYear()+"-"+pad(td.getMonth()+1)+"-"+pad(td.getDate());
+  if (df2) {
+    df2.value = td.getFullYear() + "-" + pad(td.getMonth() + 1) + "-" + pad(td.getDate());
+  }
+
   agView = "dia";
   agBase = new Date(td.getFullYear(), td.getMonth(), td.getDate());
+
   rndAg();
+  updAgSum();
 }
 
 var agView = "dia";
@@ -1125,33 +1254,101 @@ function openEditAg(id) {
 
 var _agSaving=false;
 function confAg() {
-  if(_agSaving)return; _agSaving=true; setTimeout(function(){_agSaving=false;},3000);
-  var nm=document.getElementById("pNome").value.trim();
-  var tl=document.getElementById("pTel").value.trim().replace(/\D/g,"");
-  var dtR=document.getElementById("pData").value;
-  var hr=document.getElementById("pHora").value;
-  var exId=document.getElementById("pExame").value;
-  var dur=parseInt(document.getElementById("pDur").value)||30;
-  var dId=parseInt(document.getElementById("dSel").value)||0;
-  var cId=document.getElementById("pConv").value||"";
-  if(!nm){toast("!","Informe o nome do paciente");return;}
-  if(!exId){toast("!","Selecione um tipo de exame");return;}
-  if(!dtR){toast("!","Selecione uma data");return;}
-  if(!hr){toast("!","Informe o horario");return;}
-  if(!dId){toast("!","Selecione o dentista");return;}
-  var pts3=dtR.split("-"); var df4=pts3[2]+"/"+pts3[1]+"/"+pts3[0];
-  var ex4=fex(exId); var d4=fdent(dId);
-  var pr=epreco(exId,cId);var pts4=calcCb(pr,d4.nv);var ag={id:nxtId++,pac:nm,tel:tl,ex:exId,dt:df4,hr:hr,dur:dur,dId:dId,cv:cId,vl:pr,cb:pts4,st:"agendado",_new:true};
-  ags.push(ag); d4.pts+=pts4; d4.ind++; lastAg=ag;
+  if(_agSaving) return;
+  _agSaving = true;
+  setTimeout(function(){ _agSaving = false; }, 3000);
+
+  var nm = document.getElementById("pNome").value.trim();
+  var tl = document.getElementById("pTel").value.trim().replace(/\D/g,"");
+  var dtR = document.getElementById("pData").value;
+  var hr = document.getElementById("pHora").value;
+  var exIds = getCheckedExIds("pExames");
+
+  if(!exIds.length){
+    toast("⚠️","Selecione ao menos um exame");
+    return;
+  }
+
+  var dur = parseInt(document.getElementById("pDur").value) || 30;
+  var dId = parseInt(document.getElementById("dSel").value) || 0;
+  var cId = document.getElementById("pConv").value || "";
+
+  if(!nm){ toast("!","Informe o nome do paciente"); return; }
+  if(!dtR){ toast("!","Selecione uma data"); return; }
+  if(!hr){ toast("!","Informe o horario"); return; }
+  if(!dId){ toast("!","Selecione o dentista"); return; }
+
+  var pts3 = dtR.split("-");
+  var df4 = pts3[2] + "/" + pts3[1] + "/" + pts3[0];
+
+  var d4 = fdent(dId);
+
+  var pr = 0;
+  exIds.forEach(function(id){
+    pr += epreco(id, cId);
+  });
+
+  var pts4 = d4 ? calcCb(pr, d4.nv) : 0;
+
+  var ag = {
+    id: nxtId++,
+    pac: nm,
+    tel: tl,
+    ex: exIds[0],
+    exames: exIds,
+    dt: df4,
+    hr: hr,
+    dur: dur,
+    dId: dId,
+    cv: cId,
+    vl: pr,
+    cb: pts4,
+    st: "agendado",
+    _new: true
+  };
+
+  ags.push(ag);
+  if (d4) {
+    d4.pts += pts4;
+    d4.ind++;
+  }
+  lastAg = ag;
+
   dbSaveAg(ag);
   saveAgendamento(ag);
-  agBase=new Date(parseInt(pts3[0]),parseInt(pts3[1])-1,parseInt(pts3[2]));
-  var wm=waFmt(waT.ag,{nome:nm,exame:ex4.n,data:df4,hora:hr,clinica:"COR"});
-  document.getElementById("amsg").innerHTML="<strong>"+esc(nm)+"</strong> — "+esc(ex4.n)+" em <strong>"+df4+" as "+hr+"</strong>";
-  document.getElementById("waDiv").innerHTML="<div class=\"wapv\"><div class=\"wabl\">"+waHtml(wm)+"</div></div>";
+
+  agBase = new Date(parseInt(pts3[0]), parseInt(pts3[1]) - 1, parseInt(pts3[2]));
+
+  var nomesExames = exIds.map(function(id){
+    var ex = fex(id);
+    return ex ? ex.n : id;
+  }).join(", ");
+
+  var wm = waFmt(waT.ag, {
+    nome: nm,
+    exame: nomesExames,
+    data: df4,
+    hora: hr,
+    clinica: "COR"
+  });
+
+  document.getElementById("amsg").innerHTML =
+    "<strong>" + esc(nm) + "</strong> — " + esc(nomesExames) +
+    " em <strong>" + df4 + " as " + hr + "</strong>";
+
+  document.getElementById("waDiv").innerHTML =
+    "<div class=\"wapv\"><div class=\"wabl\">" + waHtml(wm) + "</div></div>";
+
   document.getElementById("MA").classList.add("open");
-  document.getElementById("pNome").value=""; document.getElementById("pTel").value="";
-  document.getElementById("pExame").value=""; document.getElementById("pObs").value="";
+  document.getElementById("pNome").value = "";
+  document.getElementById("pTel").value = "";
+  document.getElementById("pObs").value = "";
+
+  document.getElementById("pExWrap").innerHTML =
+    exChecklistHtml("pExames", [], "updAgSum");
+  document.getElementById("pConv").value = "";
+  document.getElementById("agSumDiv").innerHTML = "";
+
   rndAg();
 }
 
@@ -1571,17 +1768,30 @@ function delPr(id){var p=prems.find(function(x){return x.id===id;});openM("Remov
 
 function saveCbPct(){var v=parseInt(document.getElementById("cbPct").value)||5;CASHBACK_PCT=v;toast("💾","Cashback "+v+"% salvo!");}
 
-function updAgSum() {
-  var exId = document.getElementById("pExame") ? document.getElementById("pExame").value : "";
-  var cId  = document.getElementById("pConv")  ? document.getElementById("pConv").value  : "";
-  var dId  = parseInt(document.getElementById("dSel") ? document.getElementById("dSel").value : 0) || 0;
-  if (!exId) return;
-  var pr   = epreco(exId, cId);
-  var ex   = fex(exId);
-  var cv   = fconv(cId);
-  var d    = fdent(dId);
-  var pts  = d ? calcCb(pr, d.nv) : Math.round(pr * (CASHBACK_PCT/100));
-  // Mostrar resumo dinâmico abaixo do botão confirmar
+function updAgSum(){
+  var exIds = getCheckedExIds("pExames");
+  var cId = document.getElementById("pConv") ? document.getElementById("pConv").value : "";
+  var dId = parseInt(document.getElementById("dSel") ? document.getElementById("dSel").value : 0) || 0;
+
+  var total = 0;
+  var nomes = [];
+
+  exIds.forEach(function(id){
+    total += epreco(id, cId);
+    var ex = fex(id);
+    if (ex) nomes.push(ex.n);
+  });
+
+  if (!exIds.length) {
+    var el0 = document.getElementById("agSumDiv");
+    if (el0) el0.innerHTML = "";
+    return;
+  }
+
+  var d = fdent(dId);
+  var pts = d ? calcCb(total, d.nv) : Math.round(total * (CASHBACK_PCT/100));
+  var cv = fconv(cId);
+
   var el = document.getElementById("agSumDiv");
   if (!el) {
     el = document.createElement("div");
@@ -1590,9 +1800,11 @@ function updAgSum() {
     var btn = document.querySelector("#agSd .btn.btng");
     if (btn) btn.parentNode.insertBefore(el, btn.nextSibling);
   }
-  el.innerHTML = "<div style='display:flex;justify-content:space-between;margin-bottom:4px'><span style='color:var(--gr)'>Exame:</span><strong>" + esc(ex.n) + "</strong></div>" +
+
+  el.innerHTML =
+    "<div style='display:flex;justify-content:space-between;margin-bottom:4px'><span style='color:var(--gr)'>Exames:</span><strong style='text-align:right;max-width:65%'>" + esc(nomes.join(", ")) + "</strong></div>" +
     "<div style='display:flex;justify-content:space-between;margin-bottom:4px'><span style='color:var(--gr)'>Convênio:</span><strong>" + (cv ? esc(cv.n) : "Particular") + "</strong></div>" +
-    "<div style='display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,.08);padding-top:6px;margin-top:4px'><span style='color:var(--gr)'>Valor:</span><strong style='color:var(--g)'>R$ " + pr + "</strong></div>" +
+    "<div style='display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,.08);padding-top:6px;margin-top:4px'><span style='color:var(--gr)'>Valor:</span><strong style='color:var(--g)'>R$ " + total.toFixed(2).replace(".", ",") + "</strong></div>" +
     "<div style='display:flex;justify-content:space-between'><span style='color:var(--gr)'>Cashback:</span><strong style='color:var(--tl)'>+" + pts + " pts (" + CASHBACK_PCT + "%)</strong></div>";
 }
 
