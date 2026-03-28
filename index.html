@@ -1254,7 +1254,7 @@ function openEditAg(id) {
 }
 
 var _agSaving=false;
-function confAg() {
+async function confAg() {
   if(_agSaving) return;
   _agSaving = true;
   setTimeout(function(){ _agSaving = false; }, 3000);
@@ -1292,7 +1292,6 @@ function confAg() {
   var pts4 = d4 ? calcCb(pr, d4.nv) : 0;
 
   var ag = {
-    id: nxtId++,
     pac: nm,
     tel: tl,
     ex: exIds[0],
@@ -1315,7 +1314,12 @@ function confAg() {
   }
   lastAg = ag;
 
-  dbSaveAg(ag);
+  var ok = await dbSaveAg(ag);
+  if (!ok) {
+    toast("⚠️","Erro ao salvar agendamento");
+    return;
+  }
+
   saveAgendamento(ag);
 
   agBase = new Date(parseInt(pts3[0]), parseInt(pts3[1]) - 1, parseInt(pts3[2]));
