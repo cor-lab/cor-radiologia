@@ -354,7 +354,24 @@ function calcCb(valor, nivel){
   var bns = nivel==="Ouro"?1.10:nivel==="Diamante"?1.20:nivel==="Prata"?1.05:1.0;
   return Math.round(b*bns);
 }
-function exChecklistHtml(idBase, selectedIds, onChangeFn){
+ffunction exChecklistHtml(idBase, selectedIds, onChangeFn){
+  selectedIds = selectedIds || [];
+
+  var h = "";
+  h += "<div id='" + idBase + "' style='display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto'>";
+
+  (exT||[]).forEach(function(ex){
+    var checked = selectedIds.indexOf(ex.id)>=0 ? "checked" : "";
+
+    h += "<label style='display:flex;gap:8px;align-items:center'>";
+    h += "<input type='checkbox' value='"+ex.id+"' "+checked+" onchange=\""+onChangeFn+"()\">";
+    h += "<span>"+esc(ex.n)+"</span>";
+    h += "</label>";
+  });
+
+  h += "</div>";
+  return h;
+}
   selectedIds = selectedIds || [];
 
   var h = "";
