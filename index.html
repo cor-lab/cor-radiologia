@@ -971,16 +971,60 @@ async function dbSaveAg(ag){
     }
   }
 
-  var dent = fdent(ag.dId);
-  if (dent) {
-    await supa.from("dentistas")
-      .update({ pontos: dent.pts, indicacoes: dent.ind })
-      .eq("id", dent.id);
-  }
-
   return true;
 }
-async function dbUpdAgSt(id,st){await supa.from("agendamentos").update({status:st}).eq("id",id);}
+async function dbUpdAgSt(id, st){
+  var ag = (ags || []).find(function(x){ return x.id === id; });
+  if(!ag) return false;
+
+  var stAnt = ag.st || "";
+  if(stAnt === st) return true;
+
+  var r = await supa.from("agendamentos")
+    .update({ status: st })
+    .eq("id", id);
+
+  if(r.error){
+    console.error("dbUpdAgSt:", r.error);
+    return false;
+  }
+
+  var dent = fdent(ag.dId);
+  if(!dent){
+    ag.st = st;
+    return true;
+  }
+
+  // Credita pontos só quando entra em "realizado"
+  if(st !== "realizado" && stAnt === "realizado"){
+    dent.pts = Math.max(0, (dent.pts || 0) - (ag.cb || 0));
+
+    var upd1 = await supa.from("dentistas")
+      .update({ pontos: dent.pts })
+      .eq("id", dent.id);
+
+    if(upd1.error){
+      console.error("dbUpdAgSt remove pontos:", upd1.error);
+      return false;
+    }
+  }
+
+  if(st === "realizado" && stAnt !== "realizado"){
+    dent.pts = (dent.pts || 0) + (ag.cb || 0);
+
+    var upd2 = await supa.from("dentistas")
+      .update({ pontos: dent.pts })
+      .eq("id", dent.id);
+
+    if(upd2.error){
+      console.error("dbUpdAgSt soma pontos:", upd2.error);
+      return false;
+    }
+  }
+
+  ag.st = st;
+  return true;
+}
 
 // ── USUARIOS ──
 async function dbSaveUser(u, senha, isNew) {
@@ -1677,10 +1721,6 @@ async function confAg() {
   };
 
   ags.push(ag);
-  if (d4) {
-    d4.pts += pts4;
-    d4.ind++;
-  }
   lastAg = ag;
 
   var ok = await dbSaveAg(ag);
@@ -2064,69 +2104,203 @@ function rcash() {
 }
 function rcashAdmin(){
   var srt=dents.slice().sort(function(a,b){return b.pts-a.pts;});
-  var h="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:18px'><div><h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>Programa de Cashback</h2></div></div><div style='display:grid;grid-template-columns:1fr 1fr;gap:18px'><div class='card'><div class='ctitle'>🏆 Ranking</div>";
+
+  var h="";
+  h+="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:18px'>";
+  h+="<div><h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>Programa de Cashback</h2></div>";
+  h+="</div>";
+
+  h+="<div style='display:grid;grid-template-columns:1fr;gap:18px;margin-bottom:18px'>";
+
+  // Ranking
+  h+="<div class='card'><div class='ctitle'>🏆 Ranking</div>";
   var med=["🥇","🥈","🥉"];
-  srt.forEach(function(d,i){h+="<div class='ri'><span class='rn2'>"+(med[i]||i+1)+"</span><div class='rav' style='background:"+d.bg+";color:"+d.cor+"'>"+esc(d.ini)+"</div><div class='rin'><div class='rnm'>"+esc(d.n)+"</div><div class='rsb'>"+d.ind+" indic. &bull; "+esc(d.nv)+"</div></div><div style='text-align:right'><div class='rpts'>"+fmtN(d.pts)+" pts</div><button class='btn btnt bsm' style='margin-top:3px;font-size:.69rem' onclick='rportal("+d.id+")'>Portal</button></div></div>";});
-  h+="</div><div class='card'><div class='ctitle'>🎁 Premios <button class='btn btng bsm' onclick='navTo(\"config\")'>Editar</button></div>";
-  prems.forEach(function(p){h+="<div class='citm'><span style='font-size:1.1rem'>"+p.ico+"</span><div class='cinf'><div class='cinm'>"+esc(p.n)+"</div><div class='cisb'>"+esc(p.ds)+"</div></div><span style='font-family:DM Mono,monospace;color:var(--g);font-weight:700;font-size:.82rem'>"+fmtN(p.pts)+" pts</span></div>";});
-  h+="</div></div>";
+  srt.forEach(function(d,i){
+    h+="<div class='ri'>";
+    h+="<span class='rn2'>"+(med[i]||i+1)+"</span>";
+    h+="<div class='rav' style='background:"+d.bg+";color:"+d.cor+"'>"+esc(d.ini)+"</div>";
+    h+="<div class='rin'><div class='rnm'>"+esc(d.n)+"</div><div class='rsb'>"+d.ind+" indic. &bull; "+esc(d.nv)+"</div></div>";
+    h+="<div style='text-align:right'><div class='rpts'>"+fmtN(d.pts)+" pts</div><button class='btn btnt bsm' style='margin-top:3px;font-size:.69rem' onclick='rportal("+d.id+")'>Portal</button></div>";
+    h+="</div>";
+  });
+  h+="</div>";
+
+
+  h+="</div>";
+
+  // Ajuste manual
+  h+="<div class='card'>";
+  h+="<div class='ctitle'>⚙️ Ajuste Manual de Cashback</div>";
+  h+="<div class='fg2'>";
+  h+="<div class='field'><label>Dentista</label><select id='cbAjDent'>";
+  h+="<option value=''>-- Selecionar dentista --</option>";
+  dents.forEach(function(d){
+    h+="<option value='"+d.id+"'>"+esc(d.n)+"</option>";
+  });
+  h+="</select></div>";
+
+  h+="<div class='field'><label>Tipo de ajuste</label><select id='cbAjTipo'>";
+  h+="<option value='credito'>Adicionar pontos</option>";
+  h+="<option value='debito'>Descontar pontos</option>";
+  h+="</select></div>";
+  h+="</div>";
+
+  h+="<div class='fg2' style='margin-top:10px'>";
+  h+="<div class='field'><label>Pontos</label><input type='number' id='cbAjPts' min='1' placeholder='Ex: 100'></div>";
+  h+="<div class='field'><label>Senha do usuário</label><input type='password' id='cbAjSenha' placeholder='Digite sua senha'></div>";
+  h+="</div>";
+
+  h+="<div class='field' style='margin-top:10px'><label>Motivo</label><input id='cbAjMotivo' placeholder='Ex: ajuste administrativo'></div>";
+
+  h+="<div style='display:flex;justify-content:flex-end;gap:8px;margin-top:14px'>";
+  h+="<button class='btn btno' onclick='limparAjusteCashbackAdmin()'>Limpar</button>";
+  h+="<button class='btn btng' onclick='aplicarAjusteCashbackAdmin()'>Aplicar ajuste</button>";
+  h+="</div>";
+  h+="</div>";
+
   document.getElementById("pgCb").innerHTML=h;
 }
+
+async function aplicarAjusteCashbackAdmin(){
+  var dentId = parseInt((document.getElementById("cbAjDent").value || "0"), 10);
+  var tipo = document.getElementById("cbAjTipo").value;
+  var pontos = parseInt(document.getElementById("cbAjPts").value || 0, 10);
+  var motivo = document.getElementById("cbAjMotivo").value.trim();
+  var senha = document.getElementById("cbAjSenha").value;
+
+  if(!dentId){
+    toast("⚠️","Selecione um dentista");
+    return;
+  }
+
+  if(pontos <= 0){
+    toast("⚠️","Informe uma quantidade válida");
+    return;
+  }
+
+  if(!senha){
+    toast("⚠️","Digite sua senha");
+    return;
+  }
+
+  var okSenha = await validarSenhaUsuarioAtual(senha);
+  if(!okSenha){
+    toast("⚠️","Senha inválida");
+    return;
+  }
+
+  var d = fdent(dentId);
+  if(!d){
+    toast("⚠️","Dentista não encontrado");
+    return;
+  }
+
+  if(tipo === "debito" && (d.pts || 0) < pontos){
+    toast("⚠️","Saldo insuficiente para desconto");
+    return;
+  }
+
+  var novoSaldo = (d.pts || 0) + (tipo === "credito" ? pontos : -pontos);
+
+  var hist = await supa.from("cashback_ajustes").insert({
+    dentista_id: dentId,
+    tipo: tipo,
+    pontos: pontos,
+    motivo: motivo || null,
+    usuario_email: CU.email
+  });
+
+  if(hist.error){
+    console.error("cashback_ajustes:", hist.error);
+    toast("⚠️","Erro ao gravar histórico");
+    return;
+  }
+
+  var upd = await supa.from("dentistas")
+    .update({ pontos: novoSaldo })
+    .eq("id", dentId);
+
+  if(upd.error){
+    console.error("aplicarAjusteCashbackAdmin:", upd.error);
+    toast("⚠️","Erro ao aplicar ajuste");
+    return;
+  }
+
+  d.pts = novoSaldo;
+
+  await loadAllData();
+  rcashAdmin();
+  toast("✅", tipo === "credito" ? "Pontos adicionados" : "Pontos descontados");
+}
+
+function limparAjusteCashbackAdmin(){
+  if(document.getElementById("cbAjDent")) document.getElementById("cbAjDent").value = "";
+  if(document.getElementById("cbAjTipo")) document.getElementById("cbAjTipo").value = "credito";
+  if(document.getElementById("cbAjPts")) document.getElementById("cbAjPts").value = "";
+  if(document.getElementById("cbAjMotivo")) document.getElementById("cbAjMotivo").value = "";
+  if(document.getElementById("cbAjSenha")) document.getElementById("cbAjSenha").value = "";
+}
+
 function rportal(dId){
-  var d=fdent(dId); if(!d){document.getElementById("pgCb").innerHTML="";return;}
-  var nc=nlv[d.nv]||nlv.Bronze; var pg=nc.nxp?Math.min(100,Math.round(d.pts/nc.nxp*100)):100;
-  var meus=ags.filter(function(a){return a.dId===d.id;});
+  var d=fdent(dId);
+  if(!d){
+    document.getElementById("pgCb").innerHTML="";
+    return;
+  }
+
+  var nc=nlv[d.nv]||nlv.Bronze;
+  var pg=nc.nxp?Math.min(100,Math.round(d.pts/nc.nxp*100)):100;
+  var meus=ags.filter(function(a){ return a.dId===d.id; });
+  var ptsPend = meus
+  .filter(function(a){
+    return a.st === "agendado" || a.st === "aguardando";
+  })
+  .reduce(function(t, a){
+    return t + parseInt(a.cb || 0, 10);
+  }, 0);
   var h="<div class='ph'><div>";
   h+="<div class='dpf'><div class='dav' style='background:"+d.bg+";color:"+d.cor+"'>"+esc(d.ini)+"</div><div class='di'><h2>"+esc(d.n)+"</h2><p>CRO "+esc(d.cro)+" &bull; "+esc(d.esp)+"</p><div class='lvc'>"+nc.em+" Nivel "+esc(d.nv)+"</div></div></div>";
   h+="<div style='font-size:.76rem;color:var(--gr);display:flex;justify-content:space-between;margin-bottom:4px'><span>Progresso para "+esc(nc.next)+"</span><span>"+fmtN(d.pts)+" / "+(nc.nxp?fmtN(nc.nxp):"MAX")+" pts</span></div>";
   h+="<div class='pgbg'><div class='pgfl' style='width:"+pg+"%'></div></div>";
-  h+="<div style='font-size:.71rem;color:var(--gr);margin-top:4px'>"+(nc.nxp?"Faltam <strong style='color:var(--g)'>"+fmtN(nc.nxp-d.pts)+" pts</strong> para "+nc.next:"🎉 Nivel maximo!")+"</div></div>";
+  h+="<div style='font-size:.71rem;color:var(--gr);margin-top:4px'>"+(nc.nxp?"Faltam <strong style='color:var(--g)'>"+fmtN(nc.nxp-d.pts)+" pts</strong> para "+nc.next:"🎉 Nivel maximo!")+"</div>";
+  h+="</div>";
+
+  h+="<div class='cp'>";
+  h+="<div class='cbig'>"+fmtN(d.pts)+"</div>";
+  h+="<div class='clbl'>pontos confirmados</div>";
+  h+="<div class='cval'>≈ R$ "+(d.pts*0.05).toFixed(2)+"</div>";
+  h+="<div style='margin-top:6px;font-size:.78rem;color:var(--gr)'>Pendentes: <strong style='color:var(--or)'>"+fmtN(ptsPend)+" pts</strong></div>";
   h+="<button class='btn btno' style='margin-top:11px;width:100%;justify-content:center;font-size:.74rem' onclick=\"abrirExtratoCashback("+d.id+")\">📄 Extrato</button>";
-  h+="<div style='display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px'><div class='card'><div class='ctitle'>📋 Meus Pacientes</div>";
-  if(!meus.length){h+="<div style='color:var(--gr);text-align:center;padding:18px;font-size:.84rem'>Nenhum paciente ainda.</div>";}
-  else{var sc2={agendado:"bt",realizado:"bg",cancelado:"br",aguardando:"bo"};meus.slice().reverse().slice(0,6).forEach(function(a){var ex=fex(a.ex);h+="<div class='ei'><div class='eico' style='background:rgba(255,255,255,.06)'>"+ex.ico+"</div><div class='einfo'><div class='edesc'>"+esc(a.pac)+"</div><div class='edate'>"+esc(ex.n)+" &bull; "+esc(a.dt)+"</div></div><span class='badge "+(sc2[a.st]||"bgr")+"' style='font-size:.68rem'>"+esc(a.st)+"</span></div>";});h+="<div style='margin-top:7px;text-align:center;font-size:.77rem;color:var(--gr)'>Total: <strong style='color:var(--wh)'>"+meus.length+"</strong></div>";}
-  h+="</div><div class='card'><div class='ctitle'>💳 Extrato</div>";
-
-var ext = (AJUSTES_CB || []).filter(function(x){
-  return x.dentista_id === d.id;
-}).slice(0,8);
-
-if(!ext.length){
-  h+="<div style='color:var(--gr);text-align:center;padding:18px;font-size:.84rem'>Nenhum ajuste registrado.</div>";
-}else{
-  ext.forEach(function(e){
-    var credito = e.tipo === "credito";
-    var ico = credito ? "➕" : "➖";
-    var bg = credito ? "rgba(74,184,72,.12)" : "rgba(224,82,82,.12)";
-    var ds = (credito ? "Acréscimo manual" : "Desconto manual") + (e.motivo ? " — " + e.motivo : "");
-    var dt = iso2br(String(e.created_at || "").split("T")[0]) || "";
-
-    h+="<div class='ei'>";
-    h+="<div class='eico' style='background:"+bg+"'>"+ico+"</div>";
-    h+="<div class='einfo'>";
-    h+="<div class='edesc'>"+esc(ds)+"</div>";
-    h+="<div class='edate'>"+esc(dt)+" &bull; "+esc(e.usuario_email || "")+"</div>";
-    h+="</div>";
-    h+="<div class='epts "+(credito?"pp":"pm")+"'>"+(credito?"+":"-")+fmtN(e.pontos)+" pts</div>";
-    h+="</div>";
-  });
-}
-  h+="<div class='card'><div class='ctitle'>⚙️ Ajuste de Cashback</div>";
-  h+="<div class='fg2'>";
-  h+="<div class='field'><label>Tipo de ajuste</label><select id='cbAjTipo'><option value='credito'>Adicionar pontos</option><option value='debito'>Descontar pontos</option></select></div>";
-  h+="<div class='field'><label>Pontos</label><input type='number' id='cbAjPts' min='1' placeholder='Ex: 50'></div>";
-  h+="</div>";
-  h+="<div class='field' style='margin-top:10px'><label>Motivo</label><input id='cbAjMotivo' placeholder='Ex: ajuste administrativo'></div>";
-  h+="<div class='field' style='margin-top:10px'><label>Senha do usuário</label><input type='password' id='cbAjSenha' placeholder='Digite sua senha'></div>";
-  h+="<div style='margin-top:12px;display:flex;justify-content:flex-end'>";
-  h+="<button class='btn btng' onclick='aplicarAjusteCashback("+d.id+")'>Aplicar ajuste</button>";
-  h+="</div>";
-  h+="</div>";
-  h+="</div></div><div class='card'><div class='ctitle'>🎁 Resgatar</div><div class='rwgr'>";
-  prems.forEach(function(p){var lk=d.pts<p.pts;h+="<div class='rwcd"+(lk?" lkd":"")+"'>"+(lk?"<span class='lki'>🔒</span>":"")+"<div class='ric'>"+p.ico+"</div><div class='rn'>"+esc(p.n)+"</div><div class='rd'>"+esc(p.ds)+"</div><div class='rft'><span class='rpt'>"+fmtN(p.pts)+" pts</span>"+(lk?"<span style='font-size:.69rem;color:var(--gr)'>Faltam "+fmtN(p.pts-d.pts)+"</span>":"<button class='btn btng bsm' onclick='rsgtr("+d.id+","+p.id+","+p.pts+",\""+esc(p.n)+"\")'>Resgatar</button>")+"</div></div>";});
   h+="</div></div>";
+
+  h+="<div style='display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px'>";
+
+  h+="<div class='card'><div class='ctitle'>📋 Meus Pacientes</div>";
+  if(!meus.length){
+    h+="<div style='color:var(--gr);text-align:center;padding:18px;font-size:.84rem'>Nenhum paciente ainda.</div>";
+  }else{
+    var sc2={agendado:"bt",realizado:"bg",cancelado:"br",aguardando:"bo"};
+    meus.slice().reverse().slice(0,6).forEach(function(a){
+      var ex=fex(a.ex);
+      h+="<div class='ei'>";
+      h+="<div class='eico' style='background:rgba(255,255,255,.06)'>"+(ex?ex.ico:"🩻")+"</div>";
+      h+="<div class='einfo'><div class='edesc'>"+esc(a.pac)+"</div><div class='edate'>"+esc(ex?ex.n:"Exame")+" &bull; "+esc(a.dt)+"</div></div>";
+      h+="<span class='badge "+(sc2[a.st]||"bgr")+"' style='font-size:.68rem'>"+esc(a.st)+"</span>";
+      h+="</div>";
+    });
+    h+="<div style='margin-top:7px;text-align:center;font-size:.77rem;color:var(--gr)'>Total: <strong style='color:var(--wh)'>"+meus.length+"</strong></div>";
+  }
+  h+="</div>";
+
+  h+="<div class='card'><div class='ctitle'>💳 Extrato</div>";
+  h+="<div style='color:var(--gr);text-align:center;padding:18px;font-size:.84rem'>Use o botão <strong style='color:var(--wh)'>📄 Extrato</strong> para ver a movimentação completa.</div>";
+  h+="</div>";
+
+  h+="</div>";
+
   document.getElementById("pgCb").innerHTML=h;
 }
+
 function rsgtr(dId,pId,pts,nm){var d=fdent(dId);if(!d||d.pts<pts){toast("⚠️","Pontos insuficientes");return;}openM("Confirmar Resgate","<p style='color:var(--gr);margin-bottom:7px'>Resgatar <strong>"+esc(nm)+"</strong>?</p><p style='color:#f87171;font-size:.85rem'>Serao descontados <strong>"+fmtN(pts)+" pts</strong>.</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Confirmar",cls:"btng",fn:function(){dbResgatar(dId,pId,pts).then(function(ok){if(ok){rportal(dId);toast("🎁",nm+" resgatado!");}else{toast("⚠️","Erro ao resgatar");}});closeM();}}]);}
 
 function abrirExtratoCashback(dId){
@@ -2294,59 +2468,130 @@ function delDt(id){var d=fdent(id);openM("Remover","<p style='color:var(--gr)'>R
 
 // ══ USUARIOS ══
 function rusrs(){
-  if(!canAcc("usuarios")){deny(document.getElementById("pgUs"));return;}
-  var h="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:18px'>";
+  if(!canAcc("usuarios")){
+    deny(document.getElementById("pgUs"));
+    return;
+  }
+
+  var h="";
+  h+="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:18px'>";
   h+="<div><h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>Gestao de Usuarios</h2>";
   h+="<p style='color:var(--gr);font-size:.82rem;margin-top:3px'>Controle de acesso ao sistema COR</p></div>";
-  h+="<button class='btn btng' onclick='openUM()'>+ Novo Usuario</button></div>";
+  h+="<button class='btn btng' onclick='openUM()'>+ Novo Usuario</button>";
+  h+="</div>";
+
   h+="<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px'>";
-  [{r:"admin",l:"Administrador",em:"⚙️",ds:"Acesso total",pl:"rb-a"},
-   {r:"agenda",l:"Agenda",em:"📅",ds:"Agendar e exames",pl:"rb-ag"},
-   {r:"cashback",l:"Cashback",em:"🪙",ds:"Fidelidade",pl:"rb-c"},
-   {r:"dentista",l:"Dentista",em:"🦷",ds:"Portal dentista",pl:"rb-d"}
+  [
+    {r:"admin",l:"Administrador",em:"⚙️",ds:"Acesso total",pl:"rb-a"},
+    {r:"agenda",l:"Agenda",em:"📅",ds:"Agendar e exames",pl:"rb-ag"},
+    {r:"cashback",l:"Cashback",em:"🪙",ds:"Fidelidade",pl:"rb-c"},
+    {r:"dentista",l:"Dentista",em:"🦷",ds:"Portal dentista",pl:"rb-d"}
   ].forEach(function(ro){
-    var cnt=USERS.filter(function(u){return u.role===ro.r&&u.ativo;}).length;
-    h+="<div style='background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:15px'><div style='font-size:1.3rem;margin-bottom:7px'>"+ro.em+"</div><div style='font-size:.88rem;font-weight:600;margin-bottom:3px'>"+ro.l+"</div><div style='font-size:.73rem;color:var(--gr);margin-bottom:8px'>"+ro.ds+"</div><span class='rb "+ro.pl+"'>"+cnt+" usuario"+(cnt!==1?"s":"")+"</span></div>";
+    var cnt=USERS.filter(function(u){ return u.role===ro.r && u.ativo; }).length;
+    h+="<div style='background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:15px'>";
+    h+="<div style='font-size:1.3rem;margin-bottom:7px'>"+ro.em+"</div>";
+    h+="<div style='font-size:.88rem;font-weight:600;margin-bottom:3px'>"+ro.l+"</div>";
+    h+="<div style='font-size:.73rem;color:var(--gr);margin-bottom:8px'>"+ro.ds+"</div>";
+    h+="<span class='rb "+ro.pl+"'>"+cnt+" usuario"+(cnt!==1?"s":"")+"</span>";
+    h+="</div>";
   });
-  h+="</div><div class='card'><div style='margin-bottom:14px'><span style='font-size:.9rem;font-weight:600'>Usuarios Cadastrados</span></div>";
-  h+="<div class='tw'><table><thead><tr>";
-  ["Usuario","Email","Perfil","Status","Acoes"].forEach(function(c){h+="<th>"+c+"</th>";});
-  h+="</tr></thead><tbody>";
-  USERS.forEach(function(u, idx){
-    var isCurrent = CU && u.email === CU.email;
-    h+="<tr><td><div style='display:flex;align-items:center;gap:9px'>";
-    h+="<div style='width:30px;height:30px;border-radius:50%;background:"+u.bg+";display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.7rem;color:"+u.cor+"'>"+esc(u.ini)+"</div>";
-    h+="<strong>"+esc(u.nome)+"</strong></div></td>";
-    h+="<td style='font-family:DM Mono,monospace;font-size:.78rem;color:var(--gr)'>"+esc(u.email)+"</td>";
-    h+="<td><span class='rb "+RC[u.role]+"'>"+RE[u.role]+" "+RL[u.role]+"</span></td>";
-    h+="<td><span class='badge "+(u.ativo?"bg":"br")+"'>"+(u.ativo?"Ativo":"Inativo")+"</span></td>";
-    h+="<td><div style='display:flex;gap:4px'>";
-    h+="<button class='btn btno bsm bico' data-email='"+esc(u.email)+"' onclick='openUM(this.dataset.email)' title='Editar'>✏️</button>";
-    if(!isCurrent){
-      h+="<button class='btn "+(u.ativo?"btnr":"btng")+" bsm bico' data-email='"+esc(u.email)+"' onclick='togU(this.dataset.email)' title='"+(u.ativo?"Desativar":"Ativar")+"'>"+(u.ativo?"🔒":"🔓")+"</button>";
-      h+="<button class='btn btnr bsm bico' data-email='"+esc(u.email)+"' onclick='remU(this.dataset.email)' title='Remover'>🗑️</button>";
+  h+="</div>";
+
+  var grupos = [
+    {key:"admin", titulo:"⚙️ Administradores"},
+    {key:"agenda", titulo:"📅 Agenda"},
+    {key:"cashback", titulo:"🪙 Cashback"},
+    {key:"dentista", titulo:"🦷 Dentistas"}
+  ];
+
+  h+="<div style='display:grid;grid-template-columns:repeat(2,1fr);gap:18px'>";
+
+  grupos.forEach(function(g){
+    var lista = USERS.filter(function(u){ return u.role === g.key; });
+
+    h+="<div class='card'>";
+    h+="<div class='ctitle'>"+g.titulo+"</div>";
+
+    if(!lista.length){
+      h+="<div style='color:var(--gr);text-align:center;padding:18px;font-size:.84rem'>Nenhum usuário.</div>";
+    }else{
+      lista.forEach(function(u){
+        var isCurrent = CU && u.email === CU.email;
+        var dent = u.dentId ? fdent(u.dentId) : null;
+
+        h+="<div class='citm'>";
+        h+="<div style='width:34px;height:34px;border-radius:50%;background:"+u.bg+";display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.72rem;color:"+u.cor+";flex-shrink:0'>"+esc(u.ini)+"</div>";
+
+        h+="<div class='cinf'>";
+        h+="<div class='cinm'>"+esc(u.nome)+"</div>";
+        h+="<div class='cisb'>"+esc(u.email)+"</div>";
+
+        if(u.role === "dentista"){
+          h+="<div class='cisb' style='margin-top:3px;color:var(--tl)'>"+(dent ? esc(dent.n) : "Não vinculado")+"</div>";
+        }
+
+        h+="<div class='cisb' style='margin-top:4px'><span class='badge "+(u.ativo?"bg":"br")+"'>"+(u.ativo?"Ativo":"Inativo")+"</span></div>";
+        h+="</div>";
+
+        h+="<div class='cact'>";
+        h+="<button class='btn btno bsm bico' data-email='"+esc(u.email)+"' onclick='openUM(this.dataset.email)' title='Editar'>✏️</button>";
+
+        if(!isCurrent){
+          h+="<button class='btn "+(u.ativo?"btnr":"btng")+" bsm bico' data-email='"+esc(u.email)+"' onclick='togU(this.dataset.email)' title='"+(u.ativo?"Desativar":"Ativar")+"'>"+(u.ativo?"🔒":"🔓")+"</button>";
+          h+="<button class='btn btnr bsm bico' data-email='"+esc(u.email)+"' onclick='remU(this.dataset.email)' title='Remover'>🗑️</button>";
+        }
+
+        h+="</div>";
+        h+="</div>";
+      });
     }
-    h+="</div></td></tr>";
+
+    h+="</div>";
   });
-  h+="</tbody></table></div></div>";
+
+  h+="</div>";
+
   document.getElementById("pgUs").innerHTML=h;
 }
-
 function togU(email){var u=USERS.find(function(x){return x.email===email||String(x.id)===String(email);});if(!u)return;u.ativo=!u.ativo;dbToggleUser(u.email,u.ativo);rusrs();toast(u.ativo?"🔓":"🔒",u.nome+(u.ativo?" ativado":" desativado"));}
 function openUM(eid) {
   var ed = eid ? USERS.find(function(u){ return u.email === eid || String(u.id) === String(eid); }) : null;
-  var bgm = {admin:"linear-gradient(135deg,#4ab848,#7dcf6e)",agenda:"linear-gradient(135deg,#2dd4bf,#0d9488)",cashback:"linear-gradient(135deg,#a78bfa,#7c3aed)",dentista:"linear-gradient(135deg,#fbbf24,#f59e0b)"};
+  var bgm = {
+    admin:"linear-gradient(135deg,#4ab848,#7dcf6e)",
+    agenda:"linear-gradient(135deg,#2dd4bf,#0d9488)",
+    cashback:"linear-gradient(135deg,#a78bfa,#7c3aed)",
+    dentista:"linear-gradient(135deg,#fbbf24,#f59e0b)"
+  };
+
   var b = "<div style='display:flex;flex-direction:column;gap:10px'>";
   b += "<div class='field'><label>Nome completo</label><input id='usrNm' value='"+(ed?esc(ed.nome):"")+"' placeholder='Nome do usuario'></div>";
   b += "<div class='field'><label>Email (login)</label><input id='usrEm' type='email' value='"+(ed?esc(ed.email):"")+"' placeholder='usuario@cor.com.br'"+(ed?" readonly style='opacity:.6'":"")+" ></div>";
-  b += "<div class='fg2'><div class='field'><label>Senha "+(ed?"(deixe em branco para manter)":"")+"</label><input id='usrSn' type='password' placeholder='"+(ed?"••••••••":"Nova senha")+"'></div>";
-  b += "<div class='field'><label>Perfil de Acesso</label><select id='usrRl'>";
+
+  b += "<div class='fg2'>";
+  b += "<div class='field'><label>Senha "+(ed?"(deixe em branco para manter)":"")+"</label><input id='usrSn' type='password' placeholder='"+(ed?"••••••••":"Nova senha")+"'></div>";
+  b += "<div class='field'><label>Perfil de Acesso</label><select id='usrRl' onchange='toggleUsrDentWrap()'>";
   Object.keys(RL).forEach(function(r){
-    b += "<option value='"+r+"'"+(ed ? ed.role===r : r==="agenda" ? " selected" : "")+">"+RE[r]+" "+RL[r]+"</option>";
+    b += "<option value='"+r+"'"+(ed ? (ed.role===r?" selected":"") : (r==="agenda"?" selected":""))+">"+RE[r]+" "+RL[r]+"</option>";
   });
-  b += "</select></div></div>";
-  b += "<div class='fg2'><div class='field'><label>Iniciais (2 letras)</label><input id='usrIn' value='"+(ed?esc(ed.ini):"")+"' placeholder='AB' maxlength='2'></div>";
-  b += "<div class='field'><label>Status</label><select id='usrAt'><option value='true'"+(!ed||ed.ativo?" selected":"")+">Ativo</option><option value='false'"+(ed&&!ed.ativo?" selected":"")+">Inativo</option></select></div></div>";
+  b += "</select></div>";
+  b += "</div>";
+
+  b += "<div class='field' id='usrDentWrap' style='display:"+((ed && ed.role==="dentista") ? "flex" : "none")+";flex-direction:column'>";
+  b += "<label>Dentista vinculado</label>";
+  b += "<select id='usrDentId'>";
+  b += "<option value=''>-- Selecionar dentista --</option>";
+  (dents || []).forEach(function(d){
+    var sel = (ed && String(ed.dentId || "") === String(d.id)) ? " selected" : "";
+    b += "<option value='"+d.id+"'"+sel+">"+esc(d.n)+"</option>";
+  });
+  b += "</select>";
+  b += "</div>";
+
+  b += "<div class='fg2'>";
+  b += "<div class='field'><label>Iniciais (2 letras)</label><input id='usrIn' value='"+(ed?esc(ed.ini):"")+"' placeholder='AB' maxlength='2'></div>";
+  b += "<div class='field'><label>Status</label><select id='usrAt'><option value='true'"+(!ed||ed.ativo?" selected":"")+">Ativo</option><option value='false'"+(ed&&!ed.ativo?" selected":"")+">Inativo</option></select></div>";
+  b += "</div>";
+
   b += "</div>";
 
   openM(ed ? "Editar Usuário" : "Novo Usuário", b, [
@@ -2358,33 +2603,57 @@ function openUM(eid) {
         var sn  = (document.getElementById("usrSn") && document.getElementById("usrSn").value) || "";
         var rl  = (document.getElementById("usrRl") && document.getElementById("usrRl").value) || "agenda";
         var at  = ((document.getElementById("usrAt") && document.getElementById("usrAt").value) || "true") === "true";
+        var dentIdRaw = (document.getElementById("usrDentId") && document.getElementById("usrDentId").value) || "";
+        var dentId = dentIdRaw ? parseInt(dentIdRaw,10) : null;
+
         var ini = (((document.getElementById("usrIn") && document.getElementById("usrIn").value) || "").toUpperCase()) ||
                   nm.split(" ").map(function(x){ return x[0] || ""; }).join("").slice(0,2).toUpperCase();
 
-        if (!nm || !em) { toast("⚠️","Nome e email são obrigatórios"); return; }
-        if (!ed && !sn)  { toast("⚠️","Informe uma senha para o novo usuário"); return; }
+        if (!nm || !em) {
+          toast("⚠️","Nome e email são obrigatórios");
+          return;
+        }
+
+        if (!ed && !sn) {
+          toast("⚠️","Informe uma senha para o novo usuário");
+          return;
+        }
+
+        if (rl === "dentista" && !dentId) {
+          toast("⚠️","Selecione o dentista vinculado");
+          return;
+        }
 
         var uObj;
         if (ed) {
-          ed.nome  = nm;
-          ed.role  = rl;
-          ed.ini   = ini;
-          ed.ativo = at;
-          ed.bg    = bgm[rl] || ed.bg;
+          ed.nome   = nm;
+          ed.role   = rl;
+          ed.ini    = ini;
+          ed.ativo  = at;
+          ed.bg     = bgm[rl] || ed.bg;
+          ed.dentId = rl === "dentista" ? dentId : null;
           if (sn) ed.senha = sn;
           uObj = ed;
         } else {
           uObj = {
-            id: Date.now(), nome:nm, email:em, senha:sn,
-            role:rl, ini:ini, bg:bgm[rl]||"linear-gradient(135deg,#4ab848,#7dcf6e)",
-            cor:"#fff", ativo:at
+            id: Date.now(),
+            nome:nm,
+            email:em,
+            senha:sn,
+            role:rl,
+            ini:ini,
+            bg:bgm[rl]||"linear-gradient(135deg,#4ab848,#7dcf6e)",
+            cor:"#fff",
+            ativo:at,
+            dentId: rl === "dentista" ? dentId : null
           };
         }
 
-        uObj.role = rl;
-        uObj.ini  = ini;
-        uObj.nome = nm;
-        uObj.ativo = at;
+        uObj.role   = rl;
+        uObj.ini    = ini;
+        uObj.nome   = nm;
+        uObj.ativo  = at;
+        uObj.dentId = rl === "dentista" ? dentId : null;
 
         var ok = await dbSaveUser(uObj, sn, !ed);
         if (!ok) {
@@ -2402,32 +2671,92 @@ function openUM(eid) {
       }
     }}
   ]);
+
+  setTimeout(toggleUsrDentWrap, 0);
 }
 
+function toggleUsrDentWrap(){
+  var rl = document.getElementById("usrRl");
+  var wp = document.getElementById("usrDentWrap");
+  if(!rl || !wp) return;
+  wp.style.display = rl.value === "dentista" ? "flex" : "none";
+}
 
 // ══ CONFIG ══
 function rcfg(){
-  if(!canAcc("config")){deny(document.getElementById("pgCf"));return;}
-  var h="<div style='margin-bottom:18px'><h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>Configuracoes</h2><p style='color:var(--gr);font-size:.82rem;margin-top:3px'>Exames, premios, templates e cashback</p></div>";
+  if(!canAcc("config")){
+    deny(document.getElementById("pgCf"));
+    return;
+  }
+
+  var h="";
+  h+="<div style='margin-bottom:18px'><h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>Configuracoes</h2><p style='color:var(--gr);font-size:.82rem;margin-top:3px'>Exames, templates e cashback</p></div>";
+
   h+="<div style='background:rgba(74,184,72,.07);border:1px solid rgba(74,184,72,.2);border-radius:10px;padding:15px;margin-bottom:18px'>";
   h+="<div style='display:flex;align-items:center;justify-content:space-between;gap:12px'>";
   h+="<div><div style='font-weight:700'>🪙 Cashback Padrao</div><div style='font-size:.78rem;color:var(--gr);margin-top:3px'>% do valor do exame = pontos do dentista</div></div>";
   h+="<div style='display:flex;align-items:center;gap:8px'>";
-  h+="<input type='number' id='cbPct' value='"+ CASHBACK_PCT +"' min='1' max='50' style='width:66px;background:rgba(255,255,255,.08);border:1px solid rgba(74,184,72,.3);border-radius:8px;padding:7px;color:var(--wh);font-size:.88rem;outline:none;'>";
+  h+="<input type='number' id='cbPct' value='"+CASHBACK_PCT+"' min='1' max='50' style='width:66px;background:rgba(255,255,255,.08);border:1px solid rgba(74,184,72,.3);border-radius:8px;padding:7px;color:var(--wh);font-size:.88rem;outline:none;'>";
   h+="<span style='color:var(--gr)'>%</span>";
   h+="<button class='btn btng bsm' onclick='saveCbPct()'>Salvar</button>";
   h+="</div></div></div>";
-  h+="<div class='cfgs'>";
-  h+="<div class='card'><div class='ctitle'>🩻 Tipos de Exame <button class='btn btng bsm' onclick='openExM()'>+ Novo</button></div>";
-  exT.forEach(function(e){h+="<div class='citm'><span style='font-size:1.15rem'>"+e.ico+"</span><div class='cinf'><div class='cinm'>"+esc(e.n)+"</div><div class='cisb'>R$ "+e.p+" &bull; "+e.pts+" pts</div></div><div class='cact'><button class='btn btno bsm bico' onclick='openExM(\""+e.id+"\")'>✏️</button><button class='btn btnr bsm bico' onclick='delEx(\""+e.id+"\")'>🗑️</button></div></div>";});
-  h+="</div><div class='card'><div class='ctitle'>🎁 Premios <button class='btn btng bsm' onclick='openPrM()'>+ Novo</button></div>";
-  prems.forEach(function(p){h+="<div class='citm'><span style='font-size:1.15rem'>"+p.ico+"</span><div class='cinf'><div class='cinm'>"+esc(p.n)+"</div><div class='cisb'>"+esc(p.ds)+"</div></div><div class='cact'><span style='font-family:DM Mono,monospace;font-size:.8rem;color:var(--g)'>"+fmtN(p.pts)+" pts</span><button class='btn btno bsm bico' onclick='openPrM("+p.id+")'>✏️</button><button class='btn btnr bsm bico' onclick='delPr("+p.id+")'>🗑️</button></div></div>";});
-  h+="</div><div class='card' style='grid-column:1/-1'><div class='ctitle'>📲 Templates WhatsApp <button class='btn btnt bsm' onclick='svWA()'>💾 Salvar</button></div>";
-  h+="<div style='display:grid;grid-template-columns:1fr 1fr;gap:16px'>";
+
+  h+="<div style='display:grid;grid-template-columns:1fr;gap:18px'>";
+
+  // Templates WhatsApp
+  h+="<div class='card'>";
+  h+="<div class='ctitle'>📲 Templates WhatsApp <button class='btn btnt bsm' onclick='svWA()'>💾 Salvar</button></div>";
+  h+="<div style='display:grid;grid-template-columns:1fr;gap:16px'>";
   h+="<div><div style='font-size:.73rem;font-weight:700;color:var(--gr);text-transform:uppercase;margin-bottom:7px'>Confirmacao — {nome} {exame} {data} {hora} {clinica}</div><div class='field'><textarea id='waTa' style='min-height:100px' oninput='pvWA()'>"+esc(waT.ag)+"</textarea></div><div class='wapv' id='waPa'></div></div>";
   h+="<div><div style='font-size:.73rem;font-weight:700;color:var(--gr);text-transform:uppercase;margin-bottom:7px'>Lembrete — {nome} {exame} {data} {hora}</div><div class='field'><textarea id='waTl' style='min-height:100px' oninput='pvWA()'>"+esc(waT.lb)+"</textarea></div><div class='wapv' id='waPl'></div></div>";
-  h+="</div><div style='margin-top:13px;padding:10px 14px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.15);border-radius:8px;font-size:.79rem;color:var(--tl)'>📌 <strong>Integracao Z-API/Evolution API:</strong> configure a URL e token para envio real. Os botoes 📲 abrem o WhatsApp com a mensagem preenchida.</div></div></div>";
-  document.getElementById("pgCf").innerHTML=h; pvWA();
+  h+="</div>";
+  h+="<div style='margin-top:13px;padding:10px 14px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.15);border-radius:8px;font-size:.79rem;color:var(--tl)'>📌 <strong>Integracao Z-API/Evolution API:</strong> configure a URL e token para envio real. Os botoes 📲 abrem o WhatsApp com a mensagem preenchida.</div>";
+  h+="</div>";
+
+  // Tipos de Exame
+  h+="<div class='card'>";
+  h+="<div class='ctitle'>🩻 Tipos de Exame <button class='btn btng bsm' onclick='openExM()'>+ Novo</button></div>";
+
+  h+="<div style='margin-bottom:12px'>";
+  h+="<input id='cfgExBusca' type='text' placeholder='Buscar exame...' oninput='filtrarExamesConfig()' ";
+  h+="style='width:100%;max-width:320px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 12px;color:var(--wh);font-size:.84rem;outline:none;'>";
+  h+="</div>";
+
+  h+="<div id='cfgExLista' style='max-height:420px;overflow:auto;padding-right:4px'>";
+  exT.forEach(function(e){
+    h+="<div class='citm cfg-ex-item' data-nome='"+String(e.n||"").toLowerCase().replace(/'/g,"&apos;")+"'>";
+    h+="<span style='font-size:1.15rem'>"+e.ico+"</span>";
+    h+="<div class='cinf'><div class='cinm'>"+esc(e.n)+"</div><div class='cisb'>R$ "+e.p+" &bull; "+e.pts+" pts</div></div>";
+    h+="<div class='cact'><button class='btn btno bsm bico' onclick='openExM(\""+e.id+"\")'>✏️</button><button class='btn btnr bsm bico' onclick='delEx(\""+e.id+"\")'>🗑️</button></div>";
+    h+="</div>";
+  });
+  h+="</div>";
+  h+="</div>";
+
+  h+="</div>";
+
+  document.getElementById("pgCf").innerHTML=h;
+  pvWA();
+}
+function filtrarExamesConfig(){
+  var inp = document.getElementById("cfgExBusca");
+  var termo = String((inp && inp.value) || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+  var itens = Array.from(document.querySelectorAll(".cfg-ex-item"));
+
+  itens.forEach(function(it){
+    var nome = String(it.getAttribute("data-nome") || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    var ok = !termo || nome.indexOf(termo) >= 0;
+    it.style.display = ok ? "flex" : "none";
+  });
 }
 function pvWA(){var a=document.getElementById("waTa");var l=document.getElementById("waTl");if(!a)return;var v={nome:"Maria Silva",exame:"Tomografia",data:"25/03/2026",hora:"08:00",clinica:"COR — Radiologia"};var pa=document.getElementById("waPa");var pl=document.getElementById("waPl");if(pa)pa.innerHTML="<div class='wabl'>"+waHtml(waFmt(a.value,v))+"</div>";if(pl)pl.innerHTML="<div class='wabl'>"+waHtml(waFmt(l.value,v))+"</div>";}
 function svWA(){var a=document.getElementById("waTa");var l=document.getElementById("waTl");if(a)waT.ag=a.value;if(l)waT.lb=l.value;toast("💾","Templates salvos!");}
