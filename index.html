@@ -705,11 +705,14 @@ async function loadAllData(){
       supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(500),
       supa.from("agendamento_exames").select("*").order("ordem",{ascending:true}),
       supa.from("premios").select("*").eq("ativo",true).order("pontos_necessarios"),
-      supa.from("usuarios").select("*").eq("ativo",true).order("nome")
+      supa.from("usuarios").select("*").eq("ativo",true).order("nome"),
+      supa.from("cashback_ajustes").select("*").order("created_at",{ascending:false})
     ]);
 
-    var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7];
+    var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7], ajR = r[8];
 
+    AJUSTES_CB = ajR.data || [];
+    
     if(exR.data && exR.data.length){
       exT = exR.data.map(function(e){
         return {
@@ -2078,19 +2081,203 @@ function rportal(dId){
   h+="<div style='font-size:.76rem;color:var(--gr);display:flex;justify-content:space-between;margin-bottom:4px'><span>Progresso para "+esc(nc.next)+"</span><span>"+fmtN(d.pts)+" / "+(nc.nxp?fmtN(nc.nxp):"MAX")+" pts</span></div>";
   h+="<div class='pgbg'><div class='pgfl' style='width:"+pg+"%'></div></div>";
   h+="<div style='font-size:.71rem;color:var(--gr);margin-top:4px'>"+(nc.nxp?"Faltam <strong style='color:var(--g)'>"+fmtN(nc.nxp-d.pts)+" pts</strong> para "+nc.next:"🎉 Nivel maximo!")+"</div></div>";
-  h+="<div class='cp'><div class='cbig'>"+fmtN(d.pts)+"</div><div class='clbl'>pontos</div><div class='cval'>≈ R$ "+(d.pts*0.05).toFixed(2)+"</div><button class='btn btno' style='margin-top:11px;width:100%;justify-content:center;font-size:.74rem' onclick='toast(\"📧\",\"Extrato enviado!\")'>📄 Extrato</button></div></div>";
+  h+="<button class='btn btno' style='margin-top:11px;width:100%;justify-content:center;font-size:.74rem' onclick=\"abrirExtratoCashback("+d.id+")\">📄 Extrato</button>";
   h+="<div style='display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px'><div class='card'><div class='ctitle'>📋 Meus Pacientes</div>";
   if(!meus.length){h+="<div style='color:var(--gr);text-align:center;padding:18px;font-size:.84rem'>Nenhum paciente ainda.</div>";}
   else{var sc2={agendado:"bt",realizado:"bg",cancelado:"br",aguardando:"bo"};meus.slice().reverse().slice(0,6).forEach(function(a){var ex=fex(a.ex);h+="<div class='ei'><div class='eico' style='background:rgba(255,255,255,.06)'>"+ex.ico+"</div><div class='einfo'><div class='edesc'>"+esc(a.pac)+"</div><div class='edate'>"+esc(ex.n)+" &bull; "+esc(a.dt)+"</div></div><span class='badge "+(sc2[a.st]||"bgr")+"' style='font-size:.68rem'>"+esc(a.st)+"</span></div>";});h+="<div style='margin-top:7px;text-align:center;font-size:.77rem;color:var(--gr)'>Total: <strong style='color:var(--wh)'>"+meus.length+"</strong></div>";}
   h+="</div><div class='card'><div class='ctitle'>💳 Extrato</div>";
-  var ext=[{ico:"🔬",bg:"rgba(74,184,72,.12)",ds:"Tomografia — Sandra Meira",dt:"Hoje",pts:132,p:true},{ico:"📷",bg:"rgba(74,184,72,.12)",ds:"Rx Periapical — Maria Costa",dt:"Hoje",pts:22,p:true},{ico:"🎁",bg:"rgba(224,82,82,.12)",ds:"Resgate — Desconto 10%",dt:"22 mar",pts:500,p:false},{ico:"⭐",bg:"rgba(74,184,72,.12)",ds:"Bonus Pacote Mensal",dt:"01 mar",pts:500,p:true}];
-  ext.forEach(function(e){h+="<div class='ei'><div class='eico' style='background:"+e.bg+"'>"+e.ico+"</div><div class='einfo'><div class='edesc'>"+esc(e.ds)+"</div><div class='edate'>"+e.dt+"</div></div><div class='epts "+(e.p?"pp":"pm")+"'>"+(e.p?"+":"-")+fmtN(e.pts)+" pts</div></div>";});
+
+var ext = (AJUSTES_CB || []).filter(function(x){
+  return x.dentista_id === d.id;
+}).slice(0,8);
+
+if(!ext.length){
+  h+="<div style='color:var(--gr);text-align:center;padding:18px;font-size:.84rem'>Nenhum ajuste registrado.</div>";
+}else{
+  ext.forEach(function(e){
+    var credito = e.tipo === "credito";
+    var ico = credito ? "➕" : "➖";
+    var bg = credito ? "rgba(74,184,72,.12)" : "rgba(224,82,82,.12)";
+    var ds = (credito ? "Acréscimo manual" : "Desconto manual") + (e.motivo ? " — " + e.motivo : "");
+    var dt = iso2br(String(e.created_at || "").split("T")[0]) || "";
+
+    h+="<div class='ei'>";
+    h+="<div class='eico' style='background:"+bg+"'>"+ico+"</div>";
+    h+="<div class='einfo'>";
+    h+="<div class='edesc'>"+esc(ds)+"</div>";
+    h+="<div class='edate'>"+esc(dt)+" &bull; "+esc(e.usuario_email || "")+"</div>";
+    h+="</div>";
+    h+="<div class='epts "+(credito?"pp":"pm")+"'>"+(credito?"+":"-")+fmtN(e.pontos)+" pts</div>";
+    h+="</div>";
+  });
+}
+  h+="<div class='card'><div class='ctitle'>⚙️ Ajuste de Cashback</div>";
+  h+="<div class='fg2'>";
+  h+="<div class='field'><label>Tipo de ajuste</label><select id='cbAjTipo'><option value='credito'>Adicionar pontos</option><option value='debito'>Descontar pontos</option></select></div>";
+  h+="<div class='field'><label>Pontos</label><input type='number' id='cbAjPts' min='1' placeholder='Ex: 50'></div>";
+  h+="</div>";
+  h+="<div class='field' style='margin-top:10px'><label>Motivo</label><input id='cbAjMotivo' placeholder='Ex: ajuste administrativo'></div>";
+  h+="<div class='field' style='margin-top:10px'><label>Senha do usuário</label><input type='password' id='cbAjSenha' placeholder='Digite sua senha'></div>";
+  h+="<div style='margin-top:12px;display:flex;justify-content:flex-end'>";
+  h+="<button class='btn btng' onclick='aplicarAjusteCashback("+d.id+")'>Aplicar ajuste</button>";
+  h+="</div>";
+  h+="</div>";
   h+="</div></div><div class='card'><div class='ctitle'>🎁 Resgatar</div><div class='rwgr'>";
   prems.forEach(function(p){var lk=d.pts<p.pts;h+="<div class='rwcd"+(lk?" lkd":"")+"'>"+(lk?"<span class='lki'>🔒</span>":"")+"<div class='ric'>"+p.ico+"</div><div class='rn'>"+esc(p.n)+"</div><div class='rd'>"+esc(p.ds)+"</div><div class='rft'><span class='rpt'>"+fmtN(p.pts)+" pts</span>"+(lk?"<span style='font-size:.69rem;color:var(--gr)'>Faltam "+fmtN(p.pts-d.pts)+"</span>":"<button class='btn btng bsm' onclick='rsgtr("+d.id+","+p.id+","+p.pts+",\""+esc(p.n)+"\")'>Resgatar</button>")+"</div></div>";});
   h+="</div></div>";
   document.getElementById("pgCb").innerHTML=h;
 }
 function rsgtr(dId,pId,pts,nm){var d=fdent(dId);if(!d||d.pts<pts){toast("⚠️","Pontos insuficientes");return;}openM("Confirmar Resgate","<p style='color:var(--gr);margin-bottom:7px'>Resgatar <strong>"+esc(nm)+"</strong>?</p><p style='color:#f87171;font-size:.85rem'>Serao descontados <strong>"+fmtN(pts)+" pts</strong>.</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Confirmar",cls:"btng",fn:function(){dbResgatar(dId,pId,pts).then(function(ok){if(ok){rportal(dId);toast("🎁",nm+" resgatado!");}else{toast("⚠️","Erro ao resgatar");}});closeM();}}]);}
+
+function abrirExtratoCashback(dId){
+  var d = fdent(dId);
+  if(!d) return;
+
+  var ext = (AJUSTES_CB || []).filter(function(x){
+    return x.dentista_id === d.id;
+  });
+
+  var h = "";
+  h += "<div style='display:flex;flex-direction:column;gap:12px'>";
+  h += "<div style='background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px'>";
+  h += "<div style='font-size:1rem;font-weight:700'>" + esc(d.n) + "</div>";
+  h += "<div style='font-size:.82rem;color:var(--gr);margin-top:4px'>CRO " + esc(d.cro) + " • " + esc(d.esp) + "</div>";
+  h += "<div style='margin-top:10px;font-size:.9rem'>Saldo atual: <strong style='color:var(--g)'>" + fmtN(d.pts) + " pts</strong> ≈ <strong style='color:var(--tl)'>R$ " + (d.pts*0.05).toFixed(2) + "</strong></div>";
+  h += "</div>";
+
+  h += "<div style='max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:8px'>";
+
+  if(!ext.length){
+    h += "<div style='text-align:center;color:var(--gr);padding:20px;font-size:.85rem'>Nenhum ajuste registrado.</div>";
+  }else{
+    ext.forEach(function(e){
+      var credito = e.tipo === "credito";
+      var corBg = credito ? "rgba(74,184,72,.10)" : "rgba(224,82,82,.10)";
+      var corTx = credito ? "var(--g)" : "#f87171";
+      var sinal = credito ? "+" : "-";
+      var dt = "";
+      if(e.created_at){
+        var p = String(e.created_at).split("T")[0];
+        dt = iso2br(p);
+      }
+
+      h += "<div style='border:1px solid rgba(255,255,255,.08);background:"+corBg+";border-radius:10px;padding:12px'>";
+      h += "<div style='display:flex;justify-content:space-between;gap:10px;align-items:flex-start'>";
+      h += "<div style='flex:1'>";
+      h += "<div style='font-size:.88rem;font-weight:700'>" + (credito ? "Acréscimo manual" : "Desconto manual") + "</div>";
+      h += "<div style='font-size:.78rem;color:var(--gr);margin-top:4px'>" + esc(e.motivo || "Sem motivo informado") + "</div>";
+      h += "<div style='font-size:.73rem;color:var(--gr);margin-top:6px'>" + esc(dt) + " • " + esc(e.usuario_email || "") + "</div>";
+      h += "</div>";
+      h += "<div style='font-weight:700;color:"+corTx+";white-space:nowrap'>" + sinal + fmtN(e.pontos) + " pts</div>";
+      h += "</div>";
+      h += "</div>";
+    });
+  }
+
+  h += "</div>";
+  h += "</div>";
+
+  openM("Extrato de Cashback", h, [
+    { lbl:"Fechar", cls:"btno", fn:closeM }
+  ]);
+}
+
+async function validarSenhaUsuarioAtual(senha){
+  if(!CU || !CU.email || !senha) return false;
+
+  var cli = supabase.createClient(SUPA_URL, SUPA_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  });
+
+  var r = await cli.auth.signInWithPassword({
+    email: CU.email,
+    password: senha
+  });
+
+  if(r.error){
+    console.error("validarSenhaUsuarioAtual:", r.error);
+    return false;
+  }
+
+  await cli.auth.signOut();
+  return true;
+}
+
+async function aplicarAjusteCashback(dentId){
+  var tipo = document.getElementById("cbAjTipo").value;
+  var pontos = parseInt(document.getElementById("cbAjPts").value || 0);
+  var motivo = document.getElementById("cbAjMotivo").value.trim();
+  var senha = document.getElementById("cbAjSenha").value;
+
+  if(pontos <= 0){
+    toast("⚠️","Informe uma quantidade válida");
+    return;
+  }
+
+  if(!senha){
+    toast("⚠️","Digite sua senha");
+    return;
+  }
+
+  var okSenha = await validarSenhaUsuarioAtual(senha);
+  if(!okSenha){
+    toast("⚠️","Senha inválida");
+    return;
+  }
+
+  var d = fdent(dentId);
+  if(!d){
+    toast("⚠️","Dentista não encontrado");
+    return;
+  }
+
+  if(tipo === "debito" && (d.pts || 0) < pontos){
+    toast("⚠️","Saldo insuficiente para desconto");
+    return;
+  }
+
+  var novoSaldo = (d.pts || 0) + (tipo === "credito" ? pontos : -pontos);
+
+  var hist = await supa.from("cashback_ajustes").insert({
+    dentista_id: dentId,
+    tipo: tipo,
+    pontos: pontos,
+    motivo: motivo || null,
+    usuario_email: CU.email
+  });
+
+  if(hist.error){
+    console.error("cashback_ajustes:", hist.error);
+    toast("⚠️","Erro ao gravar histórico");
+    return;
+  }
+
+  var upd = await supa.from("dentistas")
+    .update({ pontos: novoSaldo })
+    .eq("id", dentId);
+
+  if(upd.error){
+    console.error("aplicarAjusteCashback:", upd.error);
+    toast("⚠️","Erro ao aplicar ajuste");
+    return;
+  }
+
+  d.pts = novoSaldo;
+
+  toast("✅", tipo === "credito" ? "Pontos adicionados" : "Pontos descontados");
+
+  document.getElementById("cbAjPts").value = "";
+  document.getElementById("cbAjMotivo").value = "";
+  document.getElementById("cbAjSenha").value = "";
+
+  rportal(dentId);
+}
+
+var AJUSTES_CB = [];
 
 // ══ DENTISTAS ══
 function rdent(){
