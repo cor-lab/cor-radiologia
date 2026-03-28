@@ -265,8 +265,19 @@ tr:last-child td{border-bottom:none}
 .cisb{font-size:.73rem;color:var(--gr);margin-top:2px}
 .cact{display:flex;gap:5px;align-items:center}
 /* Convenios */
-.ccrd{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:9px;
-  padding:14px;display:flex;align-items:center;gap:12px;transition:all .17s;cursor:pointer}
+.ccrd{
+  background:rgba(255,255,255,.03);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:9px;
+  padding:14px;
+  display:grid;
+  grid-template-columns:42px minmax(0,1fr) auto;
+  align-items:center;
+  gap:12px;
+  transition:all .17s;
+  cursor:pointer;
+  height:70px;
+}
 .ccrd:hover{border-color:rgba(74,184,72,.25)}
 .ccrd.sel{border-color:var(--g);background:rgba(74,184,72,.07)}
 .clog{width:40px;height:40px;border-radius:8px;background:rgba(255,255,255,.07);
@@ -274,7 +285,13 @@ tr:last-child td{border-bottom:none}
 .cnfo{flex:1}
 .cnm{font-size:.88rem;font-weight:600}
 .cds{font-size:.74rem;color:var(--gr);margin-top:2px}
-.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+.cgrid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-bottom:20px;
+  align-items:stretch;
+}
 .cfgs{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .wapv{background:#0f1e0f;border:1px solid rgba(74,184,72,.2);border-radius:10px;
   padding:14px;font-family:"DM Mono",monospace;font-size:.8rem;line-height:1.6;color:#a8d8a8;margin-top:10px}
@@ -301,7 +318,7 @@ tr:last-child td{border-bottom:none}
 .ag-vb button{background:rgba(255,255,255,.04);border:none;color:var(--gr);cursor:pointer;padding:6px 18px;font-size:.82rem;font-weight:700;transition:all .15s;border-right:1px solid rgba(255,255,255,.08);font-family:"DM Sans",sans-serif}
 .ag-vb button:last-child{border-right:none}
 .ag-vb button.active{background:rgba(74,184,72,.18);color:var(--g)}
-.ag-wrap2{display:grid;grid-template-columns:1fr 290px;height:calc(100vh - 130px);overflow:hidden}
+.ag-wrap2{display:grid;grid-template-columns:1fr 520px;height:calc(100vh - 130px);overflow:hidden}
 .ag-main2{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid rgba(255,255,255,.07)}
 .ag-gw{flex:1;overflow-y:auto;overflow-x:auto}
 .ag-gw::-webkit-scrollbar{width:5px;height:5px}
@@ -325,13 +342,54 @@ tr:last-child td{border-bottom:none}
 .eck{position:absolute;right:5px;top:4px;font-size:.7rem}
 .ag-nl{position:absolute;left:0;right:0;height:2px;background:var(--rd);z-index:4;pointer-events:none}
 .ag-nl::before{content:"";position:absolute;left:-1px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--rd)}
-.ec0{background:rgba(251,146,60,.85);color:#fff}
-.ec1{background:rgba(74,184,72,.88);color:#fff}
-.ec2{background:rgba(214,179,0,.9);color:#1a1a1a}
-.ec3{background:rgba(90,90,100,.65);color:#eee}
+.ec0{background:rgba(160,120,95,.82);color:#fff}
+.ec1{background:rgba(87,132,108,.84);color:#fff}
+.ec2{background:rgba(154,142,96,.84);color:#fff}
+.ec3{background:rgba(96,104,118,.78);color:#fff}
 .ag-sd{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;background:rgba(18,36,78,.4)}
 .ag-st2{font-family:"Playfair Display",serif;font-size:.95rem;color:var(--g);margin-bottom:2px}
 .ag-si{background:rgba(74,184,72,.08);border:1px solid rgba(74,184,72,.2);border-radius:8px;padding:9px 12px;font-size:.79rem;color:var(--g);display:none}
+
+
+.exck-wrap{display:flex;flex-direction:column;gap:5px}
+.exck-search input{
+  width:100%;
+  padding:8px 10px;
+  border-radius:7px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.05);
+  color:var(--wh);
+  font-family:"DM Sans",sans-serif;
+  font-size:.80rem;
+}
+.exck-row{
+  display:grid;
+  grid-template-columns:22px minmax(0,1.8fr) 110px 85px;
+  gap:8px;
+  align-items:center;
+  padding:8px 10px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:8px;
+  background:rgba(255,255,255,.03);
+}
+.exck-name{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  font-size:.82rem;
+  font-weight:600;
+  min-width:0;
+}
+.exck-conv select{
+  width:100%;
+  padding:7px 8px;
+  border-radius:7px;
+  border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.05);
+  color:var(--wh);
+  font-family:"DM Sans",sans-serif;
+  font-size:.72rem;
+}
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -355,31 +413,230 @@ function calcCb(valor, nivel){
   return Math.round(b*bns);
 }
 
-function exChecklistHtml(idBase, selectedIds, onChangeFn){
-  selectedIds = selectedIds || [];
+function exChecklistHtml(idBase, selected, onChangeFn){
+  selected = selected || [];
+
+  var mapSel = {};
+  selected.forEach(function(s){
+    if(!s) return;
+    mapSel[s.exame_id] = {
+      convenio_id: s.convenio_id || "",
+      preco: Number(s.preco || 0)
+    };
+  });
 
   var h = "";
-  h += "<div id='" + idBase + "' style='display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto'>";
+  h += "<div class='exck-wrap'>";
 
-  (exT||[]).forEach(function(ex){
-    var checked = selectedIds.indexOf(ex.id)>=0 ? "checked" : "";
+  // 🔍 busca
+  h += "<div class='exck-search'>";
+  h += "<input type='text' placeholder='Buscar exame...' oninput=\"filtrarExames(this,'" + idBase + "')\">";
+  h += "</div>";
 
-    h += "<label style='display:flex;gap:8px;align-items:center'>";
-    h += "<input type='checkbox' value='"+ex.id+"' "+checked+" onchange=\""+onChangeFn+"()\">";
-    h += "<span>"+esc(ex.n)+"</span>";
-    h += "</label>";
+  h += "<div id='" + idBase + "' class='exck-list'>";
+
+  (exT || []).forEach(function(ex){
+    var sel = mapSel[ex.id] || null;
+    var checked = sel ? "checked" : "";
+    var preco = sel ? sel.preco : Number(ex.p || 0);
+
+    h += "<div class='exck-row' data-exame='" + ex.id + "' data-nome='" + String(ex.n || "").toLowerCase().replace(/'/g, "&apos;") + "'>";
+
+    // checkbox
+    h += "<input type='checkbox' value='" + ex.id + "' " + checked + " onchange=\"toggleExame('" + idBase + "','" + ex.id + "','" + onChangeFn + "')\">";
+
+    // nome
+    h += "<div class='exck-name'>" + esc(ex.n) + "</div>";
+
+    // convênio
+    h += "<div class='exck-conv'>";
+    h += "<select " + (sel ? "" : "disabled") + " onchange=\"updConv('" + idBase + "','" + ex.id + "',this.value,'" + onChangeFn + "')\">";
+    h += "<option value=''>Particular</option>";
+
+    (convs || []).forEach(function(c){
+      var s = sel && sel.convenio_id == c.id ? "selected" : "";
+      h += "<option value='" + c.id + "' " + s + ">" + esc(c.n) + "</option>";
+    });
+
+    h += "</select>";
+    h += "</div>";
+
+    // preço
+    h += "<div class='exck-price'>";
+    h += "<input type='number' step='0.01' value='" + Number(preco).toFixed(2) + "' " + (sel ? "" : "disabled") + " onchange=\"updPreco('" + idBase + "','" + ex.id + "',this.value,'" + onChangeFn + "')\">";
+    h += "</div>";
+
+    h += "</div>";
   });
 
   h += "</div>";
+  h += "</div>";
+
   return h;
 }
+function toggleExame(idBase, exId, onChangeFn){
+  var root = document.getElementById(idBase);
+  if(!root) return;
 
-function getCheckedExIds(baseId){
-  var root = document.getElementById(baseId);
+  var row = root.querySelector("[data-exame='" + exId + "']");
+  if(!row) return;
+
+  var ck = row.querySelector("input[type='checkbox']");
+  var sl = row.querySelector("select");
+  var ip = row.querySelector("input[type='number']");
+  var marcado = !!(ck && ck.checked);
+
+  if(sl) sl.disabled = !marcado;
+  if(ip) ip.disabled = !marcado;
+
+  if(marcado){
+    if(sl && !sl.value) sl.value = "";
+    if(ip){
+      var ex = fex(exId);
+      if(!ip.value || Number(ip.value) <= 0){
+        ip.value = Number(ex ? ex.p || 0 : 0).toFixed(2);
+      }
+    }
+  }else{
+    if(sl) sl.value = "";
+    if(ip){
+      var ex2 = fex(exId);
+      ip.value = Number(ex2 ? ex2.p || 0 : 0).toFixed(2);
+    }
+  }
+
+  if(typeof window[onChangeFn] === "function"){
+    window[onChangeFn]();
+  }
+}
+function getExamesSelecionados(idBase){
+  var root = document.getElementById(idBase);
   if(!root) return [];
 
-  return Array.from(root.querySelectorAll("input[type='checkbox']:checked"))
-    .map(function(x){ return x.value; });
+  var itens = [];
+
+  root.querySelectorAll("[data-exame]").forEach(function(row){
+    var exId = row.getAttribute("data-exame");
+    var ck = row.querySelector("input[type='checkbox']");
+    if(!ck || !ck.checked) return;
+
+    var sl = row.querySelector("select");
+    var ip = row.querySelector("input[type='number']");
+
+    itens.push({
+      exame_id: exId,
+      convenio_id: sl ? (sl.value || "") : "",
+      preco: ip ? Number(ip.value || 0) : 0
+    });
+  });
+
+  return itens;
+}
+
+function updConv(idBase, exId, convId, onChangeFn){
+  var root = document.getElementById(idBase);
+  var row = root.querySelector("[data-exame='" + exId + "']");
+  if(!row) return;
+
+  var precoInput = row.querySelector("input[type='number']");
+  if(precoInput){
+    precoInput.value = Number(epreco(exId, convId || "")).toFixed(2);
+  }
+
+  if(typeof window[onChangeFn] === "function"){
+    window[onChangeFn]();
+  }
+}
+
+function updPreco(idBase, exId, valor, onChangeFn){
+  if(typeof window[onChangeFn] === "function"){
+    window[onChangeFn]();
+  }
+}
+
+function getExamesSelecionados(idBase){
+  var root = document.getElementById(idBase);
+  if(!root) return [];
+
+  var itens = [];
+
+  root.querySelectorAll("[data-exame]").forEach(function(row){
+    var exId = row.getAttribute("data-exame");
+    var ck = row.querySelector("input[type='checkbox']");
+    if(!ck || !ck.checked) return;
+
+    var sl = row.querySelector("select");
+    var ip = row.querySelector("input[type='number']");
+
+    itens.push({
+      exame_id: exId,
+      convenio_id: sl ? (sl.value || "") : "",
+      preco: ip ? Number(ip.value || 0) : 0
+    });
+  });
+
+  return itens;
+}
+
+function filtrarExames(inp, idBase){
+  var termo = String((inp && inp.value) || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+  var root = document.getElementById(idBase);
+  if(!root) return;
+
+  var rows = Array.from(root.querySelectorAll("[data-exame]"));
+
+  rows.forEach(function(row){
+    var nome = String(row.getAttribute("data-nome") || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    var match = !termo || nome.indexOf(termo) >= 0;
+    row.style.display = match ? "grid" : "none";
+
+    var score = 9999;
+    if(match){
+      if(nome.indexOf(termo) === 0) score = 0;       // começa com o termo
+      else score = nome.indexOf(termo);              // aparece depois
+    }
+    row.dataset.score = String(score);
+  });
+
+  rows
+    .filter(function(row){ return row.style.display !== "none"; })
+    .sort(function(a, b){
+      return Number(a.dataset.score || 9999) - Number(b.dataset.score || 9999);
+    })
+    .forEach(function(row){
+      root.appendChild(row);
+    });
+}
+function updConv(idBase, exId, convId, onChangeFn){
+  var root = document.getElementById(idBase);
+  if(!root) return;
+
+  var row = root.querySelector("[data-exame='" + exId + "']");
+  if(!row) return;
+
+  var precoInput = row.querySelector("input[type='number']");
+  if(precoInput){
+    precoInput.value = Number(epreco(exId, convId || "") || 0).toFixed(2);
+  }
+
+  if(typeof window[onChangeFn] === "function"){
+    window[onChangeFn]();
+  }
+}
+
+function updPreco(idBase, exId, valor, onChangeFn){
+  if(typeof window[onChangeFn] === "function"){
+    window[onChangeFn]();
+  }
 }
 // ── AUTH ──
 async function doLoginSupa(){
@@ -440,47 +697,163 @@ function sendWA(){ if(lastAg) sWAi(lastAg.id); }
 // ── LOAD ALL DATA ──
 async function loadAllData(){
   try{
-    var r=await Promise.all([
+    var r = await Promise.all([
       supa.from("exames_tipos").select("*").eq("ativo",true).order("nome"),
       supa.from("convenios").select("*").eq("ativo",true).order("nome"),
       supa.from("convenio_precos").select("*"),
       supa.from("dentistas").select("*").eq("ativo",true).order("pontos",{ascending:false}),
       supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(500),
+      supa.from("agendamento_exames").select("*").order("ordem",{ascending:true}),
       supa.from("premios").select("*").eq("ativo",true).order("pontos_necessarios"),
       supa.from("usuarios").select("*").eq("ativo",true).order("nome")
     ]);
-    var exR=r[0],cvR=r[1],cpR=r[2],dR=r[3],agR=r[4],prR=r[5],usR=r[6];
-    if(exR.data&&exR.data.length){
-      exT=exR.data.map(function(e){return{id:e.id,n:e.nome,ico:e.icone||"🩻",p:parseFloat(e.preco_particular||0),pts:e.pontos_cashback||0};});
+
+    var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7];
+
+    if(exR.data && exR.data.length){
+      exT = exR.data.map(function(e){
+        return {
+          id: e.id,
+          n: e.nome,
+          ico: e.icone || "🩻",
+          p: parseFloat(e.preco_particular || 0),
+          pts: e.pontos_cashback || 0
+        };
+      });
     }
+
     if(cvR.data){
-      var pm={};
-      (cpR.data||[]).forEach(function(cp){if(!pm[cp.convenio_id])pm[cp.convenio_id]={};pm[cp.convenio_id][cp.exame_id]=parseFloat(cp.preco);});
-      convs=cvR.data.map(function(c){var nm2={};(cpR.data||[]).forEach(function(cp){if(cp.convenio_id===c.id&&cp.nome_convenio)nm2[cp.exame_id]=cp.nome_convenio;});return{id:c.id,n:c.nome,ico:c.icone||"💊",ds:c.descricao||"",cl:c.cor||"#4ab848",pr:pm[c.id]||{},nomes:nm2};});
+      var pm = {};
+      (cpR.data || []).forEach(function(cp){
+        if(!pm[cp.convenio_id]) pm[cp.convenio_id] = {};
+        pm[cp.convenio_id][cp.exame_id] = parseFloat(cp.preco || 0);
+      });
+
+      convs = cvR.data.map(function(c){
+        var nm2 = {};
+        (cpR.data || []).forEach(function(cp){
+          if(cp.convenio_id === c.id && cp.nome_convenio) nm2[cp.exame_id] = cp.nome_convenio;
+        });
+
+        return {
+          id: c.id,
+          n: c.nome,
+          ico: c.icone || "💊",
+          ds: c.descricao || "",
+          cl: c.cor || "#4ab848",
+          pr: pm[c.id] || {},
+          nomes: nm2
+        };
+      });
     }
-    if(dR.data&&dR.data.length){
-      dents=dR.data.map(function(d){return{id:d.id,n:d.nome,cro:d.cro||"",esp:d.especialidade||"",
-        tel:d.telefone||"",nv:d.nivel||"Bronze",pts:d.pontos||0,ind:d.indicacoes||0,
-        ini:d.ini||d.nome.substring(0,2).toUpperCase(),
-        bg:d.bg||"linear-gradient(135deg,#4ab848,#7dcf6e)",cor:d.cor||"#fff"};});
+
+    if(dR.data && dR.data.length){
+      dents = dR.data.map(function(d){
+        return {
+          id: d.id,
+          n: d.nome,
+          cro: d.cro || "",
+          esp: d.especialidade || "",
+          tel: d.telefone || "",
+          nv: d.nivel || "Bronze",
+          pts: d.pontos || 0,
+          ind: d.indicacoes || 0,
+          ini: d.ini || d.nome.substring(0,2).toUpperCase(),
+          bg: d.bg || "linear-gradient(135deg,#4ab848,#7dcf6e)",
+          cor: d.cor || "#fff"
+        };
+      });
     }
-    if(agR.data&&agR.data.length){
-      ags=agR.data.map(function(a){return{id:a.id,pac:a.paciente_nome,tel:a.paciente_tel||"",
-        ex:a.exame_id,dt:iso2br(a.data_exame),hr:(a.hora_exame||"08:00").substring(0,5),
-        dur:a.duracao||30,dId:a.dentista_id,cv:a.convenio_id||"",
-        vl:parseFloat(a.valor||0),cb:a.cashback_pts||0,st:a.status||"agendado"};});
+
+    var mapAgEx = {};
+    (agexR.data || []).forEach(function(x){
+      if(!mapAgEx[x.agendamento_id]) mapAgEx[x.agendamento_id] = [];
+      mapAgEx[x.agendamento_id].push({
+        exame_id: x.exame_id,
+        convenio_id: x.convenio_id || "",
+        preco: parseFloat(x.preco || 0),
+        nome_exame: x.nome_exame || "",
+        ordem: x.ordem || 0
+      });
+    });
+
+    if(agR.data && agR.data.length){
+      ags = agR.data.map(function(a){
+        var itens = mapAgEx[a.id] || [];
+
+        if(!itens.length && a.exame_id){
+          itens = [{
+            exame_id: a.exame_id,
+            convenio_id: a.convenio_id || "",
+            preco: parseFloat(a.valor || 0),
+            nome_exame: "",
+            ordem: 1
+          }];
+        }
+
+        itens.sort(function(x, y){
+          return (x.ordem || 0) - (y.ordem || 0);
+        });
+
+        return {
+          id: a.id,
+          pac: a.paciente_nome,
+          tel: a.paciente_tel || "",
+          ex: a.exame_id,
+          exames: itens,
+          dt: iso2br(a.data_exame),
+          hr: (a.hora_exame || "08:00").substring(0,5),
+          dur: a.duracao || 30,
+          dId: a.dentista_id,
+          cv: a.convenio_id || "",
+          vl: parseFloat(a.valor || 0),
+          cb: a.cashback_pts || 0,
+          st: a.status || "agendado"
+        };
+      });
     }
-    if(prR.data&&prR.data.length){
-      prems=prR.data.map(function(p){return{id:p.id,n:p.nome,ds:p.descricao||"",ico:p.icone||"🎁",pts:p.pontos_necessarios};});
+
+    if(prR.data && prR.data.length){
+      prems = prR.data.map(function(p){
+        return {
+          id: p.id,
+          n: p.nome,
+          ds: p.descricao || "",
+          ico: p.icone || "🎁",
+          pts: p.pontos_necessarios
+        };
+      });
     }
-    if(usR.data&&usR.data.length){
-      USERS=usR.data.map(function(u){return{id:u.id,nome:u.nome,email:u.email,senha:"****",
-        role:u.role||"agenda",ini:u.ini||"XX",
-        bg:u.bg||"linear-gradient(135deg,#4ab848,#7dcf6e)",cor:u.cor||"#fff",
-        ativo:u.ativo!==false,dentId:u.dent_id};});
+
+    if(usR.data && usR.data.length){
+      USERS = usR.data.map(function(u){
+        return {
+          id: u.id,
+          nome: u.nome,
+          email: u.email,
+          senha: "****",
+          role: u.role || "agenda",
+          ini: u.ini || "XX",
+          bg: u.bg || "linear-gradient(135deg,#4ab848,#7dcf6e)",
+          cor: u.cor || "#fff",
+          ativo: u.ativo !== false,
+          dentId: u.dent_id
+        };
+      });
     }
-    console.log("Loaded: ex="+exT.length+" cv="+convs.length+" dt="+dents.length+" ag="+ags.length+" pr="+prems.length+" us="+USERS.length);
-  }catch(e){console.error("loadAllData:",e);}
+
+    console.log(
+      "Loaded: ex=" + exT.length +
+      " cv=" + convs.length +
+      " dt=" + dents.length +
+      " ag=" + ags.length +
+      " agex=" + (agexR.data || []).length +
+      " pr=" + prems.length +
+      " us=" + USERS.length
+    );
+  }catch(e){
+    console.error("loadAllData:", e);
+  }
 }
 
 // ── EXAMES ──
@@ -539,12 +912,12 @@ async function dbSaveAg(ag){
   var d = {
     paciente_nome: ag.pac,
     paciente_tel: ag.tel,
-    exame_id: ag.ex,
+    exame_id: (ag.exames && ag.exames[0]) ? ag.exames[0].exame_id : ag.ex,
     data_exame: br2iso(ag.dt),
     hora_exame: ag.hr,
     duracao: ag.dur,
     dentista_id: ag.dId,
-    convenio_id: ag.cv || null,
+    convenio_id: (ag.exames && ag.exames[0]) ? (ag.exames[0].convenio_id || null) : (ag.cv || null),
     valor: ag.vl,
     cashback_pts: ag.cb,
     status: ag.st
@@ -574,14 +947,14 @@ async function dbSaveAg(ag){
 
     // insere os exames atuais
     if (ag.exames.length) {
-      var rows = ag.exames.map(function(exId, idx){
-        var ex = fex(exId);
+      var rows = ag.exames.map(function(it, idx){
+        var ex = fex(it.exame_id);
         return {
           agendamento_id: ag.id,
-          exame_id: exId,
-          convenio_id: ag.cv || null,
-          preco: epreco(exId, ag.cv || ""),
-          nome_exame: ex ? ex.n : exId,
+          exame_id: it.exame_id,
+          convenio_id: it.convenio_id || null,
+          preco: Number(it.preco || 0),
+          nome_exame: ex ? ex.n : it.exame_id,
           ordem: idx + 1
         };
       });
@@ -1057,12 +1430,6 @@ function ragendar() {
   });
   h += "</select></div>";
 
-  h += "<div class=\"field\"><label>Convenio</label><select id=\"pConv\" onchange=\"updAgSum()\">";
-  h += "<option value=\"\">Particular</option>";
-  convs.forEach(function(c){
-    h += "<option value=\"" + c.id + "\">" + esc(c.n) + "</option>";
-  });
-  h += "</select></div>";
 
   h += "<div class=\"field\"><label>Observacoes</label><textarea id=\"pObs\" style=\"min-height:52px\"></textarea></div>";
   h += "<button class=\"btn btng\" style=\"width:100%;justify-content:center;padding:11px\" onclick=\"confAg()\">Confirmar Agendamento</button>";
@@ -1263,16 +1630,15 @@ async function confAg() {
   var tl = document.getElementById("pTel").value.trim().replace(/\D/g,"");
   var dtR = document.getElementById("pData").value;
   var hr = document.getElementById("pHora").value;
-  var exIds = getCheckedExIds("pExames");
+  var itens = getExamesSelecionados("pExames");
 
-  if(!exIds.length){
+  if(!itens.length){
     toast("⚠️","Selecione ao menos um exame");
     return;
   }
 
   var dur = parseInt(document.getElementById("pDur").value) || 30;
   var dId = parseInt(document.getElementById("dSel").value) || 0;
-  var cId = document.getElementById("pConv").value || "";
 
   if(!nm){ toast("!","Informe o nome do paciente"); return; }
   if(!dtR){ toast("!","Selecione uma data"); return; }
@@ -1285,8 +1651,8 @@ async function confAg() {
   var d4 = fdent(dId);
 
   var pr = 0;
-  exIds.forEach(function(id){
-    pr += epreco(id, cId);
+  itens.forEach(function(it){
+    pr += Number(it.preco || 0);
   });
 
   var pts4 = d4 ? calcCb(pr, d4.nv) : 0;
@@ -1294,13 +1660,13 @@ async function confAg() {
   var ag = {
     pac: nm,
     tel: tl,
-    ex: exIds[0],
-    exames: exIds,
+    ex: itens[0].exame_id,
+    exames: itens,
     dt: df4,
     hr: hr,
     dur: dur,
     dId: dId,
-    cv: cId,
+    cv: itens[0].convenio_id || "",
     vl: pr,
     cb: pts4,
     st: "agendado",
@@ -1324,9 +1690,10 @@ async function confAg() {
 
   agBase = new Date(parseInt(pts3[0]), parseInt(pts3[1]) - 1, parseInt(pts3[2]));
 
-  var nomesExames = exIds.map(function(id){
-    var ex = fex(id);
-    return ex ? ex.n : id;
+  var nomesExames = itens.map(function(it){
+    var ex = fex(it.exame_id);
+    var cv = fconv(it.convenio_id || "");
+    return ex ? (ex.n + (cv ? " (" + cv.n + ")" : "")) : it.exame_id;
   }).join(", ");
 
   var wm = waFmt(waT.ag, {
@@ -1351,12 +1718,10 @@ async function confAg() {
 
   document.getElementById("pExWrap").innerHTML =
     exChecklistHtml("pExames", [], "updAgSum");
-  document.getElementById("pConv").value = "";
   document.getElementById("agSumDiv").innerHTML = "";
 
   rndAg();
 }
-
 function rexames() {
   if(!canAcc("exames")){deny(document.getElementById("pgEx"));return;}
   var h="<div class='sr'><div class='sw'><span class='swi'>🔍</span><input type='text' placeholder='Buscar...' oninput='filtEx(this.value)'></div><button class='btn btng' onclick='navTo(\"agendar\")'>+ Agendar</button></div><div class='ftabs'>";
@@ -1373,23 +1738,28 @@ function bldExRows() {
   }
 
   if (exSrch) {
+    var termo = exSrch.toLowerCase();
+
     data = data.filter(function(a){
       var d = fdent(a.dId) || { n:"" };
 
       var nomesExames = "";
       if (Array.isArray(a.exames) && a.exames.length) {
-        nomesExames = a.exames.map(function(id){
-          var ex = fex(id);
-          return ex ? ex.n : "";
+        nomesExames = a.exames.map(function(it){
+          var ex = fex(it.exame_id || it);
+          var cv = fconv((it && it.convenio_id) ? it.convenio_id : "");
+          var nm = ex ? ex.n : (it.exame_id || it || "");
+          var cvn = cv ? cv.n : "Particular";
+          return (nm + " " + cvn);
         }).join(" ").toLowerCase();
       } else {
         var e = fex(a.ex);
         nomesExames = e ? e.n.toLowerCase() : "";
       }
 
-      return a.pac.toLowerCase().indexOf(exSrch) >= 0 ||
-             d.n.toLowerCase().indexOf(exSrch) >= 0 ||
-             nomesExames.indexOf(exSrch) >= 0;
+      return a.pac.toLowerCase().indexOf(termo) >= 0 ||
+             d.n.toLowerCase().indexOf(termo) >= 0 ||
+             nomesExames.indexOf(termo) >= 0;
     });
   }
 
@@ -1399,21 +1769,32 @@ function bldExRows() {
   var h = "";
 
   if (!data.length) {
-    h = "<tr><td colspan='9' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum exame.</td></tr>";
+    h = "<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum exame.</td></tr>";
   } else {
     data.forEach(function(a){
       var d = fdent(a.dId) || { n:"—" };
-      var cv = fconv(a.cv);
 
       var examesHtml = "";
       if (Array.isArray(a.exames) && a.exames.length) {
-        examesHtml = a.exames.map(function(id){
-          var ex = fex(id);
-          return ex ? ex.n : id;
-        }).join("<br>");
+        examesHtml = a.exames.map(function(it){
+          var exId = it.exame_id || it;
+          var cvId = it.convenio_id || "";
+          var ex = fex(exId);
+          var cv = fconv(cvId);
+
+          return "<div style='line-height:1.35;margin-bottom:2px'>" +
+                   "<div>" + esc(ex ? ex.n : exId) + "</div>" +
+                   "<div style='font-size:.72rem;color:var(--gr)'>" + esc(cv ? cv.n : "Particular") + "</div>" +
+                 "</div>";
+        }).join("");
       } else {
         var ex = fex(a.ex);
-        examesHtml = ex ? ex.n : "—";
+        var cv = fconv(a.cv);
+        examesHtml =
+          "<div style='line-height:1.35'>" +
+            "<div>" + esc(ex ? ex.n : "—") + "</div>" +
+            "<div style='font-size:.72rem;color:var(--gr)'>" + esc(cv ? cv.n : "Particular") + "</div>" +
+          "</div>";
       }
 
       h += "<tr>";
@@ -1421,7 +1802,6 @@ function bldExRows() {
       h += "<td>" + examesHtml + "</td>";
       h += "<td style='font-family:DM Mono,monospace;font-size:.78rem'>" + esc(a.dt) + " " + esc(a.hr) + "</td>";
       h += "<td style='color:var(--gr)'>" + esc(d.n) + "</td>";
-      h += "<td>" + (cv ? "<span class='badge bgr'>" + esc(cv.n) + "</span>" : "<span style='color:var(--gr);font-size:.79rem'>Particular</span>") + "</td>";
       h += "<td><strong>R$ " + Number(a.vl || 0).toFixed(2).replace('.', ',') + "</strong></td>";
       h += "<td style='color:var(--g);font-family:DM Mono,monospace;font-weight:700'>+" + a.cb + " pts</td>";
       h += "<td><span class='badge " + (sc[a.st] || "bgr") + "'>" + (sl[a.st] || a.st) + "</span></td>";
@@ -1452,13 +1832,21 @@ function sWAi(id){
 
   var nomesExames = "";
   if (Array.isArray(a.exames) && a.exames.length) {
-    nomesExames = a.exames.map(function(id){
-      var ex = fex(id);
-      return ex ? ex.n : id;
+    nomesExames = a.exames.map(function(it){
+      var exId = it.exame_id || it;
+      var cvId = it.convenio_id || "";
+      var ex = fex(exId);
+      var cv = fconv(cvId);
+
+      var nomeEx = ex ? ex.n : exId;
+      var nomeCv = cv ? cv.n : "Particular";
+
+      return nomeEx + " (" + nomeCv + ")";
     }).join(", ");
   } else {
     var ex = fex(a.ex);
-    nomesExames = ex ? ex.n : "Exame";
+    var cv = fconv(a.cv || "");
+    nomesExames = (ex ? ex.n : "Exame") + " (" + (cv ? cv.n : "Particular") + ")";
   }
 
   var msg = waFmt(waT.ag, {
@@ -1509,14 +1897,13 @@ function rconv() {
       h+="<div style='color:var(--gr);padding:16px;font-size:.85rem;text-align:center'>Nenhum exame cadastrado neste convênio.<br>Clique em <strong>+ Adicionar Exame</strong>.</div>";
     } else {
       h+="<div class='tw'><table><thead><tr>";
-      h+="<th>Exame</th><th>Nome no Convênio</th><th>Preço Particular</th><th>Preço Convênio</th><th>Ações</th>";
+      h+="<th>Exame</th><th>Preço Particular</th><th>Preço Convênio</th><th>Ações</th>";
       h+="</tr></thead><tbody>";
       exIds.forEach(function(exId){
         var ex=fex(exId);
         var pr=sc.pr[exId]||0;
         var nomeCv=sc.nomes&&sc.nomes[exId]?sc.nomes[exId]:ex.n;
         h+="<tr><td>"+ex.ico+" "+esc(ex.n)+"</td>";
-        h+="<td><span style='color:var(--g);font-weight:500'>"+esc(nomeCv)+"</span></td>";
         h+="<td style='color:var(--gr)'>R$ "+ex.p+"</td>";
         h+="<td><strong style='color:var(--g)'>R$ "+pr+"</strong></td>";
         h+="<td><div style='display:flex;gap:5px'>";
@@ -1865,28 +2252,33 @@ function delPr(id){var p=prems.find(function(x){return x.id===id;});openM("Remov
 function saveCbPct(){var v=parseInt(document.getElementById("cbPct").value)||5;CASHBACK_PCT=v;toast("💾","Cashback "+v+"% salvo!");}
 
 function updAgSum(){
-  var exIds = getCheckedExIds("pExames");
-  var cId = document.getElementById("pConv") ? document.getElementById("pConv").value : "";
+  var itens = getExamesSelecionados("pExames");
   var dId = parseInt(document.getElementById("dSel") ? document.getElementById("dSel").value : 0) || 0;
 
-  var total = 0;
-  var nomes = [];
-
-  exIds.forEach(function(id){
-    total += epreco(id, cId);
-    var ex = fex(id);
-    if (ex) nomes.push(ex.n);
-  });
-
-  if (!exIds.length) {
+  if (!itens.length) {
     var el0 = document.getElementById("agSumDiv");
     if (el0) el0.innerHTML = "";
     return;
   }
 
+  var total = 0;
+
+  var linhas = itens.map(function(it){
+    var ex = fex(it.exame_id);
+    var cv = fconv(it.convenio_id || "");
+    var pr = Number(it.preco || 0);
+
+    total += pr;
+
+    return {
+      exame: ex ? ex.n : it.exame_id,
+      convenio: cv ? cv.n : "Particular",
+      preco: pr
+    };
+  });
+
   var d = fdent(dId);
-  var pts = d ? calcCb(total, d.nv) : Math.round(total * (CASHBACK_PCT/100));
-  var cv = fconv(cId);
+  var pts = d ? calcCb(total, d.nv) : Math.round(total * (CASHBACK_PCT / 100));
 
   var el = document.getElementById("agSumDiv");
   if (!el) {
@@ -1897,13 +2289,20 @@ function updAgSum(){
     if (btn) btn.parentNode.insertBefore(el, btn.nextSibling);
   }
 
-  el.innerHTML =
-    "<div style='display:flex;justify-content:space-between;margin-bottom:4px'><span style='color:var(--gr)'>Exames:</span><strong style='text-align:right;max-width:65%'>" + esc(nomes.join(", ")) + "</strong></div>" +
-    "<div style='display:flex;justify-content:space-between;margin-bottom:4px'><span style='color:var(--gr)'>Convênio:</span><strong>" + (cv ? esc(cv.n) : "Particular") + "</strong></div>" +
-    "<div style='display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,.08);padding-top:6px;margin-top:4px'><span style='color:var(--gr)'>Valor:</span><strong style='color:var(--g)'>R$ " + total.toFixed(2).replace(".", ",") + "</strong></div>" +
-    "<div style='display:flex;justify-content:space-between'><span style='color:var(--gr)'>Cashback:</span><strong style='color:var(--tl)'>+" + pts + " pts (" + CASHBACK_PCT + "%)</strong></div>";
-}
+  var html = "";
+  linhas.forEach(function(l){
+    html += "<div style='display:flex;justify-content:space-between;margin-bottom:4px;gap:10px'>" +
+      "<span style='color:var(--gr);flex:1;min-width:0'>" + esc(l.exame) + " <span style='opacity:.8'>(" + esc(l.convenio) + ")</span></span>" +
+      "<strong style='white-space:nowrap'>R$ " + l.preco.toFixed(2).replace('.', ',') + "</strong>" +
+    "</div>";
+  });
 
+  html +=
+    "<div style='display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,.08);padding-top:6px;margin-top:6px'><span style='color:var(--gr)'>Valor total:</span><strong style='color:var(--g)'>R$ " + total.toFixed(2).replace(".", ",") + "</strong></div>" +
+    "<div style='display:flex;justify-content:space-between'><span style='color:var(--gr)'>Cashback:</span><strong style='color:var(--tl)'>+" + pts + " pts (" + CASHBACK_PCT + "%)</strong></div>";
+
+  el.innerHTML = html;
+}
 function remU(email) {
   var u = USERS.find(function(x){ return x.email === email; });
   if (!u) return;
