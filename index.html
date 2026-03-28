@@ -1366,20 +1366,111 @@ function rexames() {
   document.getElementById("pgEx").innerHTML=h; bldExRows();
 }
 function bldExRows() {
-  var data=ags;
-  if(exFlt!=="todos") data=data.filter(function(a){return a.st===exFlt;});
-  if(exSrch) data=data.filter(function(a){var d=fdent(a.dId)||{n:""};var e=fex(a.ex);return a.pac.toLowerCase().indexOf(exSrch)>=0||d.n.toLowerCase().indexOf(exSrch)>=0||e.n.toLowerCase().indexOf(exSrch)>=0;});
-  var sc={agendado:"bt",realizado:"bg",cancelado:"br",aguardando:"bo"};
-  var sl={agendado:"Agendado",realizado:"Realizado",cancelado:"Cancelado",aguardando:"Aguardando"};
-  var h="";
-  if(!data.length){h="<tr><td colspan='9' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum exame.</td></tr>";}
-  else{data.forEach(function(a){var ex=fex(a.ex);var d=fdent(a.dId)||{n:"—"};var cv=fconv(a.cv);h+="<tr><td><strong>"+esc(a.pac)+"</strong><div style='font-size:.7rem;color:var(--gr)'>"+esc(a.tel||"—")+"</div></td><td>"+esc(ex.n)+"</td><td style='font-family:DM Mono,monospace;font-size:.78rem'>"+esc(a.dt)+" "+esc(a.hr)+"</td><td style='color:var(--gr)'>"+esc(d.n)+"</td><td>"+(cv?"<span class='badge bgr'>"+esc(cv.n)+"</span>":"<span style='color:var(--gr);font-size:.79rem'>Particular</span>")+"</td><td><strong>R$ "+a.vl+"</strong></td><td style='color:var(--g);font-family:DM Mono,monospace;font-weight:700'>+"+a.cb+" pts</td><td><span class='badge "+(sc[a.st]||"bgr")+"'>"+(sl[a.st]||a.st)+"</span></td><td><div style='display:flex;gap:4px'>"+(a.st==="agendado"?"<button class='btn btnt bsm bico' onclick='chSt("+a.id+",\"realizado\")' title='Realizado'>✓</button><button class='btn btnr bsm bico' onclick='chSt("+a.id+",\"cancelado\")'>✕</button>":"")+"<button class='btn btno bsm bico' onclick='sWAi("+a.id+")'>📲</button></div></td></tr>";});}
-  var tb=document.getElementById("exTb"); if(tb) tb.innerHTML=h;
+  var data = ags;
+
+  if (exFlt !== "todos") {
+    data = data.filter(function(a){ return a.st === exFlt; });
+  }
+
+  if (exSrch) {
+    data = data.filter(function(a){
+      var d = fdent(a.dId) || { n:"" };
+
+      var nomesExames = "";
+      if (Array.isArray(a.exames) && a.exames.length) {
+        nomesExames = a.exames.map(function(id){
+          var ex = fex(id);
+          return ex ? ex.n : "";
+        }).join(" ").toLowerCase();
+      } else {
+        var e = fex(a.ex);
+        nomesExames = e ? e.n.toLowerCase() : "";
+      }
+
+      return a.pac.toLowerCase().indexOf(exSrch) >= 0 ||
+             d.n.toLowerCase().indexOf(exSrch) >= 0 ||
+             nomesExames.indexOf(exSrch) >= 0;
+    });
+  }
+
+  var sc = { agendado:"bt", realizado:"bg", cancelado:"br", aguardando:"bo" };
+  var sl = { agendado:"Agendado", realizado:"Realizado", cancelado:"Cancelado", aguardando:"Aguardando" };
+
+  var h = "";
+
+  if (!data.length) {
+    h = "<tr><td colspan='9' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum exame.</td></tr>";
+  } else {
+    data.forEach(function(a){
+      var d = fdent(a.dId) || { n:"—" };
+      var cv = fconv(a.cv);
+
+      var examesHtml = "";
+      if (Array.isArray(a.exames) && a.exames.length) {
+        examesHtml = a.exames.map(function(id){
+          var ex = fex(id);
+          return ex ? ex.n : id;
+        }).join("<br>");
+      } else {
+        var ex = fex(a.ex);
+        examesHtml = ex ? ex.n : "—";
+      }
+
+      h += "<tr>";
+      h += "<td><strong>" + esc(a.pac) + "</strong><div style='font-size:.7rem;color:var(--gr)'>" + esc(a.tel || "—") + "</div></td>";
+      h += "<td>" + examesHtml + "</td>";
+      h += "<td style='font-family:DM Mono,monospace;font-size:.78rem'>" + esc(a.dt) + " " + esc(a.hr) + "</td>";
+      h += "<td style='color:var(--gr)'>" + esc(d.n) + "</td>";
+      h += "<td>" + (cv ? "<span class='badge bgr'>" + esc(cv.n) + "</span>" : "<span style='color:var(--gr);font-size:.79rem'>Particular</span>") + "</td>";
+      h += "<td><strong>R$ " + Number(a.vl || 0).toFixed(2).replace('.', ',') + "</strong></td>";
+      h += "<td style='color:var(--g);font-family:DM Mono,monospace;font-weight:700'>+" + a.cb + " pts</td>";
+      h += "<td><span class='badge " + (sc[a.st] || "bgr") + "'>" + (sl[a.st] || a.st) + "</span></td>";
+      h += "<td><div style='display:flex;gap:4px'>" +
+            (a.st === "agendado"
+              ? "<button class='btn btnt bsm bico' onclick='chSt(" + a.id + ",\"realizado\")' title='Realizado'>✓</button><button class='btn btnr bsm bico' onclick='chSt(" + a.id + ",\"cancelado\")'>✕</button>"
+              : "") +
+            "<button class='btn btno bsm bico' onclick='sWAi(" + a.id + ")'>📲</button></div></td>";
+      h += "</tr>";
+    });
+  }
+
+  var tb = document.getElementById("exTb");
+  if (tb) tb.innerHTML = h;
 }
 function filtEx(v){exSrch=v.toLowerCase();bldExRows();}
 function setFlt(el,f){document.querySelectorAll(".ftab").forEach(function(x){x.classList.remove("active");});el.classList.add("active");exFlt=f;bldExRows();}
 function chSt(id,s){var a=ags.find(function(x){return x.id===id;});if(a){a.st=s;dbUpdAgSt(id,s);bldExRows();toast("✅","Status: "+s);}}
-function sWAi(id){var a=ags.find(function(x){return x.id===id;});if(!a)return;var ex=fex(a.ex);var tl=(a.tel||"").replace(/\D/g,"");if(!tl){toast("⚠️","Sem telefone. Edite o agendamento para adicionar.");return;}var msg=waFmt(waT.ag,{nome:a.pac,exame:ex.n,data:a.dt,hora:a.hr,clinica:"COR — Centro Odontologico de Radiologia"});window.open("https://wa.me/55"+tl+"?text="+encodeURIComponent(msg),"_blank");}
+function sWAi(id){
+  var a = ags.find(function(x){ return x.id === id; });
+  if(!a) return;
+
+  var tl = (a.tel || "").replace(/\D/g, "");
+  if(!tl){
+    toast("⚠️","Sem telefone. Edite o agendamento para adicionar.");
+    return;
+  }
+
+  var nomesExames = "";
+  if (Array.isArray(a.exames) && a.exames.length) {
+    nomesExames = a.exames.map(function(id){
+      var ex = fex(id);
+      return ex ? ex.n : id;
+    }).join(", ");
+  } else {
+    var ex = fex(a.ex);
+    nomesExames = ex ? ex.n : "Exame";
+  }
+
+  var msg = waFmt(waT.ag, {
+    nome: a.pac,
+    exame: nomesExames,
+    data: a.dt,
+    hora: a.hr,
+    clinica: "COR — Centro Odontologico de Radiologia"
+  });
+
+  window.open("https://wa.me/55" + tl + "?text=" + encodeURIComponent(msg), "_blank");
+}
 function sendWA(){if(!lastAg){toast("⚠️","Nenhum agendamento");return;}sWAi(lastAg.id);}
 
 // ══ CONVENIOS ══
