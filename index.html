@@ -4265,7 +4265,6 @@ function updAgSum(){
   var dId = parseInt(document.getElementById("dSel")?.value || "0") || 0;
   var d = fdent(dId);
 
-  var pr = 0;
   var html = "<div style='display:flex;flex-direction:column;gap:6px;margin-top:10px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.03)'>";
 
   html += "<div style='font-weight:700;margin-bottom:4px'>Resumo do Agendamento</div>";
@@ -4274,17 +4273,25 @@ function updAgSum(){
     var ex = fex(it.exame_id);
     var cv = fconv(it.convenio_id || "");
     var nomeEx = ex ? ex.n : it.exame_id;
-
-    pr += Number(it.preco || 0);
+    var preco = Number(it.preco || 0);
+    var foraFat = itemEhUnimed(it);
 
     html +=
       "<div style='display:flex;justify-content:space-between;gap:10px'>" +
         "<div style='min-width:0'>" +
-          "<div style='font-size:.92rem'>" + esc(nomeEx) + (cv ? " <span style='color:var(--gr)'>(" + esc(cv.n) + ")</span>" : "") + "</div>" +
+          "<div style='font-size:.92rem'>" +
+            esc(nomeEx) +
+            (cv ? " <span style='color:var(--gr)'>(" + esc(cv.n) + ")</span>" : "") +
+            (foraFat ? " <span style='color:#f87171;font-size:.72rem'>(fora do faturamento)</span>" : "") +
+          "</div>" +
         "</div>" +
-        "<strong style='white-space:nowrap'>R$ " + Number(it.preco || 0).toFixed(2).replace(".", ",") + "</strong>" +
+        "<strong style='white-space:nowrap'>R$ " + preco.toFixed(2).replace(".", ",") + "</strong>" +
       "</div>";
   });
+
+  // 🔥 AQUI ESTÁ A CORREÇÃO
+  var itensFaturaveis = getItensFaturaveisPaciente(itens);
+  var pr = somarItens(itensFaturaveis);
 
   var pts4 = d ? calcCb(pr, d.nv) : 0;
 
@@ -4304,7 +4311,7 @@ function updAgSum(){
 
   html +=
     "<div style='display:flex;justify-content:space-between'>" +
-      "<span style='color:var(--gr)'>Valor bruto:</span>" +
+      "<span style='color:var(--gr)'>Valor bruto faturável:</span>" +
       "<strong>R$ " + calcPg.valor_bruto.toFixed(2).replace(".", ",") + "</strong>" +
     "</div>";
 
