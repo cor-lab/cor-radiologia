@@ -754,7 +754,8 @@ async function confirmarEmissaoNota() {
       ag.forma_pagamento_prevista ||
       "avista";
 
-    var valorBase = Number(ag.valor_bruto || ag.vl || 0);
+    var itensFaturaveis = getItensFaturaveisPaciente(ag.exames || []);
+    var valorBase = somarItens(itensFaturaveis);
     var calcPgFinal = calcularValorFinalComDesconto(valorBase, formaPagamentoFinal);
     var valorServico = calcPgFinal.valor_faturado;
 
@@ -2639,38 +2640,6 @@ function agEV(ev, id) {
 
   openM("Agendamento", b, btns);
 }
-
-/* BOTÕES FISCAIS */
-if((a.status_clinico || a.st)=="realizado" && (a.status_fiscal || "nao_emitida")!="emitida"){
-  (function(ag){
-    btns.push({
-      lbl:"🧾 Emitir nota",
-      cls:"btng",
-      fn:function(){
-        closeM();
-        abrirModalEmitirNota(ag.id);
-      }
-    });
-  })(a);
-}
-
-if((a.status_fiscal || "")=="emitida"){
-  (function(ag){
-    btns.push({
-      lbl:"🛑 Cancelar nota",
-      cls:"btnr",
-      fn:function(){
-        closeM();
-        cancelarNotaManual(ag.id);
-      }
-    });
-  })(a);
-}
-
-(function(ag){btns.push({lbl:"📲 WhatsApp",cls:"btnt",fn:function(){closeM();sWAi(ag.id);}});})(a);
-
-openM("Agendamento",b,btns);
-
 function openEditAg(id) {
   var a = ags.find(function(x){ return x.id === id; });
   if(!a) return;
@@ -2680,47 +2649,47 @@ function openEditAg(id) {
 
   var b = "<div style=\"display:flex;flex-direction:column;gap:10px\">";
   b += "<div class=\"field\"><label>Nome do Paciente</label><input id=\"eNm2\" value=\"" + esc(a.pac) + "\"></div>";
-b += "<div class=\"field\"><label>Telefone/WhatsApp</label><input id=\"eTel2\" value=\"" + esc(String(a.tel || "").replace(/^(\d{2})(\d{4,5})(\d{4})$/, "($1) $2-$3")) + "\" placeholder=\"(49) 99999-9999\" oninput=\"maskPhone(this)\"></div>";
-b += "<div class=\"field\"><label>E-mail</label><input id=\"eEmail\" type=\"email\" value=\"" + esc(a.paciente_email || "") + "\" placeholder=\"paciente@email.com\"></div>";
+  b += "<div class=\"field\"><label>Telefone/WhatsApp</label><input id=\"eTel2\" value=\"" + esc(String(a.tel || "").replace(/^(\d{2})(\d{4,5})(\d{4})$/, "($1) $2-$3")) + "\" placeholder=\"(49) 99999-9999\" oninput=\"maskPhone(this)\"></div>";
+  b += "<div class=\"field\"><label>E-mail</label><input id=\"eEmail\" type=\"email\" value=\"" + esc(a.paciente_email || "") + "\" placeholder=\"paciente@email.com\"></div>";
 
-b += "<div class=\"fg2\"><div class=\"field\"><label>Data</label><input type=\"date\" id=\"eDt2\" value=\"" + dtVal + "\"></div>";
-b += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"eHr2\" value=\"" + a.hr + "\"></div></div>";
+  b += "<div class=\"fg2\"><div class=\"field\"><label>Data</label><input type=\"date\" id=\"eDt2\" value=\"" + dtVal + "\"></div>";
+  b += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"eHr2\" value=\"" + a.hr + "\"></div></div>";
 
-b += "<div class=\"fg2\"><div class=\"field\"><label>Duracao</label><select id=\"eDur2\">";
-[{v:"10",l:"10 min"},{v:"15",l:"15 min"},{v:"20",l:"20 min"},{v:"30",l:"30 min"},{v:"60",l:"1h"},{v:"90",l:"1h 30min"}].forEach(function(op){
-  b += "<option value=\"" + op.v + "\"" + ((a.dur || 30) === parseInt(op.v) ? " selected" : "") + ">" + op.l + "</option>";
-});
-b += "</select></div>";
-
-b += "<div class=\"field\"><label>Status</label><select id=\"eSt2\">";
-[{v:"agendado",l:"Agendado"},{v:"aguardando",l:"Aguardando"},{v:"realizado",l:"Realizado"},{v:"cancelado",l:"Cancelado"}].forEach(function(op){
-  b += "<option value=\"" + op.v + "\"" + (a.st === op.v ? " selected" : "") + ">" + op.l + "</option>";
-});
-b += "</select></div></div>";
-
-b += "<div class=\"fg2\">";
-b += "<div class=\"field\"><label>CPF</label><input type=\"text\" id=\"eCpf\" value=\"" + esc(formatarCPF(a.paciente_cpf || "")) + "\" placeholder=\"000.000.000-00\" oninput=\"maskCPF(this)\"></div>";
-b += "<div class=\"field\"><label>CEP</label><input type=\"text\" id=\"eCep\" value=\"" + esc(a.paciente_cep || "") + "\" placeholder=\"00000-000\" oninput=\"onCepInputAuto(this, true)\"></div>";
-b += "</div>";
-
-b += "<div class=\"fg2\">";
-b += "<div class=\"field\"><label>Numero</label><input type=\"text\" id=\"eNumero\" value=\"" + esc(a.paciente_numero || "") + "\" placeholder=\"123\"></div>";
-b += "<div class=\"field\"><label>UF</label><input type=\"text\" id=\"eUf\" value=\"" + esc(a.paciente_uf || "") + "\" placeholder=\"RS\" maxlength=\"2\"></div>";
-b += "</div>";
-
-b += "<div class=\"field\"><label>Logradouro</label><input type=\"text\" id=\"eLogradouro\" value=\"" + esc(a.paciente_logradouro || "") + "\" placeholder=\"Rua / Avenida\"></div>";
-b += "<div class=\"field\"><label>Complemento</label><input type=\"text\" id=\"eComplemento\" value=\"" + esc(a.paciente_complemento || "") + "\" placeholder=\"Apto, sala, bloco...\"></div>";
-
-b += "<div class=\"fg2\">";
-b += "<div class=\"field\"><label>Bairro</label><input type=\"text\" id=\"eBairro\" value=\"" + esc(a.paciente_bairro || "") + "\" placeholder=\"Bairro\"></div>";
-b += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"eMunicipio\" value=\"" + esc(a.paciente_municipio || "") + "\" placeholder=\"Cidade\"></div>";
-b += "</div>";
-
-  b += "<div class=\"field\"><label>Exame</label><select id=\"eEx2\">";
-  exT.forEach(function(e){
-    b += "<option value=\"" + e.id + "\"" + (a.ex === e.id ? " selected" : "") + ">" + esc(e.ico) + " " + esc(e.n) + "</option>";
+  b += "<div class=\"fg2\"><div class=\"field\"><label>Duracao</label><select id=\"eDur2\">";
+  [{v:"10",l:"10 min"},{v:"15",l:"15 min"},{v:"20",l:"20 min"},{v:"30",l:"30 min"},{v:"60",l:"1h"},{v:"90",l:"1h 30min"}].forEach(function(op){
+    b += "<option value=\"" + op.v + "\"" + ((a.dur || 30) === parseInt(op.v) ? " selected" : "") + ">" + op.l + "</option>";
   });
   b += "</select></div>";
+
+  b += "<div class=\"field\"><label>Status</label><select id=\"eSt2\">";
+  [{v:"agendado",l:"Agendado"},{v:"aguardando",l:"Aguardando"},{v:"realizado",l:"Realizado"},{v:"cancelado",l:"Cancelado"}].forEach(function(op){
+    b += "<option value=\"" + op.v + "\"" + (a.st === op.v ? " selected" : "") + ">" + op.l + "</option>";
+  });
+  b += "</select></div></div>";
+
+  b += "<div class=\"fg2\">";
+  b += "<div class=\"field\"><label>CPF</label><input type=\"text\" id=\"eCpf\" value=\"" + esc(formatarCPF(a.paciente_cpf || "")) + "\" placeholder=\"000.000.000-00\" oninput=\"maskCPF(this)\"></div>";
+  b += "<div class=\"field\"><label>CEP</label><input type=\"text\" id=\"eCep\" value=\"" + esc(a.paciente_cep || "") + "\" placeholder=\"00000-000\" oninput=\"onCepInputAuto(this, true)\"></div>";
+  b += "</div>";
+
+  b += "<div class=\"fg2\">";
+  b += "<div class=\"field\"><label>Numero</label><input type=\"text\" id=\"eNumero\" value=\"" + esc(a.paciente_numero || "") + "\" placeholder=\"123\"></div>";
+  b += "<div class=\"field\"><label>UF</label><input type=\"text\" id=\"eUf\" value=\"" + esc(a.paciente_uf || "") + "\" placeholder=\"RS\" maxlength=\"2\"></div>";
+  b += "</div>";
+
+  b += "<div class=\"field\"><label>Logradouro</label><input type=\"text\" id=\"eLogradouro\" value=\"" + esc(a.paciente_logradouro || "") + "\" placeholder=\"Rua / Avenida\"></div>";
+  b += "<div class=\"field\"><label>Complemento</label><input type=\"text\" id=\"eComplemento\" value=\"" + esc(a.paciente_complemento || "") + "\" placeholder=\"Apto, sala, bloco...\"></div>";
+
+  b += "<div class=\"fg2\">";
+  b += "<div class=\"field\"><label>Bairro</label><input type=\"text\" id=\"eBairro\" value=\"" + esc(a.paciente_bairro || "") + "\" placeholder=\"Bairro\"></div>";
+  b += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"eMunicipio\" value=\"" + esc(a.paciente_municipio || "") + "\" placeholder=\"Cidade\"></div>";
+  b += "</div>";
+
+  b += "<div class='field'><label>Exames</label>";
+  b += "<div id='eExWrap'></div>";
+  b += "</div>";
+
+  b += "<div id='eAgSumDiv'></div>";
 
   b += "<div class=\"field\"><label>Dentista</label><select id=\"eDent2\">";
   dents.forEach(function(d){
@@ -2728,7 +2697,7 @@ b += "</div>";
   });
   b += "</select></div>";
 
-  b += "<div class=\"field\"><label>Forma de pagamento prevista</label><select id=\"eFormaPg\">";
+  b += "<div class=\"field\"><label>Forma de pagamento prevista</label><select id=\"eFormaPg\" onchange=\"updAgSumEdit()\">";
   [
     {v:"avista",l:"À vista (20% desc.)"},
     {v:"3x",l:"3x (10% desc.)"},
@@ -2760,11 +2729,19 @@ b += "</div>";
       var hr2 = document.getElementById("eHr2").value;
       var dur3 = parseInt(document.getElementById("eDur2").value) || 30;
       var st3 = document.getElementById("eSt2").value;
-      var exId3 = document.getElementById("eEx2").value;
+      var itensEdit = getExamesSelecionados("eExames");
       var dId3 = parseInt(document.getElementById("eDent2").value) || a.dId;
 
+      if (!itensEdit.length) {
+        toast("⚠️","Selecione ao menos um exame");
+        return;
+      }
+
       var formaPgPrevista = document.getElementById("eFormaPg").value;
-      var valorBrutoEdit = Number(epreco(exId3, a.cv) || 0);
+
+      var itensFaturaveisEdit = getItensFaturaveisPaciente(itensEdit);
+      var valorBrutoEdit = somarItens(itensFaturaveisEdit);
+
       var calcPgEdit = calcularValorFinalComDesconto(valorBrutoEdit, formaPgPrevista);
 
       if(!nm2){ toast("⚠️","Informe o nome"); return; }
@@ -2791,11 +2768,14 @@ b += "</div>";
       a.st = st3;
       a.status = st3;
       a.status_clinico = st3;
-      a.ex = exId3;
       a.dId = dId3;
 
+      a.exames = itensEdit;
+      a.ex = itensEdit[0].exame_id;
+      a.cv = itensEdit[0].convenio_id || "";
+
       a.forma_pagamento_prevista = formaPgPrevista;
-      a.valor_bruto = valorBrutoEdit;
+      a.valor_bruto = calcPgEdit.valor_bruto;
       a.desconto_percentual = calcPgEdit.desconto_percentual;
       a.desconto_valor = calcPgEdit.desconto_valor;
       a.valor_faturado = calcPgEdit.valor_faturado;
@@ -2812,7 +2792,60 @@ b += "</div>";
       toast("✅","Agendamento atualizado!");
     }}
   ]);
+
+  var examesEdit = Array.isArray(a.exames) && a.exames.length
+    ? a.exames.map(function(it){
+        return {
+          exame_id: it.exame_id,
+          convenio_id: it.convenio_id || "",
+          preco: Number(it.preco || 0)
+        };
+      })
+    : (a.ex ? [{
+        exame_id: a.ex,
+        convenio_id: a.cv || "",
+        preco: Number(a.valor_bruto || a.vl || 0)
+      }] : []);
+
+  var wrapEdit = document.getElementById("eExWrap");
+  if (wrapEdit) {
+    wrapEdit.innerHTML = exChecklistHtml("eExames", examesEdit, "updAgSumEdit");
+  }
+
+  updAgSumEdit();
 }
+/* BOTÕES FISCAIS */
+if((a.status_clinico || a.st)=="realizado" && (a.status_fiscal || "nao_emitida")!="emitida"){
+  (function(ag){
+    btns.push({
+      lbl:"🧾 Emitir nota",
+      cls:"btng",
+      fn:function(){
+        closeM();
+        abrirModalEmitirNota(ag.id);
+      }
+    });
+  })(a);
+}
+
+if((a.status_fiscal || "")=="emitida"){
+  (function(ag){
+    btns.push({
+      lbl:"🛑 Cancelar nota",
+      cls:"btnr",
+      fn:function(){
+        closeM();
+        cancelarNotaManual(ag.id);
+      }
+    });
+  })(a);
+}
+
+(function(ag){btns.push({lbl:"📲 WhatsApp",cls:"btnt",fn:function(){closeM();sWAi(ag.id);}});})(a);
+
+openM("Agendamento",b,btns);
+
+id="eEx2"
 function onCepInputAuto(el, isEdit){
   if(!el) return;
 
@@ -2841,6 +2874,47 @@ function onCepInputAuto(el, isEdit){
     if (document.getElementById(prefix + "Uf"))
       document.getElementById(prefix + "Uf").value = data.uf;
   });
+}
+function updAgSumEdit(){
+  var itens = getExamesSelecionados("eExames");
+  var formaPg = document.getElementById("eFormaPg")?.value || "avista";
+  var div = document.getElementById("eAgSumDiv");
+  if(!div) return;
+
+  if (!itens.length) {
+    div.innerHTML = "<div class='smb'><div class='smr'><span>Nenhum exame selecionado</span></div></div>";
+    return;
+  }
+
+  var linhas = "";
+
+  itens.forEach(function(it){
+    var ex = fex(it.exame_id);
+    var cv = fconv(it.convenio_id || "");
+    var preco = Number(it.preco || 0);
+    var foraFat = itemEhUnimed(it);
+
+    linhas += "<div class='smr'>" +
+      "<span>" +
+        esc(ex ? ex.n : it.exame_id) +
+        (cv ? " <span style='color:var(--gr)'>(" + esc(cv.n) + ")</span>" : "") +
+        (foraFat ? " <span style='color:#f87171;font-size:.72rem'>(fora do faturamento)</span>" : "") +
+      "</span>" +
+      "<strong>R$ " + preco.toFixed(2).replace('.', ',') + "</strong>" +
+      "</div>";
+  });
+
+  var itensFaturaveis = getItensFaturaveisPaciente(itens);
+  var bruto = somarItens(itensFaturaveis);
+  var calc = calcularValorFinalComDesconto(bruto, formaPg);
+
+  div.innerHTML =
+    "<div class='smb'>" +
+      linhas +
+      "<div class='smr smt'><span>Valor bruto faturável</span><strong>R$ " + calc.valor_bruto.toFixed(2).replace('.', ',') + "</strong></div>" +
+      "<div class='smr'><span>Desconto</span><strong>" + calc.desconto_percentual + "% / R$ " + calc.desconto_valor.toFixed(2).replace('.', ',') + "</strong></div>" +
+      "<div class='smr smt'><span>Valor final do paciente</span><strong>R$ " + calc.valor_faturado.toFixed(2).replace('.', ',') + "</strong></div>" +
+    "</div>";
 }
 async function confAg() {
   if (_agSaving) return;
@@ -2881,11 +2955,8 @@ async function confAg() {
 
   var d4 = fdent(dId);
 
-  var pr = 0;
-  itens.forEach(function(it){
-    pr += Number(it.preco || 0);
-  });
-
+  var itensFaturaveis = getItensFaturaveisPaciente(itens);
+  var pr = somarItens(itensFaturaveis);
   var pts4 = d4 ? calcCb(pr, d4.nv) : 0;
 
   var formaPagamentoPrevista = document.getElementById("pFormaPg")?.value || "avista";
@@ -4258,6 +4329,27 @@ function updAgSum(){
   html += "</div>";
 
   el.innerHTML = html;
+}
+function itemEhUnimed(it){
+  var cvId = (it && it.convenio_id) ? String(it.convenio_id) : "";
+  var cv = cvId ? fconv(cvId) : null;
+  var nomeConvenio = cv && cv.n ? String(cv.n).toLowerCase() : "";
+
+  return nomeConvenio.indexOf("unimed") >= 0;
+}
+
+function getItensFaturaveisPaciente(itens){
+  return (itens || []).filter(function(it){
+    return !itemEhUnimed(it);
+  });
+}
+
+function somarItens(itens){
+  var total = 0;
+  (itens || []).forEach(function(it){
+    total += Number(it.preco || 0);
+  });
+  return Number(total.toFixed(2));
 }
 function remU(email) {
   var u = USERS.find(function(x){ return x.email === email; });
