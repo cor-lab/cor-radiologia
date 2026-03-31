@@ -125,6 +125,7 @@ nav button.active{color:var(--g);background:rgba(74,184,72,.1);font-weight:600}
 .page{display:none;position:relative;z-index:1}
 .page.active{display:block}
 .pi{padding:24px 28px}
+.pg-scroll{max-height:calc(100vh - 70px);overflow-y:auto}
 .card{background:rgba(18,36,78,.7);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;
   box-shadow:0 4px 16px rgba(0,0,0,.15)}
 .card-sm{padding:14px 18px}
@@ -365,28 +366,28 @@ tr:last-child td{border-bottom:none}
 .ag-gw::-webkit-scrollbar{width:5px;height:5px}
 .ag-gw::-webkit-scrollbar-thumb{background:rgba(74,184,72,.3);border-radius:3px}
 .ag-tc{width:50px;flex-shrink:0;position:sticky;left:0;z-index:10;background:rgba(13,24,48,.97)}
-.ag-ts{height:20px;display:flex;align-items:flex-start;justify-content:flex-end;padding-right:8px;padding-top:1px;font-size:.64rem;color:var(--gr);font-family:"DM Mono",monospace;border-top:1px solid rgba(255,255,255,.05)}
+.ag-ts{height:14px;display:flex;align-items:flex-start;justify-content:flex-end;padding-right:8px;padding-top:0;font-size:.60rem;color:var(--gr);font-family:"DM Mono",monospace;border-top:1px solid rgba(255,255,255,.05);line-height:1}
 .ag-ts.hf{border-top-color:rgba(255,255,255,.02);font-size:0}
 .ag-dc{flex:1;border-left:1px solid rgba(255,255,255,.06);position:relative;min-width:140px}
 .ag-dh{text-align:center;padding:10px 4px;position:sticky;top:0;background:rgba(18,36,78,.98);z-index:5;border-bottom:1px solid rgba(255,255,255,.08)}
 .ag-dh .dw{color:var(--gr);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
 .ag-dh .dd{font-size:1.08rem;font-family:"Playfair Display",serif;line-height:1.2;margin-top:2px}
 .ag-dh.tod .dd{background:var(--g);color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:2px auto 0;font-size:.9rem}
-.ag-cl{height:20px;border-top:1px solid rgba(255,255,255,.045);cursor:pointer;transition:background .1s}
+.ag-cl{height:14px;border-top:1px solid rgba(255,255,255,.045);cursor:pointer;transition:background .1s}
 .ag-cl:hover{background:rgba(74,184,72,.06)}
 .ag-cl.hf{border-top-color:rgba(255,255,255,.018)}
-.ag-ev{position:absolute;left:3px;right:3px;border-radius:7px;padding:5px 9px;font-size:.78rem;cursor:pointer;overflow:hidden;z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.12);transition:filter .14s,transform .14s;display:flex;flex-direction:column;gap:1px;border:1px solid rgba(255,255,255,.08)}
-.ag-ev:hover{filter:brightness(1.15);z-index:3;transform:scale(1.01)}
-.et{font-size:.74rem;font-weight:700;font-family:"DM Sans",sans-serif;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.5);letter-spacing:.01em;line-height:1.4}
-.en{font-weight:700;font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 3px rgba(0,0,0,.5)}
-.es{font-size:.72rem;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,.4)}
-.eck{position:absolute;right:5px;top:4px;font-size:.7rem}
+.ag-ev{position:absolute;left:3px;right:3px;border-radius:6px;padding:4px 8px 4px 14px;font-size:.78rem;cursor:pointer;overflow:hidden;z-index:2;box-shadow:0 1px 6px rgba(0,0,0,.18);transition:filter .14s,transform .14s;display:flex;flex-direction:column;gap:1px;border:1px solid rgba(0,0,0,.1);background:#fff;color:#1a1a2e;border-left:none}
+.ag-ev:hover{filter:brightness(.97);z-index:3;transform:scale(1.01);box-shadow:0 3px 12px rgba(0,0,0,.22)}
+.et{font-size:.72rem;font-weight:700;font-family:"DM Sans",sans-serif;white-space:nowrap;letter-spacing:.01em;line-height:1.4;color:#1a1a2e}
+.en{font-weight:700;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1a1a2e}
+.es{font-size:.70rem;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#333}
+.eck{position:absolute;right:5px;top:4px;font-size:.7rem;color:#4ab848}
 .ag-nl{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--rd),rgba(224,82,82,.4));z-index:4;pointer-events:none}
 .ag-nl::before{content:"";position:absolute;left:-1px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--rd);box-shadow:0 0 8px rgba(224,82,82,.5)}
-.ec0{background:linear-gradient(135deg,rgba(180,130,95,.92),rgba(150,105,75,.92));color:#fff;border-color:rgba(200,150,110,.25)}
-.ec1{background:linear-gradient(135deg,rgba(74,168,90,.88),rgba(60,140,80,.88));color:#fff;border-color:rgba(100,200,120,.25)}
-.ec2{background:linear-gradient(135deg,rgba(180,165,90,.88),rgba(155,140,70,.88));color:#fff;border-color:rgba(200,185,110,.25)}
-.ec3{background:linear-gradient(135deg,rgba(110,120,145,.85),rgba(90,100,125,.85));color:#fff;border-color:rgba(140,150,175,.25)}
+.ec0{background:#fff;border-left:10px solid #b4825f;color:#1a1a2e}
+.ec1{background:#f0faf0;border-left:10px solid #4ab848;color:#1a1a2e}
+.ec2{background:#fffef5;border-left:10px solid #c9a84c;color:#1a1a2e}
+.ec3{background:#f4f4f8;border-left:10px solid #8890a0;color:#1a1a2e}
 .ag-sd{overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:12px;background:rgba(18,36,78,.55);border-left:1px solid rgba(255,255,255,.06)}
 .ag-st2{font-family:"Playfair Display",serif;font-size:1rem;color:var(--g);margin-bottom:4px;letter-spacing:.01em}
 .ag-si{background:rgba(74,184,72,.08);border:1px solid rgba(74,184,72,.2);border-radius:8px;padding:9px 12px;font-size:.79rem;color:var(--g);display:none}
@@ -680,7 +681,7 @@ async function confirmarEmissaoNota() {
     }
 
     var ag = AG_EMISSAO_ATUAL;
-    var cpfCnpj = (document.getElementById("nfCpfCnpj")?.value || "").trim();
+    var cpfCnpj = normalizarCpfCnpj((document.getElementById("nfCpfCnpj")?.value || "").trim());
 
     if (!ag.dId) {
       toast("Erro", "Agendamento sem dentista vinculado.");
@@ -699,6 +700,51 @@ async function confirmarEmissaoNota() {
 
     if (["emitida", "emitindo", "cancelada"].includes(String(ag.status_fiscal || ""))) {
       toast("Atenção", "Agendamento com status fiscal inválido: " + ag.status_fiscal);
+      return;
+    }
+
+    if (!cpfCnpj) {
+      toast("Erro", "Informe o CPF do paciente antes de emitir a nota.");
+      return;
+    }
+
+    if (cpfCnpj.length !== 11) {
+      toast("Erro", "A emissão nacional exige CPF válido do paciente. CNPJ não é aceito neste fluxo.");
+      return;
+    }
+
+    if (!validarCPF(cpfCnpj)) {
+      toast("Erro", "CPF do paciente inválido.");
+      return;
+    }
+
+    if (!ag.paciente_cep) {
+      toast("Erro", "Informe o CEP do paciente antes de emitir a nota.");
+      return;
+    }
+
+    if (!ag.paciente_logradouro) {
+      toast("Erro", "Informe o logradouro do paciente antes de emitir a nota.");
+      return;
+    }
+
+    if (!ag.paciente_numero) {
+      toast("Erro", "Informe o número do endereço do paciente antes de emitir a nota.");
+      return;
+    }
+
+    if (!ag.paciente_bairro) {
+      toast("Erro", "Informe o bairro do paciente antes de emitir a nota.");
+      return;
+    }
+
+    if (!ag.paciente_municipio) {
+      toast("Erro", "Informe o município do paciente antes de emitir a nota.");
+      return;
+    }
+
+    if (!ag.paciente_uf) {
+      toast("Erro", "Informe a UF do paciente antes de emitir a nota.");
       return;
     }
 
@@ -727,7 +773,7 @@ async function confirmarEmissaoNota() {
         desconto_percentual: calcPgFinal.desconto_percentual,
         desconto_valor: calcPgFinal.desconto_valor,
         valor_faturado: calcPgFinal.valor_faturado,
-        paciente_cpf: cpfCnpj || ag.paciente_cpf || null
+        paciente_cpf: cpfCnpj || null
       })
       .eq("id", agendamentoId);
 
@@ -737,62 +783,43 @@ async function confirmarEmissaoNota() {
       return;
     }
 
-    const functionUrl = API_BASE + "/emitir-nfse-focus";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
-
-    const resp = await fetch(functionUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0",
-        "Authorization": "Bearer " + "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0"
-      },
-      body: JSON.stringify({
-        agendamento_id: agendamentoId
-      })
-    });
-
-    const data = await resp.json().catch(() => ({}));
-
-    if (!resp.ok) {
-      const msg = typeof data.error === "string"
-        ? data.error
-        : JSON.stringify(data.error || data, null, 2);
-
-      console.error("Erro emitir-nfse-focus:", data);
-      toast("Erro", msg);
-      return;
-    }
-
     ag.forma_pagamento_final = formaPagamentoFinal;
     ag.valor_bruto = calcPgFinal.valor_bruto;
     ag.desconto_percentual = calcPgFinal.desconto_percentual;
     ag.desconto_valor = calcPgFinal.desconto_valor;
     ag.valor_faturado = calcPgFinal.valor_faturado;
     ag.vl = calcPgFinal.valor_faturado;
+    ag.paciente_cpf = cpfCnpj;
+
+    const functionUrl = API_BASE + "/emitir-nfse-focus";
+    const SUPABASE_ANON_KEY = "SUA_CHAVE_ATUAL_AQUI";
+
+    const payload = {
+      agendamento_id: agendamentoId,
+      forma_pagamento_final: formaPagamentoFinal,
+      valor_servico: valorServico,
+      paciente_cpf: cpfCnpj
+    };
+
+    const resp = await fetch(functionUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": "Bearer " + SUPABASE_ANON_KEY
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await resp.json().catch(function(){ return {}; });
+
+    if (!resp.ok) {
+      console.error("emitir-nfse-focus:", data);
+      toast("Erro", data?.message || "Falha ao enviar nota para emissão.");
+      return;
+    }
+
     ag.status_fiscal = "emitindo";
-
-    if (data.reference) {
-      ag.focus_reference = data.reference;
-    }
-
-    try {
-      const { data: agBanco } = await supa
-        .from("agendamentos")
-        .select("status_fiscal, focus_reference, nfse_id, mensagem_erro, forma_pagamento_final, valor_faturado")
-        .eq("id", agendamentoId)
-        .single();
-
-      if (agBanco) {
-        ag.status_fiscal = agBanco.status_fiscal || ag.status_fiscal;
-        ag.focus_reference = agBanco.focus_reference || ag.focus_reference;
-        ag.forma_pagamento_final = agBanco.forma_pagamento_final || ag.forma_pagamento_final;
-        ag.valor_faturado = agBanco.valor_faturado || ag.valor_faturado;
-        ag.vl = ag.valor_faturado || ag.vl;
-      }
-    } catch (e) {
-      console.warn("Não foi possível sincronizar agendamento após emissão:", e);
-    }
 
     if (typeof fecharModalEmitirNota === "function") {
       fecharModalEmitirNota();
@@ -929,6 +956,229 @@ async function cancelarNotaManual(agendamentoId){
     console.error("cancelarNotaManual:", e);
     toast("Erro", "Falha ao cancelar nota.");
   }
+}
+function normalizarCpfCnpj(v){
+  return String(v || "").replace(/\D/g, "");
+}
+function soDigitos(v){
+  return String(v || "").replace(/\D+/g, "");
+}
+
+function validarCPF(cpf){
+  cpf = soDigitos(cpf);
+
+  if (!cpf || cpf.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(cpf)) return false;
+
+  var soma = 0;
+  var resto = 0;
+  var i = 0;
+
+  for (i = 0; i < 9; i++) {
+    soma += parseInt(cpf.charAt(i), 10) * (10 - i);
+  }
+
+  resto = 11 - (soma % 11);
+  if (resto >= 10) resto = 0;
+  if (resto !== parseInt(cpf.charAt(9), 10)) return false;
+
+  soma = 0;
+  for (i = 0; i < 10; i++) {
+    soma += parseInt(cpf.charAt(i), 10) * (11 - i);
+  }
+
+  resto = 11 - (soma % 11);
+  if (resto >= 10) resto = 0;
+  if (resto !== parseInt(cpf.charAt(10), 10)) return false;
+
+  return true;
+}
+
+function formatarCPF(cpf){
+  cpf = soDigitos(cpf);
+  if (cpf.length !== 11) return cpf;
+  return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+}
+const NACIONAL_SERVICO_PADRAO = {
+      codigo_tributacao_nacional: "04.02.01",
+      item_nbs: "123019400",
+      descricao_padrao: "Serviços de diagnóstico por imagem",
+      aliquota_simples_nacional: 4.00
+    };
+
+
+function montarDpsNacional(ag){
+  var valorBruto = Number(ag.valor_bruto || ag.vl || 0);
+  var descontoIncondicionado = Number(ag.desconto_valor || 0);
+  var descontoCondicionado = 0;
+  var valorLiquido = Number(ag.valor_faturado || ag.vl || 0);
+
+  var tomadorNome = ag.pac || ag.paciente_nome || "";
+  var tomadorCpfCnpj = normalizarCpfCnpj(
+  ag.paciente_cpf ||
+  ag.cpf ||
+  ag.cpf_paciente ||
+  ag.documento ||
+  ag.doc ||
+  ag.paciente_cnpj ||
+  ""
+);
+  var tomadorEmail = ag.paciente_email || "";
+  var tomadorTelefone = ag.tel || ag.paciente_telefone || "";
+  var tomadorCep = ag.paciente_cep || "";
+  var tomadorLogradouro = ag.paciente_logradouro || "";
+  var tomadorNumero = ag.paciente_numero || "";
+  var tomadorComplemento = ag.paciente_complemento || "";
+  var tomadorBairro = ag.paciente_bairro || "";
+  var tomadorMunicipio = ag.paciente_municipio || "Santa Maria";
+  var tomadorUf = ag.paciente_uf || "RS";
+
+  if (!tomadorCpfCnpj) {
+  throw new Error("Este agendamento não possui dados fiscais do paciente. Preencha o CPF para gerar a pré-emissão da NFS-e nacional.");
+}
+
+if (tomadorCpfCnpj.length !== 11) {
+  throw new Error("A NFS-e nacional para paciente exige CPF válido. CNPJ não é aceito neste fluxo.");
+}
+
+if (!validarCPF(tomadorCpfCnpj)) {
+  throw new Error("O CPF informado é inválido. Revise os dados fiscais do paciente antes de gerar a NFS-e nacional.");
+}
+
+  var descricaoServico =
+    (ag.descricao_servico_nacional && String(ag.descricao_servico_nacional).trim()) ||
+    (ag.exames && ag.exames.length
+      ? ag.exames.map(function(it){
+          var ex = typeof fex === "function" ? fex(it.exame_id) : null;
+          return ex ? ex.n : String(it.exame_id);
+        }).join(", ")
+      : NACIONAL_SERVICO_PADRAO.descricao_padrao);
+
+  return {
+    competencia: ag.dt || "",
+    codigo_tributacao_nacional: NACIONAL_SERVICO_PADRAO.codigo_tributacao_nacional,
+    item_nbs: NACIONAL_SERVICO_PADRAO.item_nbs,
+    descricao_servico: descricaoServico,
+    valor_servico: Number(valorBruto.toFixed(2)),
+    desconto_incondicionado: Number(descontoIncondicionado.toFixed(2)),
+    desconto_condicionado: Number(descontoCondicionado.toFixed(2)),
+    valor_liquido: Number(valorLiquido.toFixed(2)),
+    aliquota_simples_nacional: Number(NACIONAL_SERVICO_PADRAO.aliquota_simples_nacional.toFixed(2)),
+    municipio_prestacao: "Santa Maria",
+    uf_prestacao: "RS",
+    forma_pagamento_final: ag.forma_pagamento_final || ag.forma_pagamento_prevista || "avista",
+    tomador: {
+      nome: tomadorNome,
+      cpf_cnpj: tomadorCpfCnpj,
+      email: tomadorEmail,
+      telefone: tomadorTelefone,
+      cep: tomadorCep,
+      logradouro: tomadorLogradouro,
+      numero: tomadorNumero,
+      complemento: tomadorComplemento,
+      bairro: tomadorBairro,
+      municipio: tomadorMunicipio,
+      uf: tomadorUf
+    }
+  };
+} 
+function gerarTextoDpsNacional(ag){
+  var dps = montarDpsNacional(ag);
+
+  return [
+    "DPS NACIONAL",
+    "-------------------------",
+    "Competencia: " + dps.competencia,
+    "Codigo de Tributacao Nacional: " + dps.codigo_tributacao_nacional,
+    "NBS: " + dps.item_nbs,
+    "Descricao do Servico: " + dps.descricao_servico,
+    "Valor do Servico: R$ " + dps.valor_servico.toFixed(2).replace(".", ","),
+    "Desconto Incondicionado: R$ " + dps.desconto_incondicionado.toFixed(2).replace(".", ","),
+    "Desconto Condicionado: R$ " + dps.desconto_condicionado.toFixed(2).replace(".", ","),
+    "Valor Liquido: R$ " + dps.valor_liquido.toFixed(2).replace(".", ","),
+    "Aliquota Simples Nacional: " + dps.aliquota_simples_nacional.toFixed(2).replace(".", ",") + "%",
+    "Forma de pagamento final: " + dps.forma_pagamento_final,
+    "",
+    "TOMADOR",
+    "Nome: " + (dps.tomador.nome || ""),
+    "CPF: " + formatarCPF(dps.tomador.cpf_cnpj || ""),
+    "E-mail: " + (dps.tomador.email || ""),
+    "Telefone: " + (dps.tomador.telefone || ""),
+    "CEP: " + (dps.tomador.cep || ""),
+    "Logradouro: " + (dps.tomador.logradouro || ""),
+    "Numero: " + (dps.tomador.numero || ""),
+    "Complemento: " + (dps.tomador.complemento || ""),
+    "Bairro: " + (dps.tomador.bairro || ""),
+    "Municipio: " + (dps.tomador.municipio || ""),
+    "UF: " + (dps.tomador.uf || "")
+  ].join("\n");
+}
+function abrirPreEmissaoNacional(agendamentoId){
+  var ag = (ags || []).find(function(x){ return x.id === agendamentoId; });
+  if(!ag){
+    toast("Erro", "Agendamento não encontrado.");
+    return;
+  }
+
+console.log("AG COMPLETO:", ag);
+console.log("CPF paciente:", ag.paciente_cpf);
+console.log("CNPJ paciente:", ag.paciente_cnpj);
+
+  var dps;
+  var texto;
+
+  try {
+    dps = montarDpsNacional(ag);
+    texto = gerarTextoDpsNacional(ag);
+  } catch (err) {
+    toast("Dados fiscais pendentes", err && err.message ? err.message : "Não foi possível montar a DPS nacional.");
+    return;
+  }
+
+  var html = "<div style=\"display:flex;flex-direction:column;gap:12px\">";
+
+  html += "<div><strong>Codigo de Tributacao Nacional:</strong> " + esc(dps.codigo_tributacao_nacional) + "</div>";
+  html += "<div><strong>NBS:</strong> " + esc(dps.item_nbs) + "</div>";
+  html += "<div><strong>Descricao do Servico:</strong> " + esc(dps.descricao_servico) + "</div>";
+  html += "<div><strong>Valor do Servico:</strong> R$ " + dps.valor_servico.toFixed(2).replace(".", ",") + "</div>";
+  html += "<div><strong>Desconto:</strong> R$ " + dps.desconto_incondicionado.toFixed(2).replace(".", ",") + "</div>";
+  html += "<div><strong>Valor Liquido:</strong> R$ " + dps.valor_liquido.toFixed(2).replace(".", ",") + "</div>";
+  html += "<div><strong>Aliquota SN:</strong> " + dps.aliquota_simples_nacional.toFixed(2).replace(".", ",") + "%</div>";
+
+  html += "<div style=\"border-top:1px solid rgba(255,255,255,.08);padding-top:10px\"><strong>Tomador</strong></div>";
+  html += "<div><strong>Nome:</strong> " + esc(dps.tomador.nome || "-") + "</div>";
+  html += "<div><strong>CPF:</strong> " + esc(formatarCPF(dps.tomador.cpf_cnpj || "-")) + "</div>";
+  html += "<div><strong>Email:</strong> " + esc(dps.tomador.email || "-") + "</div>";
+  html += "<div><strong>Telefone:</strong> " + esc(dps.tomador.telefone || "-") + "</div>";
+  html += "<div><strong>CEP:</strong> " + esc(dps.tomador.cep || "-") + "</div>";
+  html += "<div><strong>Logradouro:</strong> " + esc(dps.tomador.logradouro || "-") + "</div>";
+  html += "<div><strong>Numero:</strong> " + esc(dps.tomador.numero || "-") + "</div>";
+  html += "<div><strong>Complemento:</strong> " + esc(dps.tomador.complemento || "-") + "</div>";
+  html += "<div><strong>Bairro:</strong> " + esc(dps.tomador.bairro || "-") + "</div>";
+  html += "<div><strong>Municipio/UF:</strong> " + esc((dps.tomador.municipio || "-") + "/" + (dps.tomador.uf || "-")) + "</div>";
+
+  html += "<div class=\"field\" style=\"margin-top:12px\">";
+  html += "<label>Texto pronto para copiar</label>";
+  html += "<textarea id=\"txtDpsNacional\" style=\"min-height:220px\">" + esc(texto) + "</textarea>";
+  html += "</div>";
+
+  html += "</div>";
+
+  openM("Pre-emissao NFS-e Nacional", html, [
+    {lbl:"Fechar", cls:"btno", fn:function(){ closeM(); }},
+    {
+      lbl:"Copiar dados",
+      cls:"btng",
+      fn:function(){
+        var ta = document.getElementById("txtDpsNacional");
+        if(!ta) return;
+        ta.select();
+        ta.setSelectionRange(0, 99999);
+        document.execCommand("copy");
+        toast("Sucesso", "Dados da DPS copiados.");
+      }
+    }
+  ]);
 }
 // ── AUTH ──
 async function doLoginSupa(){
@@ -1094,6 +1344,17 @@ async function loadAllData(){
           id: a.id,
           pac: a.paciente_nome,
           tel: a.paciente_tel || "",
+          paciente_cpf: a.paciente_cpf || "",
+          paciente_cnpj: a.paciente_cnpj || "",
+          paciente_email: a.paciente_email || "",
+          paciente_cep: a.paciente_cep || "",
+          paciente_logradouro: a.paciente_logradouro || "",
+          paciente_numero: a.paciente_numero || "",
+          paciente_complemento: a.paciente_complemento || "",
+          paciente_bairro: a.paciente_bairro || "",
+          paciente_municipio: a.paciente_municipio || "",
+          paciente_uf: a.paciente_uf || "",
+
           ex: a.exame_id,
           exames: itens,
           dt: iso2br(a.data_exame),
@@ -1101,9 +1362,26 @@ async function loadAllData(){
           dur: a.duracao || 30,
           dId: a.dentista_id,
           cv: a.convenio_id || "",
+
           vl: parseFloat(a.valor || 0),
+          valor_bruto: parseFloat(a.valor_bruto || a.valor || 0),
+          desconto_percentual: Number(a.desconto_percentual || 0),
+          desconto_valor: Number(a.desconto_valor || 0),
+          valor_faturado: parseFloat(a.valor_faturado || a.valor || 0),
+
+          forma_pagamento_prevista: a.forma_pagamento_prevista || "avista",
+          forma_pagamento_final: a.forma_pagamento_final || "",
+
           cb: a.cashback_pts || 0,
-          st: a.status || "agendado"
+
+          st: a.status || "agendado",
+          status: a.status || "agendado",
+          status_clinico: a.status_clinico || a.status || "agendado",
+          status_fiscal: a.status_fiscal || "nao_emitida",
+
+          nfse_id: a.nfse_id || null,
+          focus_reference: a.focus_reference || null,
+          pode_pontuar: a.pode_pontuar === true
         };
       });
     }
@@ -1205,23 +1483,44 @@ async function dbDelPrem(id){return !(await supa.from("premios").update({ativo:f
 // ── AGENDAMENTOS ──
 async function dbSaveAg(ag){
   var d = {
-    paciente_nome: ag.pac,
-    paciente_tel: ag.tel,
-    exame_id: (ag.exames && ag.exames[0]) ? ag.exames[0].exame_id : ag.ex,
-    data_exame: br2iso(ag.dt),
-    hora_exame: ag.hr,
-    duracao: ag.dur,
-    dentista_id: ag.dId,
-    convenio_id: (ag.exames && ag.exames[0]) ? (ag.exames[0].convenio_id || null) : (ag.cv || null),
-    valor: ag.vl,
-    cashback_pts: ag.cb,
-    status: ag.st,
-    status_clinico: ag.status_clinico || ag.st || "agendado",
-    status_fiscal: ag.status_fiscal || "nao_emitida",
-    valor_faturado: ag.valor_faturado || null,
-    nfse_id: ag.nfse_id || null,
-    pode_pontuar: ag.pode_pontuar === true
-  };
+  paciente_nome: ag.pac,
+  paciente_tel: ag.tel,
+
+  paciente_cpf: ag.paciente_cpf || null,
+  paciente_cnpj: ag.paciente_cnpj || null,
+  paciente_email: ag.paciente_email || null,
+  paciente_cep: ag.paciente_cep || null,
+  paciente_logradouro: ag.paciente_logradouro || null,
+  paciente_numero: ag.paciente_numero || null,
+  paciente_complemento: ag.paciente_complemento || null,
+  paciente_bairro: ag.paciente_bairro || null,
+  paciente_municipio: ag.paciente_municipio || null,
+  paciente_uf: ag.paciente_uf || null,
+
+  exame_id: (ag.exames && ag.exames[0]) ? ag.exames[0].exame_id : ag.ex,
+  data_exame: br2iso(ag.dt),
+  hora_exame: ag.hr,
+  duracao: ag.dur,
+  dentista_id: ag.dId,
+  convenio_id: (ag.exames && ag.exames[0]) ? (ag.exames[0].convenio_id || null) : (ag.cv || null),
+
+  valor: ag.vl,
+  valor_bruto: ag.valor_bruto || ag.vl || 0,
+  desconto_percentual: ag.desconto_percentual || 0,
+  desconto_valor: ag.desconto_valor || 0,
+  valor_faturado: ag.valor_faturado || ag.vl || 0,
+
+  forma_pagamento_prevista: ag.forma_pagamento_prevista || "avista",
+  forma_pagamento_final: ag.forma_pagamento_final || null,
+
+  cashback_pts: ag.cb,
+  status: ag.st,
+  status_clinico: ag.status_clinico || ag.st || "agendado",
+  status_fiscal: ag.status_fiscal || "nao_emitida",
+  nfse_id: ag.nfse_id || null,
+  focus_reference: ag.focus_reference || null,
+  pode_pontuar: ag.pode_pontuar === true
+};
 
   var r = ag._new
     ? await supa.from("agendamentos").insert(d).select().single()
@@ -1750,10 +2049,10 @@ async function dbResgatar(dentId,premId,pts){
 <div class="page" id="page-agendar"><div class="pi" id="pgAg"></div></div>
 <div class="page" id="page-exames"><div class="pi" id="pgEx"></div></div>
 <div class="page" id="page-convenios"><div class="pi" id="pgCv"></div></div>
-<div class="page" id="page-cashback"><div class="pi" id="pgCb"></div></div>
-<div class="page" id="page-dentistas"><div class="pi" id="pgDt"></div></div>
+<div class="page" id="page-cashback"><div class="pi pg-scroll" id="pgCb"></div></div>
+<div class="page" id="page-dentistas"><div class="pi pg-scroll" id="pgDt"></div></div>
 <div class="page" id="page-usuarios"><div class="pi" id="pgUs"></div></div>
-<div class="page" id="page-config"><div class="pi" id="pgCf"></div></div>
+<div class="page" id="page-config"><div class="pi pg-scroll" id="pgCf"></div></div>
 <script>
 // ══ AUTH & USERS ══
 var USERS = [
@@ -2021,25 +2320,40 @@ function ragendar() {
   h += "<div class=\"ag-si\" id=\"agSI\"></div>";
 
   h += "<div class=\"field\"><label>Paciente</label><input type=\"text\" id=\"pNome\" placeholder=\"Nome completo\"></div>";
-  h += "<div class=\"field\"><label>Telefone</label><input type=\"text\" id=\"pTel\" placeholder=\"49 9 9999-9999\"></div>";
+h += "<div class=\"field\"><label>Telefone</label><input type=\"text\" id=\"pTel\" placeholder=\"(49) 99999-9999\" oninput=\"maskPhone(this)\"></div>";
+h += "<div class=\"field\"><label>E-mail</label><input type=\"email\" id=\"pEmail\" placeholder=\"paciente@email.com\"></div>";
 
-  h += "<div class=\"fg2\">";
-  h += "<div class=\"field\"><label>Data</label><input type=\"date\" id=\"pData\"></div>";
-  h += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"pHora\" value=\"08:00\"></div>";
-  h += "</div>";
+h += "<div class=\"fg2\">";
+h += "<div class=\"field\"><label>Data</label><input type=\"date\" id=\"pData\"></div>";
+h += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"pHora\" value=\"08:00\"></div>";
+h += "</div>";
 
-  h += "<div class=\"fg2\">";
-  h += "<div class=\"field\"><label>Duracao</label><select id=\"pDur\">";
-  h += "<option value=\"10\">10 min</option>";
-  h += "<option value=\"15\">15 min</option>";
-  h += "<option value=\"20\">20 min</option>";
-  h += "<option value=\"30\">30 min</option>";
-  h += "<option value=\"60\">1h</option>";
-  h += "<option value=\"90\">1h 30min</option>";
-  h += "</select></div>";
-  h += "<div class=\"field\"><label>CPF</label><input type=\"text\" id=\"pCpf\" placeholder=\"000.000.000-00\"></div>";
-  h += "</div>";
+h += "<div class=\"fg2\">";
+h += "<div class=\"field\"><label>Duracao</label><select id=\"pDur\">";
+h += "<option value=\"10\">10 min</option>";
+h += "<option value=\"15\">15 min</option>";
+h += "<option value=\"20\">20 min</option>";
+h += "<option value=\"30\">30 min</option>";
+h += "<option value=\"60\">1h</option>";
+h += "<option value=\"90\">1h 30min</option>";
+h += "</select></div>";
+h += "<div class=\"field\"><label>CPF</label><input type=\"text\" id=\"pCpf\" placeholder=\"000.000.000-00\" oninput=\"maskCPF(this)\"></div>";
+h += "</div>";
 
+h += "<div class=\"fg2\">";
+h += "<div class=\"field\"><label>CEP</label><input type=\"text\" id=\"pCep\" placeholder=\"00000-000\" oninput=\"onCepInputAuto(this, false)\"></div>";
+h += "<div class=\"field\"><label>Numero</label><input type=\"text\" id=\"pNumero\" placeholder=\"123\"></div>";
+h += "</div>";
+
+h += "<div class=\"field\"><label>Logradouro</label><input type=\"text\" id=\"pLogradouro\" placeholder=\"Rua / Avenida\"></div>";
+h += "<div class=\"field\"><label>Complemento</label><input type=\"text\" id=\"pComplemento\" placeholder=\"Apto, sala, bloco...\"></div>";
+
+h += "<div class=\"fg2\">";
+h += "<div class=\"field\"><label>Bairro</label><input type=\"text\" id=\"pBairro\" placeholder=\"Bairro\"></div>";
+h += "<div class=\"field\"><label>UF</label><input type=\"text\" id=\"pUf\" placeholder=\"RS\" maxlength=\"2\"></div>";
+h += "</div>";
+
+h += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"pMunicipio\" placeholder=\"Cidade\"></div>";
   h += "<div class='field'><label>Exames</label>";
   h += "<div id='pExWrap'></div>";
   h += "</div>";
@@ -2091,8 +2405,10 @@ setTimeout(function(){
 
 var agView = "dia";
 var agBase = new Date();
-var AGS = 7; var AGE = 19; var AGSZ = 20;
+var AGS = 7; var AGE = 19; var AGSZ = 14;
 var ECS = {agendado:"ec0",realizado:"ec1",aguardando:"ec2",cancelado:"ec3"};
+
+var _agSaving = false;
 
 function setAgV(v) {
   agView=v;
@@ -2171,8 +2487,14 @@ function rndAg() {
     h+="</div></div>";
   });
   h+="</div></div>";
+  var prevScroll = gw.scrollTop;
+  var hadContent = gw.innerHTML.length > 10;
   gw.innerHTML=h;
-  gw.scrollTop=((8*60-AGS*60)/5)*AGSZ-60;
+  if(hadContent && prevScroll > 0){
+    gw.scrollTop = prevScroll;
+  } else {
+    gw.scrollTop=((8*60-AGS*60)/5)*AGSZ-60;
+  }
 }
 
 function agCC(ds,ts) {
@@ -2299,6 +2621,18 @@ function agEV(ev, id) {
     })(a);
   }
 
+  if((a.status_clinico || a.st)=="realizado"){
+  (function(ag){
+    btns.push({
+      lbl:"🧾 Pre-emissao Nac.",
+      cls:"btng",
+      fn:function(){
+  abrirPreEmissaoNacional(ag.id);
+}
+    });
+  })(a);
+}
+
   (function(ag){
     btns.push({lbl:"📲 WhatsApp", cls:"btnt", fn:function(){ closeM(); sWAi(ag.id); }});
   })(a);
@@ -2346,22 +2680,41 @@ function openEditAg(id) {
 
   var b = "<div style=\"display:flex;flex-direction:column;gap:10px\">";
   b += "<div class=\"field\"><label>Nome do Paciente</label><input id=\"eNm2\" value=\"" + esc(a.pac) + "\"></div>";
-  b += "<div class=\"field\"><label>Telefone/WhatsApp</label><input id=\"eTel2\" value=\"" + esc(a.tel || "") + "\" placeholder=\"49 9 9999-9999\"></div>";
+b += "<div class=\"field\"><label>Telefone/WhatsApp</label><input id=\"eTel2\" value=\"" + esc(String(a.tel || "").replace(/^(\d{2})(\d{4,5})(\d{4})$/, "($1) $2-$3")) + "\" placeholder=\"(49) 99999-9999\" oninput=\"maskPhone(this)\"></div>";
+b += "<div class=\"field\"><label>E-mail</label><input id=\"eEmail\" type=\"email\" value=\"" + esc(a.paciente_email || "") + "\" placeholder=\"paciente@email.com\"></div>";
 
-  b += "<div class=\"fg2\"><div class=\"field\"><label>Data</label><input type=\"date\" id=\"eDt2\" value=\"" + dtVal + "\"></div>";
-  b += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"eHr2\" value=\"" + a.hr + "\"></div></div>";
+b += "<div class=\"fg2\"><div class=\"field\"><label>Data</label><input type=\"date\" id=\"eDt2\" value=\"" + dtVal + "\"></div>";
+b += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"eHr2\" value=\"" + a.hr + "\"></div></div>";
 
-  b += "<div class=\"fg2\"><div class=\"field\"><label>Duracao</label><select id=\"eDur2\">";
-  [{v:"10",l:"10 min"},{v:"15",l:"15 min"},{v:"20",l:"20 min"},{v:"30",l:"30 min"},{v:"60",l:"1h"},{v:"90",l:"1h 30min"}].forEach(function(op){
-    b += "<option value=\"" + op.v + "\"" + ((a.dur || 30) === parseInt(op.v) ? " selected" : "") + ">" + op.l + "</option>";
-  });
-  b += "</select></div>";
+b += "<div class=\"fg2\"><div class=\"field\"><label>Duracao</label><select id=\"eDur2\">";
+[{v:"10",l:"10 min"},{v:"15",l:"15 min"},{v:"20",l:"20 min"},{v:"30",l:"30 min"},{v:"60",l:"1h"},{v:"90",l:"1h 30min"}].forEach(function(op){
+  b += "<option value=\"" + op.v + "\"" + ((a.dur || 30) === parseInt(op.v) ? " selected" : "") + ">" + op.l + "</option>";
+});
+b += "</select></div>";
 
-  b += "<div class=\"field\"><label>Status</label><select id=\"eSt2\">";
-  [{v:"agendado",l:"Agendado"},{v:"aguardando",l:"Aguardando"},{v:"realizado",l:"Realizado"},{v:"cancelado",l:"Cancelado"}].forEach(function(op){
-    b += "<option value=\"" + op.v + "\"" + (a.st === op.v ? " selected" : "") + ">" + op.l + "</option>";
-  });
-  b += "</select></div></div>";
+b += "<div class=\"field\"><label>Status</label><select id=\"eSt2\">";
+[{v:"agendado",l:"Agendado"},{v:"aguardando",l:"Aguardando"},{v:"realizado",l:"Realizado"},{v:"cancelado",l:"Cancelado"}].forEach(function(op){
+  b += "<option value=\"" + op.v + "\"" + (a.st === op.v ? " selected" : "") + ">" + op.l + "</option>";
+});
+b += "</select></div></div>";
+
+b += "<div class=\"fg2\">";
+b += "<div class=\"field\"><label>CPF</label><input type=\"text\" id=\"eCpf\" value=\"" + esc(formatarCPF(a.paciente_cpf || "")) + "\" placeholder=\"000.000.000-00\" oninput=\"maskCPF(this)\"></div>";
+b += "<div class=\"field\"><label>CEP</label><input type=\"text\" id=\"eCep\" value=\"" + esc(a.paciente_cep || "") + "\" placeholder=\"00000-000\" oninput=\"onCepInputAuto(this, true)\"></div>";
+b += "</div>";
+
+b += "<div class=\"fg2\">";
+b += "<div class=\"field\"><label>Numero</label><input type=\"text\" id=\"eNumero\" value=\"" + esc(a.paciente_numero || "") + "\" placeholder=\"123\"></div>";
+b += "<div class=\"field\"><label>UF</label><input type=\"text\" id=\"eUf\" value=\"" + esc(a.paciente_uf || "") + "\" placeholder=\"RS\" maxlength=\"2\"></div>";
+b += "</div>";
+
+b += "<div class=\"field\"><label>Logradouro</label><input type=\"text\" id=\"eLogradouro\" value=\"" + esc(a.paciente_logradouro || "") + "\" placeholder=\"Rua / Avenida\"></div>";
+b += "<div class=\"field\"><label>Complemento</label><input type=\"text\" id=\"eComplemento\" value=\"" + esc(a.paciente_complemento || "") + "\" placeholder=\"Apto, sala, bloco...\"></div>";
+
+b += "<div class=\"fg2\">";
+b += "<div class=\"field\"><label>Bairro</label><input type=\"text\" id=\"eBairro\" value=\"" + esc(a.paciente_bairro || "") + "\" placeholder=\"Bairro\"></div>";
+b += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"eMunicipio\" value=\"" + esc(a.paciente_municipio || "") + "\" placeholder=\"Cidade\"></div>";
+b += "</div>";
 
   b += "<div class=\"field\"><label>Exame</label><select id=\"eEx2\">";
   exT.forEach(function(e){
@@ -2390,9 +2743,19 @@ function openEditAg(id) {
 
   openM("Editar Agendamento", b, [
     {lbl:"Voltar", cls:"btno", fn:function(){ closeM(); agEV(id); }},
-    {lbl:"Salvar", cls:"btng", fn:function(){
+    {lbl:"Salvar", cls:"btng", fn:async function(){
       var nm2 = document.getElementById("eNm2").value.trim();
       var tel2 = document.getElementById("eTel2").value.trim().replace(/\D/g,"");
+      var email2 = (document.getElementById("eEmail")?.value || "").trim();
+      var cpf2 = (document.getElementById("eCpf")?.value || "").trim();
+      var cep2 = (document.getElementById("eCep")?.value || "").trim();
+      var logradouro2 = (document.getElementById("eLogradouro")?.value || "").trim();
+      var numero2 = (document.getElementById("eNumero")?.value || "").trim();
+      var complemento2 = (document.getElementById("eComplemento")?.value || "").trim();
+      var bairro2 = (document.getElementById("eBairro")?.value || "").trim();
+      var municipio2 = (document.getElementById("eMunicipio")?.value || "").trim();
+      var uf2 = (document.getElementById("eUf")?.value || "").trim().toUpperCase();
+
       var dtR = document.getElementById("eDt2").value;
       var hr2 = document.getElementById("eHr2").value;
       var dur3 = parseInt(document.getElementById("eDur2").value) || 30;
@@ -2412,6 +2775,16 @@ function openEditAg(id) {
 
       a.pac = nm2;
       a.tel = tel2;
+      a.paciente_email = email2;
+      a.paciente_cpf = normalizarCpfCnpj(cpf2);
+      a.paciente_cep = cep2;
+      a.paciente_logradouro = logradouro2;
+      a.paciente_numero = numero2;
+      a.paciente_complemento = complemento2;
+      a.paciente_bairro = bairro2;
+      a.paciente_municipio = municipio2;
+      a.paciente_uf = uf2;
+
       a.dt = df5;
       a.hr = hr2;
       a.dur = dur3;
@@ -2428,16 +2801,47 @@ function openEditAg(id) {
       a.valor_faturado = calcPgEdit.valor_faturado;
       a.vl = calcPgEdit.valor_faturado;
 
-      dbSaveAg(a);
+      var ok = await dbSaveAg(a);
+      if (!ok) {
+        toast("⚠️","Erro ao salvar alterações do agendamento");
+        return;
+      }
+
       closeM();
       rndAg();
       toast("✅","Agendamento atualizado!");
     }}
   ]);
 }
+function onCepInputAuto(el, isEdit){
+  if(!el) return;
 
-var _agSaving = false;
+  maskCEP(el);
 
+  var cep = el.value.replace(/\D/g, "");
+  if (cep.length !== 8) return;
+
+  buscarCepAuto(cep).then(function(data){
+    if(!data){
+      toast("CEP", "CEP não encontrado");
+      return;
+    }
+
+    var prefix = isEdit ? "e" : "p";
+
+    if (document.getElementById(prefix + "Logradouro"))
+      document.getElementById(prefix + "Logradouro").value = data.logradouro;
+
+    if (document.getElementById(prefix + "Bairro"))
+      document.getElementById(prefix + "Bairro").value = data.bairro;
+
+    if (document.getElementById(prefix + "Municipio"))
+      document.getElementById(prefix + "Municipio").value = data.municipio;
+
+    if (document.getElementById(prefix + "Uf"))
+      document.getElementById(prefix + "Uf").value = data.uf;
+  });
+}
 async function confAg() {
   if (_agSaving) return;
   _agSaving = true;
@@ -2445,6 +2849,16 @@ async function confAg() {
 
   var nm = document.getElementById("pNome").value.trim();
   var tl = document.getElementById("pTel").value.trim().replace(/\D/g,"");
+  var cpf = (document.getElementById("pCpf")?.value || "").trim();
+  var email = (document.getElementById("pEmail")?.value || "").trim();
+  var cep = (document.getElementById("pCep")?.value || "").trim();
+  var logradouro = (document.getElementById("pLogradouro")?.value || "").trim();
+  var numero = (document.getElementById("pNumero")?.value || "").trim();
+  var complemento = (document.getElementById("pComplemento")?.value || "").trim();
+  var bairro = (document.getElementById("pBairro")?.value || "").trim();
+  var municipio = (document.getElementById("pMunicipio")?.value || "").trim();
+  var uf = (document.getElementById("pUf")?.value || "").trim().toUpperCase();
+
   var dtR = document.getElementById("pData").value;
   var hr = document.getElementById("pHora").value;
   var itens = getExamesSelecionados("pExames");
@@ -2480,6 +2894,15 @@ async function confAg() {
   var ag = {
     pac: nm,
     tel: tl,
+    paciente_cpf: cpf,
+    paciente_email: email,
+    paciente_cep: cep,
+    paciente_logradouro: logradouro,
+    paciente_numero: numero,
+    paciente_complemento: complemento,
+    paciente_bairro: bairro,
+    paciente_municipio: municipio,
+    paciente_uf: uf,
     ex: itens[0].exame_id,
     exames: itens,
     dt: df4,
@@ -2543,6 +2966,15 @@ async function confAg() {
   document.getElementById("pNome").value = "";
   document.getElementById("pTel").value = "";
   document.getElementById("pObs").value = "";
+  if (document.getElementById("pCpf")) document.getElementById("pCpf").value = "";
+  if (document.getElementById("pEmail")) document.getElementById("pEmail").value = "";
+  if (document.getElementById("pCep")) document.getElementById("pCep").value = "";
+  if (document.getElementById("pLogradouro")) document.getElementById("pLogradouro").value = "";
+  if (document.getElementById("pNumero")) document.getElementById("pNumero").value = "";
+  if (document.getElementById("pComplemento")) document.getElementById("pComplemento").value = "";
+  if (document.getElementById("pBairro")) document.getElementById("pBairro").value = "";
+  if (document.getElementById("pMunicipio")) document.getElementById("pMunicipio").value = "";
+  if (document.getElementById("pUf")) document.getElementById("pUf").value = "";
 
   document.getElementById("pExWrap").innerHTML =
     exChecklistHtml("pExames", [], "updAgSum");
@@ -2586,6 +3018,67 @@ function rexames() {
   h+="</div><div class='card'><div class='tw'><table><thead><tr>"; ["Paciente","Exame","Data/Hora","Dentista","Convenio","Valor","Cashback","Status","Acoes"].forEach(function(c){h+="<th>"+c+"</th>";});
   h+="</tr></thead><tbody id='exTb'></tbody></table></div></div>";
   document.getElementById("pgEx").innerHTML=h; bldExRows();
+}
+async function buscarCepAuto(cep){
+  var c = String(cep || "").replace(/\D/g,"");
+
+  if (c.length !== 8) return null;
+
+  try{
+    var r = await fetch("https://viacep.com.br/ws/" + c + "/json/");
+    var d = await r.json();
+
+    if (d.erro) return null;
+
+    return {
+      logradouro: d.logradouro || "",
+      bairro: d.bairro || "",
+      municipio: d.localidade || "",
+      uf: d.uf || ""
+    };
+  }catch(e){
+    console.error("Erro CEP:", e);
+    return null;
+  }
+}
+async function onCepBlur(){
+  var cepInput = document.getElementById("pCep");
+  if(!cepInput) return;
+
+  var cep = cepInput.value;
+  var data = await buscarCepAuto(cep);
+
+  if(!data){
+    toast("CEP", "CEP não encontrado");
+    return;
+  }
+
+  if (document.getElementById("pLogradouro"))
+    document.getElementById("pLogradouro").value = data.logradouro;
+
+  if (document.getElementById("pBairro"))
+    document.getElementById("pBairro").value = data.bairro;
+
+  if (document.getElementById("pMunicipio"))
+    document.getElementById("pMunicipio").value = data.municipio;
+
+  if (document.getElementById("pUf"))
+    document.getElementById("pUf").value = data.uf;
+}
+async function onCepBlurEdit(){
+  var cepInput = document.getElementById("eCep");
+  if(!cepInput) return;
+
+  var data = await buscarCepAuto(cepInput.value);
+  if(!data){
+    toast("CEP", "CEP não encontrado");
+    return;
+  }
+
+  if (document.getElementById("eLogradouro")) document.getElementById("eLogradouro").value = data.logradouro;
+  if (document.getElementById("eBairro")) document.getElementById("eBairro").value = data.bairro;
+  if (document.getElementById("eMunicipio")) document.getElementById("eMunicipio").value = data.municipio;
+  if (document.getElementById("eUf")) document.getElementById("eUf").value = data.uf;
 }
 function bldExRows() {
   var data = ags;
@@ -2673,6 +3166,48 @@ function bldExRows() {
 
   var tb = document.getElementById("exTb");
   if (tb) tb.innerHTML = h;
+}
+function maskCPF(el){
+  if(!el) return;
+  var v = String(el.value || "").replace(/\D/g, "").slice(0, 11);
+
+  if (v.length > 9) {
+    v = v.replace(/^(\d{3})(\d{3})(\d{3})(\d{1,2}).*/, "$1.$2.$3-$4");
+  } else if (v.length > 6) {
+    v = v.replace(/^(\d{3})(\d{3})(\d+).*/, "$1.$2.$3");
+  } else if (v.length > 3) {
+    v = v.replace(/^(\d{3})(\d+).*/, "$1.$2");
+  }
+
+  el.value = v;
+}
+
+function maskCEP(el){
+  if(!el) return;
+  var v = String(el.value || "").replace(/\D/g, "").slice(0, 8);
+
+  if (v.length > 5) {
+    v = v.replace(/^(\d{5})(\d+).*/, "$1-$2");
+  }
+
+  el.value = v;
+}
+
+function maskPhone(el){
+  if(!el) return;
+  var v = String(el.value || "").replace(/\D/g, "").slice(0, 11);
+
+  if (v.length > 10) {
+    v = v.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, "($1) $2-$3");
+  } else if (v.length > 6) {
+    v = v.replace(/^(\d{2})(\d{4,5})(\d{0,4}).*/, "($1) $2-$3");
+  } else if (v.length > 2) {
+    v = v.replace(/^(\d{2})(\d+).*/, "($1) $2");
+  } else if (v.length > 0) {
+    v = v.replace(/^(\d+)/, "($1");
+  }
+
+  el.value = v;
 }
 function obterDescontoPagamento(formaPagamento){
   if(formaPagamento === "avista") return 20;
@@ -3601,7 +4136,7 @@ function rcfg(){
   h+="style='width:100%;max-width:320px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 12px;color:var(--wh);font-size:.84rem;outline:none;'>";
   h+="</div>";
 
-  h+="<div id='cfgExLista' style='max-height:420px;overflow:auto;padding-right:4px'>";
+  h+="<div id='cfgExLista' style='max-height:280px;overflow:auto;padding-right:4px'>";
   exT.forEach(function(e){
     h+="<div class='citm cfg-ex-item' data-nome='"+String(e.n||"").toLowerCase().replace(/'/g,"&apos;")+"'>";
     h+="<span style='font-size:1.15rem'>"+e.ico+"</span>";
