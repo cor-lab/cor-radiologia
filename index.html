@@ -1235,7 +1235,9 @@ async function doLogoutSupa(){
   document.getElementById("lPass").value="";
   document.querySelectorAll(".page").forEach(function(p){p.classList.remove("active");});
 }
-function sendWA(){ if(lastAg) sWAi(lastAg.id); }
+function sendWA(id){
+  if(id) sWAi(id);
+}
 
 // ── LOAD ALL DATA ──
 async function loadAllData(){
@@ -1971,7 +1973,7 @@ async function dbResgatar(dentId,premId,pts){
     <div id="waDiv" style="margin:12px 0"></div>
     <div style="display:flex;gap:10px;justify-content:center;margin-top:14px">
       <button class="btn btno" onclick="closeMa()">Fechar</button>
-      <button class="btn" style="background:linear-gradient(135deg,#25d366,#128c7e);color:#fff" onclick="sendWA()">📲 WhatsApp</button>
+      <button class="btn" style="background:linear-gradient(135deg,#25d366,#128c7e);color:#fff" onclick="sendWA(a.id)">📲 WhatsApp</button>
     </div>
   </div>
 </div>
@@ -2248,9 +2250,11 @@ var ags = [
   {id:7,pac:"Lucia Ferreira",        tel:"49997770007",ex:"cefa",dt:"19/03/2026",hr:"15:30",dId:3,cv:"",        vl:100,cb:40, st:"realizado"}
 ];
 var waT = {
-  ag: "🦷 *COR — Centro Odontologico de Radiologia*\n\nOla, {nome}!\n\nAgendamento confirmado:\nExame: {exame}\nData: {data}\nHorario: {hora}\nLocal: {clinica}\n\nQualquer duvida estamos a disposicao!",
+  ag: "🦷 *COR — Centro Odontologico de Radiologia*\n\nOla, {nome}!\n\nAgendamento confirmado:\nExame: {exame}\nData: {data}\nHorario: {hora}\nLocal: {clinica}\n\nQualquer duvida é só chamar!",
   lb: "🦷 *COR — Lembrete*\n\nOla, {nome}! Amanha voce tem:\nExame: {exame}\nHorario: {hora}\n\nNao esqueca seus documentos!"
 };
+
+loadWaTemplates();
 var nlv = {
   "Bronze":{bonus:1.0,  next:"Prata",    nxp:1500,em:"🥉"},
   "Prata": {bonus:1.05, next:"Ouro",     nxp:3000,em:"🥈"},
@@ -2321,48 +2325,49 @@ function ragendar() {
   h += "<div class=\"ag-si\" id=\"agSI\"></div>";
 
   h += "<div class=\"field\"><label>Paciente</label><input type=\"text\" id=\"pNome\" placeholder=\"Nome completo\"></div>";
-h += "<div class=\"field\"><label>Telefone</label><input type=\"text\" id=\"pTel\" placeholder=\"(49) 99999-9999\" oninput=\"maskPhone(this)\"></div>";
-h += "<div class=\"field\"><label>E-mail</label><input type=\"email\" id=\"pEmail\" placeholder=\"paciente@email.com\"></div>";
+  h += "<div class=\"field\"><label>Telefone</label><input type=\"text\" id=\"pTel\" placeholder=\"(49) 99999-9999\" oninput=\"maskPhone(this)\"></div>";
+  h += "<div class=\"field\"><label>E-mail</label><input type=\"email\" id=\"pEmail\" placeholder=\"paciente@email.com\"></div>";
 
-h += "<div class=\"fg2\">";
-h += "<div class=\"field\"><label>Data</label><input type=\"date\" id=\"pData\"></div>";
-h += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"pHora\" value=\"08:00\"></div>";
-h += "</div>";
+  h += "<div class=\"fg2\">";
+  h += "<div class=\"field\"><label>Data</label><input type=\"date\" id=\"pData\"></div>";
+  h += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"pHora\" value=\"08:00\"></div>";
+  h += "</div>";
 
-h += "<div class=\"fg2\">";
-h += "<div class=\"field\"><label>Duracao</label><select id=\"pDur\">";
-h += "<option value=\"10\">10 min</option>";
-h += "<option value=\"15\">15 min</option>";
-h += "<option value=\"20\">20 min</option>";
-h += "<option value=\"30\">30 min</option>";
-h += "<option value=\"60\">1h</option>";
-h += "<option value=\"90\">1h 30min</option>";
-h += "</select></div>";
-h += "<div class=\"field\"><label>CPF</label><input type=\"text\" id=\"pCpf\" placeholder=\"000.000.000-00\" oninput=\"maskCPF(this)\"></div>";
-h += "</div>";
+  h += "<div class=\"fg2\">";
+  h += "<div class=\"field\"><label>Duracao</label><select id=\"pDur\">";
+  h += "<option value=\"10\">10 min</option>";
+  h += "<option value=\"15\">15 min</option>";
+  h += "<option value=\"20\">20 min</option>";
+  h += "<option value=\"30\">30 min</option>";
+  h += "<option value=\"60\">1h</option>";
+  h += "<option value=\"90\">1h 30min</option>";
+  h += "</select></div>";
+  h += "<div class=\"field\"><label>CPF</label><input type=\"text\" id=\"pCpf\" placeholder=\"000.000.000-00\" oninput=\"maskCPF(this)\"></div>";
+  h += "</div>";
 
-h += "<div class=\"fg2\">";
-h += "<div class=\"field\"><label>CEP</label><input type=\"text\" id=\"pCep\" placeholder=\"00000-000\" oninput=\"onCepInputAuto(this, false)\"></div>";
-h += "<div class=\"field\"><label>Numero</label><input type=\"text\" id=\"pNumero\" placeholder=\"123\"></div>";
-h += "</div>";
+  h += "<div class=\"fg2\">";
+  h += "<div class=\"field\"><label>CEP</label><input type=\"text\" id=\"pCep\" placeholder=\"00000-000\" oninput=\"onCepInputAuto(this, false)\"></div>";
+  h += "<div class=\"field\"><label>Numero</label><input type=\"text\" id=\"pNumero\" placeholder=\"123\"></div>";
+  h += "</div>";
 
-h += "<div class=\"field\"><label>Logradouro</label><input type=\"text\" id=\"pLogradouro\" placeholder=\"Rua / Avenida\"></div>";
-h += "<div class=\"field\"><label>Complemento</label><input type=\"text\" id=\"pComplemento\" placeholder=\"Apto, sala, bloco...\"></div>";
+  h += "<div class=\"field\"><label>Logradouro</label><input type=\"text\" id=\"pLogradouro\" placeholder=\"Rua / Avenida\"></div>";
+  h += "<div class=\"field\"><label>Complemento</label><input type=\"text\" id=\"pComplemento\" placeholder=\"Apto, sala, bloco...\"></div>";
 
-h += "<div class=\"fg2\">";
-h += "<div class=\"field\"><label>Bairro</label><input type=\"text\" id=\"pBairro\" placeholder=\"Bairro\"></div>";
-h += "<div class=\"field\"><label>UF</label><input type=\"text\" id=\"pUf\" placeholder=\"RS\" maxlength=\"2\"></div>";
-h += "</div>";
+  h += "<div class=\"fg2\">";
+  h += "<div class=\"field\"><label>Bairro</label><input type=\"text\" id=\"pBairro\" placeholder=\"Bairro\"></div>";
+  h += "<div class=\"field\"><label>UF</label><input type=\"text\" id=\"pUf\" placeholder=\"RS\" maxlength=\"2\"></div>";
+  h += "</div>";
 
-h += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"pMunicipio\" placeholder=\"Cidade\"></div>";
+  h += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"pMunicipio\" placeholder=\"Cidade\"></div>";
   h += "<div class='field'><label>Exames</label>";
   h += "<div id='pExWrap'></div>";
   h += "</div>";
 
+  h += "<div class=\"field\"><label>Buscar dentista</label><input type=\"text\" id=\"dBusca\" placeholder=\"Digite para filtrar dentistas\" oninput=\"filtrarDentistasAg()\"></div>";
   h += "<div class=\"field\"><label>Dentista</label><select id=\"dSel\">";
   h += "<option value=\"\">— Selecione —</option>";
   dents.forEach(function(d){
-  h += "<option value=\"" + d.id + "\">" + esc(d.n) + "</option>";
+    h += "<option value=\"" + d.id + "\">" + esc(d.n) + "</option>";
   });
   h += "</select></div>";
 
@@ -2497,7 +2502,6 @@ function rndAg() {
     gw.scrollTop=((8*60-AGS*60)/5)*AGSZ-60;
   }
 }
-
 function agCC(ds,ts) {
   var df3=document.getElementById("pData"); var hf3=document.getElementById("pHora");
   if(df3) df3.value=ds; if(hf3) hf3.value=ts;
@@ -2786,7 +2790,7 @@ function openEditAg(id) {
         toast("⚠️","Erro ao salvar alterações do agendamento");
         return;
       }
-
+      lastAg = a; // 🔥 ESSENCIAL
       closeM();
       rndAg();
       toast("✅","Agendamento atualizado!");
@@ -2892,7 +2896,7 @@ function updAgSumEdit(){
     var ex = fex(it.exame_id);
     var cv = fconv(it.convenio_id || "");
     var preco = Number(it.preco || 0);
-    var foraFat = itemEhUnimed(it);
+    var foraFat = itemEhConvenioForaDoFaturamento(it);
 
     linhas += "<div class='smr'>" +
       "<span>" +
@@ -3328,17 +3332,57 @@ function atualizarValorNota(){
 function filtEx(v){exSrch=v.toLowerCase();bldExRows();}
 function setFlt(el,f){document.querySelectorAll(".ftab").forEach(function(x){x.classList.remove("active");});el.classList.add("active");exFlt=f;bldExRows();}
 function chSt(id,s){var a=ags.find(function(x){return x.id===id;});if(a){a.st=s;dbUpdAgSt(id,s);bldExRows();toast("✅","Status: "+s);}}
+
 function sWAi(id){
   var a = ags.find(function(x){ return x.id === id; });
-  if(!a) return;
-
-  var tl = (a.tel || "").replace(/\D/g, "");
-  if(!tl){
-    toast("⚠️","Sem telefone. Edite o agendamento para adicionar.");
+  if(!a){
+    toast("Erro", "Agendamento não encontrado.");
     return;
   }
 
-  function obterDescontoPagamento(formaPagamento){
+  if(!a.tel){
+    toast("Atenção", "Paciente sem telefone.");
+    return;
+  }
+
+  var nomesExames = "";
+
+  if (Array.isArray(a.exames) && a.exames.length) {
+    nomesExames = a.exames.map(function(it){
+      var ex = fex(it.exame_id);
+      var cv = fconv(it.convenio_id || "");
+
+      var nomeEx = ex ? ex.n : (it.nome_exame || it.exame_id || "Exame");
+      var nomeCv = cv ? cv.n : "Particular";
+
+      return nomeEx + " (" + nomeCv + ")";
+    }).join(", ");
+  } else {
+    var ex = fex(a.ex);
+    var cv = fconv(a.cv || "");
+    nomesExames = (ex ? ex.n : "Exame") + " (" + (cv ? cv.n : "Particular") + ")";
+  }
+
+  var msg = String(waT.ag || "")
+    .replaceAll("{nome}", a.pac || "")
+    .replaceAll("{exame}", nomesExames || "")
+    .replaceAll("{data}", a.dt || "")
+    .replaceAll("{hora}", a.hr || "")
+    .replaceAll("{clinica}", "COR — Centro Odontologico de Radiologia");
+
+  var tel = String(a.tel || "").replace(/\D/g, "");
+
+  if(!tel){
+    toast("Atenção", "Telefone inválido para WhatsApp.");
+    return;
+  }
+
+  window.open(
+    "https://wa.me/55" + tel + "?text=" + encodeURIComponent(msg),
+    "_blank"
+  );
+}
+function obterDescontoPagamento(formaPagamento){
     if(formaPagamento === "avista") return 20;
     if(formaPagamento === "3x") return 10;
     if(formaPagamento === "4x") return 10;
@@ -3358,36 +3402,6 @@ function sWAi(id){
       valor_faturado: Number(valorFinal.toFixed(2))
     };
   }
-  var nomesExames = "";
-  if (Array.isArray(a.exames) && a.exames.length) {
-    nomesExames = a.exames.map(function(it){
-      var exId = it.exame_id || it;
-      var cvId = it.convenio_id || "";
-      var ex = fex(exId);
-      var cv = fconv(cvId);
-
-      var nomeEx = ex ? ex.n : exId;
-      var nomeCv = cv ? cv.n : "Particular";
-
-      return nomeEx + " (" + nomeCv + ")";
-    }).join(", ");
-  } else {
-    var ex = fex(a.ex);
-    var cv = fconv(a.cv || "");
-    nomesExames = (ex ? ex.n : "Exame") + " (" + (cv ? cv.n : "Particular") + ")";
-  }
-
-  var msg = waFmt(waT.ag, {
-    nome: a.pac,
-    exame: nomesExames,
-    data: a.dt,
-    hora: a.hr,
-    clinica: "COR — Centro Odontologico de Radiologia"
-  });
-
-  window.open("https://wa.me/55" + tl + "?text=" + encodeURIComponent(msg), "_blank");
-}
-function sendWA(){if(!lastAg){toast("⚠️","Nenhum agendamento");return;}sWAi(lastAg.id);}
 
 // ══ CONVENIOS ══
 
@@ -3588,64 +3602,136 @@ function rcash() {
   if(CU&&CU.role==="dentista"){rportal(CU.dentId);}else{rcashAdmin();}
 }
 function rcashAdmin(){
-  var srt=dents.slice().sort(function(a,b){return b.pts-a.pts;});
+  var srt = dents.slice().sort(function(a,b){ return b.pts - a.pts; });
 
-  var h="";
-  h+="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:18px'>";
-  h+="<div><h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>Programa de Cashback</h2></div>";
-  h+="</div>";
+  var h = "";
+  h += "<div class='pg-scroll' style='padding-right:6px'>";
+  h += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:18px'>";
+  h += "<div><h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>Programa de Cashback</h2></div>";
+  h += "</div>";
 
-  h+="<div style='display:grid;grid-template-columns:1fr;gap:18px;margin-bottom:18px'>";
+  h += "<div class='cfgs' style='align-items:start'>";
 
-  // Ranking
-  h+="<div class='card'><div class='ctitle'>🏆 Ranking</div>";
-  var med=["🥇","🥈","🥉"];
+  // COLUNA 1 — RANKING
+  h += "<div class='card' style='max-height:calc(100vh - 170px);overflow-y:auto'>";
+  h += "<div class='ctitle'>🏆 Ranking dos Dentistas</div>";
+
+  var med = ['🥇','🥈','🥉'];
   srt.forEach(function(d,i){
-    h+="<div class='ri'>";
-    h+="<span class='rn2'>"+(med[i]||i+1)+"</span>";
-    h+="<div class='rav' style='background:"+d.bg+";color:"+d.cor+"'>"+esc(d.ini)+"</div>";
-    h+="<div class='rin'><div class='rnm'>"+esc(d.n)+"</div><div class='rsb'>"+d.ind+" indic. &bull; "+esc(d.nv)+"</div></div>";
-    h+="<div style='text-align:right'><div class='rpts'>"+fmtN(d.pts)+" pts</div><button class='btn btnt bsm' style='margin-top:3px;font-size:.69rem' onclick='rportal("+d.id+")'>Portal</button></div>";
-    h+="</div>";
+    h += "<div class='ri'>";
+    h +=   "<span class='rn2'>" + (med[i] || (i+1)) + "</span>";
+    h +=   "<div class='rav' style='background:" + d.bg + ";color:" + d.cor + "'>" + esc(d.ini) + "</div>";
+    h +=   "<div class='rin'>";
+    h +=     "<div class='rnm'>" + esc(d.n) + "</div>";
+    h +=     "<div class='rsb'>" + fmtN(d.ind || 0) + " indic. &bull; " + esc(d.nv || 'Bronze') + "</div>";
+    h +=   "</div>";
+    h +=   "<div style='text-align:right'>";
+    h +=     "<div class='rpts'>" + fmtN(d.pts || 0) + " pts</div>";
+    h +=     "<button class='btn btnt bsm' style='margin-top:3px;font-size:.69rem' onclick='rportal(" + d.id + ")'>Portal</button>";
+    h +=   "</div>";
+    h += "</div>";
   });
-  h+="</div>";
 
+  if(!srt.length){
+    h += "<div style='color:var(--gr);font-size:.84rem'>Nenhum dentista encontrado.</div>";
+  }
 
-  h+="</div>";
+  h += "</div>";
 
-  // Ajuste manual
-  h+="<div class='card'>";
-  h+="<div class='ctitle'>⚙️ Ajuste Manual de Cashback</div>";
-  h+="<div class='fg2'>";
-  h+="<div class='field'><label>Dentista</label><select id='cbAjDent'>";
-  h+="<option value=''>-- Selecionar dentista --</option>";
+  // COLUNA 2 — AJUSTE MANUAL
+  h += "<div class='card' style='max-height:calc(100vh - 170px);overflow-y:auto'>";
+  h += "<div class='ctitle'>⚙️ Ajuste Manual de Cashback</div>";
+
+  h += "<div class='fg2'>";
+  h +=   "<div class='field'>";
+  h +=     "<label>Dentista</label>";
+  h +=     "<select id='cbAjDent'>";
+  h +=       "<option value=''>-- Selecionar dentista --</option>";
   dents.forEach(function(d){
-    h+="<option value='"+d.id+"'>"+esc(d.n)+"</option>";
+    h +=     "<option value='" + d.id + "'>" + esc(d.n) + "</option>";
   });
-  h+="</select></div>";
+  h +=     "</select>";
+  h +=   "</div>";
 
-  h+="<div class='field'><label>Tipo de ajuste</label><select id='cbAjTipo'>";
-  h+="<option value='credito'>Adicionar pontos</option>";
-  h+="<option value='debito'>Descontar pontos</option>";
-  h+="</select></div>";
-  h+="</div>";
+  h +=   "<div class='field'>";
+  h +=     "<label>Tipo de ajuste</label>";
+  h +=     "<select id='cbAjTipo'>";
+  h +=       "<option value='credito'>Adicionar pontos</option>";
+  h +=       "<option value='debito'>Descontar pontos</option>";
+  h +=     "</select>";
+  h +=   "</div>";
+  h += "</div>";
 
-  h+="<div class='fg2' style='margin-top:10px'>";
-  h+="<div class='field'><label>Pontos</label><input type='number' id='cbAjPts' min='1' placeholder='Ex: 100'></div>";
-  h+="<div class='field'><label>Senha do usuário</label><input type='password' id='cbAjSenha' placeholder='Digite sua senha'></div>";
-  h+="</div>";
+  h += "<div class='fg2' style='margin-top:10px'>";
+  h +=   "<div class='field'>";
+  h +=     "<label>Pontos</label>";
+  h +=     "<input type='number' id='cbAjPts' min='1' placeholder='Ex: 100'>";
+  h +=   "</div>";
 
-  h+="<div class='field' style='margin-top:10px'><label>Motivo</label><input id='cbAjMotivo' placeholder='Ex: ajuste administrativo'></div>";
+  h +=   "<div class='field'>";
+  h +=     "<label>Senha do usuário</label>";
+  h +=     "<input type='password' id='cbAjSenha' placeholder='Digite sua senha'>";
+  h +=   "</div>";
+  h += "</div>";
 
-  h+="<div style='display:flex;justify-content:flex-end;gap:8px;margin-top:14px'>";
-  h+="<button class='btn btno' onclick='limparAjusteCashbackAdmin()'>Limpar</button>";
-  h+="<button class='btn btng' onclick='aplicarAjusteCashbackAdmin()'>Aplicar ajuste</button>";
-  h+="</div>";
-  h+="</div>";
+  h += "<div class='field' style='margin-top:10px'>";
+  h +=   "<label>Motivo</label>";
+  h +=   "<input id='cbAjMotivo' placeholder='Ex: ajuste administrativo'>";
+  h += "</div>";
 
-  document.getElementById("pgCb").innerHTML=h;
+  h += "<div style='display:flex;justify-content:flex-end;gap:8px;margin-top:14px'>";
+  h +=   "<button class='btn btno' onclick='limparAjusteCashbackAdmin()'>Limpar</button>";
+  h +=   "<button class='btn btng' onclick='aplicarAjusteCashbackAdmin()'>Aplicar ajuste</button>";
+  h += "</div>";
+
+  h += "</div>"; // card ajuste
+  h += "</div>"; // cfgs
+  h += "</div>"; // pg-scroll
+
+  document.getElementById("pgCb").innerHTML = h;
+
+  
+  if(AJUSTES_CB && AJUSTES_CB.length){
+    AJUSTES_CB.slice(0,20).forEach(function(a){
+      var d = fdent(a.dentista_id);
+      var positivo = String(a.tipo || "") === "credito";
+      h += "<div class='ei'>";
+      h +=   "<div class='eico' style='background:" + (positivo ? "rgba(74,184,72,.12)" : "rgba(224,82,82,.12)") + ";color:" + (positivo ? "var(--g)" : "#f87171") + "'>" + (positivo ? "➕" : "➖") + "</div>";
+      h +=   "<div class='einfo'>";
+      h +=     "<div class='edesc'>" + esc(d ? d.n : "Dentista") + "</div>";
+      h +=     "<div class='edate'>" + esc(a.motivo || "Sem motivo") + "</div>";
+      h +=   "</div>";
+      h +=   "<div class='epts " + (positivo ? "pp" : "pm") + "'>" + (positivo ? "+" : "-") + fmtN(a.pontos || 0) + " pts</div>";
+      h += "</div>";
+    });
+  } else {
+    h += "<div style='color:var(--gr);font-size:.84rem'>Nenhum ajuste registrado.</div>";
+  }
+
+  h +=   "</div>";
+  h += "</div>";
+
+  h += "</div>"; // fim card ajuste
+  h += "</div>"; // fim cfgs
+  h += "</div>"; // fim pg-scroll
+
+  document.getElementById("pgCb").innerHTML = h;
 }
+function confirmarAjusteCashback(){
+  var sel = document.getElementById("cbAjDent");
+  if(!sel){
+    toast("⚠️","Campo de dentista não encontrado");
+    return;
+  }
 
+  var dentId = sel.value;
+  if(!dentId){
+    toast("⚠️","Selecione um dentista");
+    return;
+  }
+
+  aplicarAjusteCashback(dentId);
+}
 async function aplicarAjusteCashbackAdmin(){
   var dentId = parseInt((document.getElementById("cbAjDent").value || "0"), 10);
   var tipo = document.getElementById("cbAjTipo").value;
@@ -3717,7 +3803,6 @@ async function aplicarAjusteCashbackAdmin(){
   rcashAdmin();
   toast("✅", tipo === "credito" ? "Pontos adicionados" : "Pontos descontados");
 }
-
 function limparAjusteCashbackAdmin(){
   if(document.getElementById("cbAjDent")) document.getElementById("cbAjDent").value = "";
   if(document.getElementById("cbAjTipo")) document.getElementById("cbAjTipo").value = "credito";
@@ -3866,76 +3951,116 @@ async function validarSenhaUsuarioAtual(senha){
   return true;
 }
 
-async function aplicarAjusteCashback(dentId){
+async function aplicarAjusteCashback(){
+  var dentId = document.getElementById("cbAjDent").value;
   var tipo = document.getElementById("cbAjTipo").value;
-  var pontos = parseInt(document.getElementById("cbAjPts").value || 0);
-  var motivo = document.getElementById("cbAjMotivo").value.trim();
-  var senha = document.getElementById("cbAjSenha").value;
+  var pontos = Number(document.getElementById("cbAjPts").value || 0);
+  var motivo = document.getElementById("cbAjMot").value.trim();
 
-  if(pontos <= 0){
-    toast("⚠️","Informe uma quantidade válida");
+  if(!dentId){
+    toast("Atenção", "Selecione um dentista.");
     return;
   }
 
-  if(!senha){
-    toast("⚠️","Digite sua senha");
-    return;
-  }
-
-  var okSenha = await validarSenhaUsuarioAtual(senha);
-  if(!okSenha){
-    toast("⚠️","Senha inválida");
+  if(!pontos || pontos <= 0){
+    toast("Atenção", "Informe uma quantidade de pontos válida.");
     return;
   }
 
   var d = fdent(dentId);
   if(!d){
-    toast("⚠️","Dentista não encontrado");
+    toast("Erro", "Dentista não encontrado.");
     return;
   }
 
-  if(tipo === "debito" && (d.pts || 0) < pontos){
-    toast("⚠️","Saldo insuficiente para desconto");
+  if(tipo === "debito" && Number(d.pts || 0) < pontos){
+    toast("Atenção", "O dentista não possui pontos suficientes.");
     return;
   }
 
-  var novoSaldo = (d.pts || 0) + (tipo === "credito" ? pontos : -pontos);
+  openM(
+    "Confirmar ajuste de cashback",
+    ""
+    + "<div class='field'>"
+    +   "<label>Senha de autorização</label>"
+    +   "<input id='cbAjSenha' type='password' placeholder='Digite a senha'>"
+    + "</div>"
+    + "<div style='margin-top:12px;font-size:.84rem;color:var(--gr)'>"
+    +   "Dentista: <strong>" + esc(d.n) + "</strong><br>"
+    +   "Tipo: <strong>" + (tipo === "credito" ? "Adicionar" : "Remover") + "</strong><br>"
+    +   "Pontos: <strong>" + fmtN(pontos) + "</strong><br>"
+    +   "Motivo: <strong>" + esc(motivo || "Ajuste manual") + "</strong>"
+    + "</div>",
+    [
+      {
+        lbl: "Cancelar",
+        cls: "btno",
+        fn: function(){ closeM(); }
+      },
+      {
+        lbl: "Confirmar ajuste",
+        cls: "btng",
+        fn: async function(){
+          var senha = (document.getElementById("cbAjSenha").value || "").trim();
 
-  var hist = await supa.from("cashback_ajustes").insert({
-    dentista_id: dentId,
-    tipo: tipo,
-    pontos: pontos,
-    motivo: motivo || null,
-    usuario_email: CU.email
-  });
+          // TROQUE A SENHA AQUI
+          if(senha !== "1234"){
+            toast("Atenção", "Senha incorreta.");
+            return;
+          }
 
-  if(hist.error){
-    console.error("cashback_ajustes:", hist.error);
-    toast("⚠️","Erro ao gravar histórico");
-    return;
-  }
+          var novoSaldo = tipo === "credito"
+            ? Number(d.pts || 0) + pontos
+            : Number(d.pts || 0) - pontos;
 
-  var upd = await supa.from("dentistas")
-    .update({ pontos: novoSaldo })
-    .eq("id", dentId);
+          var payload = {
+            dentista_id: dentId,
+            tipo: tipo,
+            pontos: pontos,
+            motivo: motivo || "Ajuste manual"
+          };
 
-  if(upd.error){
-    console.error("aplicarAjusteCashback:", upd.error);
-    toast("⚠️","Erro ao aplicar ajuste");
-    return;
-  }
+          try{
+            if(typeof supa !== "undefined"){
+              var ins = await supa.from("cashback_ajustes").insert(payload).select().single();
+              if(ins && !ins.error && ins.data){
+                AJUSTES_CB = AJUSTES_CB || [];
+                AJUSTES_CB.unshift(ins.data);
+              }
+            }else{
+              AJUSTES_CB = AJUSTES_CB || [];
+              AJUSTES_CB.unshift({
+                id: "aj_" + Date.now(),
+                dentista_id: dentId,
+                tipo: tipo,
+                pontos: pontos,
+                motivo: motivo || "Ajuste manual"
+              });
+            }
 
-  d.pts = novoSaldo;
+            d.pts = novoSaldo;
 
-  toast("✅", tipo === "credito" ? "Pontos adicionados" : "Pontos descontados");
+            if(typeof supa !== "undefined"){
+              var upd = await supa.from("dentistas").update({ pontos: novoSaldo }).eq("id", dentId);
+              if(upd.error){
+                console.error("Erro ao atualizar pontos:", upd.error);
+                toast("Erro", "Falha ao atualizar saldo do dentista.");
+                return;
+              }
+            }
 
-  document.getElementById("cbAjPts").value = "";
-  document.getElementById("cbAjMotivo").value = "";
-  document.getElementById("cbAjSenha").value = "";
-
-  rportal(dentId);
+            closeM();
+            toast("Sucesso", "Ajuste aplicado.");
+            rcashAdmin();
+          }catch(e){
+            console.error("aplicarAjusteCashback:", e);
+            toast("Erro", "Falha ao aplicar ajuste.");
+          }
+        }
+      }
+    ]
+  );
 }
-
 var AJUSTES_CB = [];
 
 // ══ DENTISTAS ══
@@ -4244,7 +4369,38 @@ function filtrarExamesConfig(){
   });
 }
 function pvWA(){var a=document.getElementById("waTa");var l=document.getElementById("waTl");if(!a)return;var v={nome:"Maria Silva",exame:"Tomografia",data:"25/03/2026",hora:"08:00",clinica:"COR — Radiologia"};var pa=document.getElementById("waPa");var pl=document.getElementById("waPl");if(pa)pa.innerHTML="<div class='wabl'>"+waHtml(waFmt(a.value,v))+"</div>";if(pl)pl.innerHTML="<div class='wabl'>"+waHtml(waFmt(l.value,v))+"</div>";}
-function svWA(){var a=document.getElementById("waTa");var l=document.getElementById("waTl");if(a)waT.ag=a.value;if(l)waT.lb=l.value;toast("💾","Templates salvos!");}
+function svWA(){
+  var a = document.getElementById("waTa");
+  var l = document.getElementById("waTl");
+
+  if(a) waT.ag = a.value;
+  if(l) waT.lb = l.value;
+
+  try{
+    localStorage.setItem("cor_wa_templates", JSON.stringify({
+      ag: waT.ag,
+      lb: waT.lb
+    }));
+  }catch(e){
+    console.error("Erro ao salvar templates WhatsApp:", e);
+  }
+
+  toast("💾","Templates salvos!");
+}
+function loadWaTemplates(){
+  try{
+    var raw = localStorage.getItem("cor_wa_templates");
+    if(!raw) return;
+
+    var saved = JSON.parse(raw);
+    if(saved && typeof saved === "object"){
+      if(saved.ag) waT.ag = saved.ag;
+      if(saved.lb) waT.lb = saved.lb;
+    }
+  }catch(e){
+    console.error("Erro ao carregar templates WhatsApp:", e);
+  }
+}
 function openExM(eid){var ed=eid?exT.find(function(e){return e.id===eid;}):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='fg2'><div class='field'><label>Nome</label><input id='eNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Tomografia'></div><div class='field'><label>Icone</label><input id='eIco' value='"+(ed?ed.ico:"🩻")+"'></div></div><div class='fg2'><div class='field'><label>Preco Particular (R$)</label><input type='number' id='eP' value='"+(ed?ed.p:100)+"'></div><div class='field'><label>Pontos Cashback</label><input type='number' id='ePt' value='"+(ed?ed.pts:40)+"'></div></div></div>";openM(eid?"Editar Exame":"Novo Exame",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:eid?"Salvar":"Adicionar",cls:"btng",fn:function(){var nm=document.getElementById("eNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}if(ed){ed.n=nm;ed.ico=document.getElementById("eIco").value;ed.p=parseInt(document.getElementById("eP").value)||100;ed.pts=parseInt(document.getElementById("ePt").value)||40;}else{exT.push({id:"e"+Date.now(),n:nm,ico:document.getElementById("eIco").value,p:parseInt(document.getElementById("eP").value)||100,pts:parseInt(document.getElementById("ePt").value)||40});}var exObj=eid?exT.find(function(e){return e.id===eid;}):exT[exT.length-1];dbSaveEx(exObj,!eid).then(function(){});var prObj=eid?prems.find(function(p){return p.id===eid;}):prems[prems.length-1];dbSavePrem(prObj,!eid).then(function(){});closeM();rcfg();toast("✅",nm+(eid?" atualizado":" adicionado"));}}]);}
 function delEx(id){var e=exT.find(function(x){return x.id===id;});openM("Remover Exame","<p style='color:var(--gr)'>Remover <strong>"+esc(e?e.n:id)+"</strong>?</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Remover",cls:"btnr",fn:function(){exT=exT.filter(function(x){return x.id!==id;});dbDelEx(id);closeM();rcfg();toast("🗑️","Removido");}}]);}
 function openPrM(eid){var ed=eid?prems.find(function(p){return p.id===eid;}):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='fg2'><div class='field'><label>Nome</label><input id='pNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Desconto 10%'></div><div class='field'><label>Icone</label><input id='pIco' value='"+(ed?ed.ico:"🎁")+"'></div></div><div class='field'><label>Descricao</label><input id='pDs' value='"+(ed?esc(ed.ds):"")+"'></div><div class='field'><label>Pontos necessarios</label><input type='number' id='pPt' value='"+(ed?ed.pts:500)+"'></div></div>";openM(eid?"Editar Premio":"Novo Premio",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:eid?"Salvar":"Adicionar",cls:"btng",fn:function(){var nm=document.getElementById("pNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}if(ed){ed.n=nm;ed.ico=document.getElementById("pIco").value;ed.ds=document.getElementById("pDs").value;ed.pts=parseInt(document.getElementById("pPt").value)||500;}else{var nid=prems.length?Math.max.apply(null,prems.map(function(x){return x.id;}))+1:1;prems.push({id:nid,n:nm,ico:document.getElementById("pIco").value,ds:document.getElementById("pDs").value,pts:parseInt(document.getElementById("pPt").value)||500});}closeM();rcfg();toast("✅",nm+(eid?" atualizado":" adicionado"));}}]);}
@@ -4274,7 +4430,7 @@ function updAgSum(){
     var cv = fconv(it.convenio_id || "");
     var nomeEx = ex ? ex.n : it.exame_id;
     var preco = Number(it.preco || 0);
-    var foraFat = itemEhUnimed(it);
+    var foraFat = itemEhConvenioForaDoFaturamento(it);
 
     html +=
       "<div style='display:flex;justify-content:space-between;gap:10px'>" +
@@ -4337,17 +4493,41 @@ function updAgSum(){
 
   el.innerHTML = html;
 }
-function itemEhUnimed(it){
+function filtrarDentistasAg(){
+  var termo = document.getElementById("dBusca").value.toLowerCase();
+  var select = document.getElementById("dSel");
+  var opcoes = select.options;
+
+  var encontrou = false;
+
+  for (var i = 0; i < opcoes.length; i++){
+    var txt = opcoes[i].text.toLowerCase();
+
+    if (txt.includes(termo)){
+      opcoes[i].style.display = "";
+      
+      // 👉 seleciona automaticamente o primeiro que bate
+      if (!encontrou && termo !== "") {
+        select.selectedIndex = i;
+        encontrou = true;
+      }
+
+    } else {
+      opcoes[i].style.display = "none";
+    }
+  }
+}
+function itemEhConvenioForaDoFaturamento(it){
   var cvId = (it && it.convenio_id) ? String(it.convenio_id) : "";
   var cv = cvId ? fconv(cvId) : null;
   var nomeConvenio = cv && cv.n ? String(cv.n).toLowerCase() : "";
 
-  return nomeConvenio.indexOf("unimed") >= 0;
+  return nomeConvenio.indexOf("unimed") >= 0 || nomeConvenio.indexOf("syns") >= 0;
 }
 
 function getItensFaturaveisPaciente(itens){
   return (itens || []).filter(function(it){
-    return !itemEhUnimed(it);
+    return !itemEhConvenioForaDoFaturamento(it);
   });
 }
 
@@ -4358,6 +4538,7 @@ function somarItens(itens){
   });
   return Number(total.toFixed(2));
 }
+
 function remU(email) {
   var u = USERS.find(function(x){ return x.email === email; });
   if (!u) return;
