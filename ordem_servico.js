@@ -26,6 +26,10 @@ function imprimirOS(agId) {
     if (!itens.length && a.ex) {
         itens = [{ exame_id: a.ex, convenio_id: a.cv || "", preco: a.vl || 0 }];
     }
+    // Se ainda sem itens mas tem valor, mostrar como "Atendimento"
+    if (!itens.length && a.vl > 0) {
+        itens = [{ exame_id: "atend", convenio_id: "", preco: a.vl || 0 }];
+    }
 
     itens.forEach(function(it, idx) {
         var ex = fex(it.exame_id);
