@@ -24,22 +24,31 @@ function imprimirOS(agId) {
     var totalValor = 0;
     var itens = a.exames || [];
     if (!itens.length && a.ex) {
-        itens = [{ exame_id: a.ex, convenio_id: a.cv || "", preco: a.vl || 0 }];
+        itens = [{ exame_id: a.ex, convenio_id: a.cv || "", preco: a.vl || a.valor_bruto || a.valor_faturado || 0 }];
     }
-    // Se ainda sem itens mas tem valor, mostrar como "Atendimento"
-    if (!itens.length && a.vl > 0) {
-        itens = [{ exame_id: "atend", convenio_id: "", preco: a.vl || 0 }];
+    // Se ainda sem itens, mostrar valor total como linha unica
+    var valorTotal = Number(a.vl || a.valor_bruto || a.valor_faturado || 0);
+    if (!itens.length && valorTotal > 0) {
+        itens = [{ exame_id: null, convenio_id: "", preco: valorTotal, _nome: "Atendimento" }];
+    }
+    if (!itens.length) {
+        itens = [{ exame_id: null, convenio_id: "", preco: 0, _nome: "Atendimento" }];
     }
 
     itens.forEach(function(it, idx) {
-        var ex = fex(it.exame_id);
+        var nomeExame = it._nome || "";
+        if (!nomeExame && it.exame_id) {
+            var ex = fex(it.exame_id);
+            nomeExame = ex ? ex.n : (it.exame_id || "Exame");
+        }
+        if (!nomeExame) nomeExame = "Atendimento";
         var cv = fconv(it.convenio_id || "");
         var preco = Number(it.preco || 0);
         totalValor += preco;
 
         examesHtml += "<tr>" +
             "<td style='padding:6px 10px;border-bottom:1px solid #ddd;text-align:center'>" + (idx + 1) + "</td>" +
-            "<td style='padding:6px 10px;border-bottom:1px solid #ddd'>" + (ex ? ex.n : it.exame_id) + "</td>" +
+            "<td style='padding:6px 10px;border-bottom:1px solid #ddd'>" + nomeExame + "</td>" +
             "<td style='padding:6px 10px;border-bottom:1px solid #ddd'>" + (cv ? cv.n : "Particular") + "</td>" +
             "<td style='padding:6px 10px;border-bottom:1px solid #ddd;text-align:right'>R$ " + preco.toFixed(2).replace(".", ",") + "</td>" +
             "</tr>";
