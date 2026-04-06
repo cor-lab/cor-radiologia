@@ -134,7 +134,43 @@ select:focus{
 .at-empty-sub{font-size:.78rem;margin-top:6px}
 .at-seq{font-family:"DM Mono",monospace;font-size:.7rem;color:var(--tl);background:rgba(45,212,191,.1);
   padding:2px 7px;border-radius:10px;font-weight:700}
-.at-flt{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.at-flt{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.at-flt-caixa{margin-left:auto;padding:5px 13px;border-radius:20px;cursor:pointer;font-size:.76rem;font-weight:600;border:1px solid rgba(99,99,220,.35);color:#534AB7;background:rgba(99,99,220,.08)}
+.at-flt-caixa:hover{background:rgba(99,99,220,.15)}
+#fcModal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:16px}
+#fcModal.open{display:flex}
+.fc-box{background:var(--bg);border-radius:14px;border:.5px solid var(--bd);width:100%;max-width:520px;max-height:90vh;overflow-y:auto;padding:0}
+.fc-head{padding:18px 20px 14px;border-bottom:.5px solid var(--bd);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg);z-index:1}
+.fc-head h3{font-size:16px;font-weight:500;margin:0}
+.fc-head p{font-size:12px;color:var(--muted);margin:2px 0 0}
+.fc-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);padding:0;line-height:1}
+.fc-body{padding:16px 20px}
+.fc-toggle{display:flex;gap:6px;margin-bottom:16px}
+.fc-toggle button{font-size:12px;padding:5px 14px;border-radius:20px;border:.5px solid var(--bd);background:none;color:var(--muted);cursor:pointer}
+.fc-toggle button.active{background:rgba(74,184,72,.12);border-color:var(--g);color:var(--g);font-weight:600}
+.fc-metrics{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}
+.fc-metric{background:var(--bg2);border-radius:10px;padding:12px}
+.fc-metric-label{font-size:11px;color:var(--muted);margin-bottom:4px}
+.fc-metric-val{font-size:18px;font-weight:500}
+.fc-metric-val.green{color:#0F6E56}
+.fc-metric-val.amber{color:#854F0B}
+.fc-section{border:.5px solid var(--bd);border-radius:10px;margin-bottom:10px;overflow:hidden}
+.fc-section-title{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:10px 14px 8px;border-bottom:.5px solid var(--bd)}
+.fc-row{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:.5px solid var(--bd)}
+.fc-row:last-child{border-bottom:none}
+.fc-row-left{font-size:13px;color:var(--txt);display:flex;align-items:center;gap:8px}
+.fc-row-right{text-align:right}
+.fc-row-val{font-size:13px;font-weight:500;color:var(--txt)}
+.fc-row-qty{font-size:11px;color:var(--muted)}
+.fc-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.fc-rank{font-size:11px;color:var(--muted);min-width:16px}
+.fc-total{background:var(--bg2);border-radius:10px;padding:14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.fc-total-label{font-size:14px;font-weight:500}
+.fc-total-val{font-size:22px;font-weight:500;color:var(--txt)}
+.fc-print-btn{width:100%;padding:10px;border-radius:10px;border:.5px solid var(--bd);background:none;font-size:13px;cursor:pointer;color:var(--txt)}
+.fc-print-btn:hover{background:var(--bg2)}
+.fc-admin-block{display:none}
+.fc-admin-block.show{display:block}
 .at-flt-btn{padding:5px 13px;border-radius:20px;cursor:pointer;font-size:.76rem;font-weight:600;
   border:1px solid rgba(255,255,255,.1);color:var(--gr);background:rgba(255,255,255,.04);transition:all .14s}
 .at-flt-btn:hover{border-color:rgba(74,184,72,.4);color:var(--g)}
@@ -2855,6 +2891,9 @@ function renderAtendimento() {
   [{v:"todos",l:"Todos (" + dayAgs.length + ")"},{v:"agendado",l:"Agendados (" + cAg + ")"},{v:"aguardando",l:"Aguardando (" + cAw + ")"},{v:"realizado",l:"Realizados (" + cRe + ")"},{v:"cancelado",l:"Cancelados (" + cCa + ")"}].forEach(function(f) {
     h += "<div class='at-flt-btn" + (atFilter === f.v ? " active" : "") + "' onclick=\"setAtFilter('" + f.v + "')\">" + f.l + "</div>";
   });
+  if (isHoje && (CU.role === "admin" || CU.role === "agenda")) {
+    h += "<div class='at-flt-caixa' onclick='abrirFechamentoCaixa()'>&#128179; Fechamento</div>";
+  }
   h += "</div>";
 
   // Lista de atendimentos
@@ -5370,6 +5409,209 @@ function remU(email) {
       }}
     ]
   );
+}
+
+function abrirFechamentoCaixa() {
+  var ds = agF(atDate || new Date());
+  var ags = (window.ags || []).filter(function(a){ return a.dt === ds && (a.status_clinico||a.st) === "realizado"; });
+  var isAdmin = CU && CU.role === "admin";
+
+  var totalFat = 0, qtdFat = 0;
+  var totalNaoFat = 0, qtdNaoFat = 0;
+  var porConvenio = {};
+  var porExame = {};
+  var porDentista = {};
+
+  ags.forEach(function(a) {
+    var itens = a.exames || (a.ex ? [{exame_id: a.ex, convenio_id: a.cv, preco: a.valor || 0}] : []);
+    if (!itens.length) itens = [{exame_id: a.exame_id, convenio_id: a.convenio_id, preco: a.valor || 0}];
+
+    var valor = 0;
+    itens.forEach(function(it){ valor += Number(it.preco || 0); });
+    if (!valor) valor = Number(a.valor || 0);
+
+    var ehForaFat = false;
+    if (itens.length) {
+      ehForaFat = itemEhConvenioForaDoFaturamento(itens[0]);
+    } else {
+      var cvId0 = String(a.cv || a.convenio_id || "");
+      var cv0 = cvId0 ? fconv(cvId0) : null;
+      var nome0 = cv0 && cv0.n ? cv0.n.toLowerCase() : "";
+      ehForaFat = nome0.indexOf("unimed") >= 0 || nome0.indexOf("syns") >= 0;
+    }
+
+    if (ehForaFat) {
+      totalNaoFat += valor; qtdNaoFat++;
+    } else {
+      totalFat += valor; qtdFat++;
+    }
+
+    var cvId = String((itens[0] && itens[0].convenio_id) || a.convenio_id || a.cv || "");
+    var cvObj = cvId ? fconv(cvId) : null;
+    var cvNome = cvObj && cvObj.n ? cvObj.n : "Particular";
+    if (!porConvenio[cvNome]) porConvenio[cvNome] = {val:0, qtd:0, fora: ehForaFat};
+    porConvenio[cvNome].val += valor;
+    porConvenio[cvNome].qtd++;
+
+    if (isAdmin) {
+      var exId = (itens[0] && itens[0].exame_id) || a.exame_id || a.ex || "";
+      var exObj = exId ? (typeof fex === "function" ? fex(exId) : null) : null;
+      var exNome = exObj && exObj.n ? exObj.n : (exId ? String(exId) : "Sem exame");
+      if (!porExame[exNome]) porExame[exNome] = {val:0, qtd:0};
+      porExame[exNome].val += valor;
+      porExame[exNome].qtd++;
+
+      var dentId = a.dId || a.dentista_id;
+      var dentObj = dentId ? fdent(dentId) : null;
+      var dentNome = (dentObj && dentObj.n) ? dentObj.n : (a.dentista_nome || "");
+      if (dentNome) {
+        if (!porDentista[dentNome]) porDentista[dentNome] = {val:0, qtd:0};
+        porDentista[dentNome].val += valor;
+        porDentista[dentNome].qtd++;
+      }
+    }
+  });
+
+  var totalGeral = totalFat + totalNaoFat;
+  var ticketMedio = ags.length ? (totalGeral / ags.length) : 0;
+
+  var dots = {"particular":"#1D9E75","tabela":"#1D9E75","convenio":"#378ADD","sus":"#7F77DD","unimed":"#BA7517","syns":"#888780"};
+  function getDot(nome) {
+    var n = nome.toLowerCase();
+    for (var k in dots) { if (n.indexOf(k) >= 0) return dots[k]; }
+    return "#378ADD";
+  }
+
+  var now = new Date();
+  var hora = now.getHours().toString().padStart(2,"0") + ":" + now.getMinutes().toString().padStart(2,"0");
+  var dataStr = now.toLocaleDateString("pt-BR");
+
+  function fmt(v) { return "R$ " + Number(v).toLocaleString("pt-BR", {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+  var cvKeys = Object.keys(porConvenio).sort(function(a,b){ return porConvenio[b].val - porConvenio[a].val; });
+  var exKeys = Object.keys(porExame).sort(function(a,b){ return porExame[b].val - porExame[a].val; }).slice(0,6);
+  var dentKeys = Object.keys(porDentista).sort(function(a,b){ return porDentista[b].val - porDentista[a].val; }).slice(0,5);
+
+  var h = "";
+  h += "<div id='fcModal' class='open' onclick='if(event.target===this)fecharFechamentoCaixa()'>";
+  h += "<div class='fc-box'>";
+
+  h += "<div class='fc-head'>";
+  h += "<div><h3>Fechamento de caixa</h3><p>" + dataStr + " — gerado às " + hora + "</p></div>";
+  h += "<button class='fc-close' onclick='fecharFechamentoCaixa()'>&#x2715;</button>";
+  h += "</div>";
+
+  h += "<div class='fc-body'>";
+
+  if (isAdmin) {
+    h += "<div class='fc-toggle'>";
+    h += "<button class='active' id='fcBtnSec' onclick='fcSetMode(\"secretaria\")'>Secretaria</button>";
+    h += "<button id='fcBtnAdm' onclick='fcSetMode(\"admin\")'>Admin</button>";
+    h += "</div>";
+  }
+
+  h += "<div class='fc-metrics'>";
+  h += "<div class='fc-metric'><div class='fc-metric-label'>Atendimentos</div><div class='fc-metric-val'>" + ags.length + "</div></div>";
+  h += "<div class='fc-metric'><div class='fc-metric-label'>Faturável</div><div class='fc-metric-val green'>" + fmt(totalFat) + "</div></div>";
+  h += "<div class='fc-metric'><div class='fc-metric-label'>Não faturável</div><div class='fc-metric-val amber'>" + fmt(totalNaoFat) + "</div></div>";
+  h += "</div>";
+
+  h += "<div class='fc-section'>";
+  h += "<div class='fc-section-title'>Por convênio</div>";
+  cvKeys.forEach(function(nome) {
+    var cv = porConvenio[nome];
+    h += "<div class='fc-row'>";
+    h += "<div class='fc-row-left'><div class='fc-dot' style='background:" + getDot(nome) + "'></div>" + esc(nome) + (cv.fora ? " <span style='font-size:10px;color:#BA7517'>(não fat.)</span>" : "") + "</div>";
+    h += "<div class='fc-row-right'><div class='fc-row-val'>" + fmt(cv.val) + "</div><div class='fc-row-qty'>" + cv.qtd + " atend.</div></div>";
+    h += "</div>";
+  });
+  h += "</div>";
+
+  h += "<div class='fc-admin-block" + (isAdmin ? "" : " show") + "' id='fcAdminBlocks'>";
+
+  if (exKeys.length) {
+    h += "<div class='fc-section'>";
+    h += "<div class='fc-section-title'>Por exame</div>";
+    exKeys.forEach(function(nome) {
+      var ex = porExame[nome];
+      h += "<div class='fc-row'>";
+      h += "<div class='fc-row-left'><div class='fc-dot' style='background:#7F77DD'></div>" + esc(nome) + "</div>";
+      h += "<div class='fc-row-right'><div class='fc-row-val'>" + fmt(ex.val) + "</div><div class='fc-row-qty'>" + ex.qtd + " atend.</div></div>";
+      h += "</div>";
+    });
+    h += "</div>";
+  }
+
+  if (dentKeys.length) {
+    h += "<div class='fc-section'>";
+    h += "<div class='fc-section-title'>Top dentistas</div>";
+    dentKeys.forEach(function(nome, i) {
+      var d = porDentista[nome];
+      h += "<div class='fc-row'>";
+      h += "<div class='fc-row-left'><span class='fc-rank'>" + (i+1) + "</span>" + esc(nome) + "</div>";
+      h += "<div class='fc-row-right'><div class='fc-row-val'>" + fmt(d.val) + "</div><div class='fc-row-qty'>" + d.qtd + " atend.</div></div>";
+      h += "</div>";
+    });
+    h += "</div>";
+  }
+
+  if (isAdmin) {
+    h += "<div class='fc-metrics' style='margin-bottom:14px'>";
+    h += "<div class='fc-metric'><div class='fc-metric-label'>Ticket médio</div><div class='fc-metric-val'>" + fmt(ticketMedio) + "</div></div>";
+    h += "<div class='fc-metric'><div class='fc-metric-label'>Fat. / Total</div><div class='fc-metric-val'>" + (totalGeral > 0 ? Math.round(totalFat/totalGeral*100) : 0) + "%</div></div>";
+    h += "<div class='fc-metric'><div class='fc-metric-label'>Dentistas únicos</div><div class='fc-metric-val'>" + Object.keys(porDentista).length + "</div></div>";
+    h += "</div>";
+  }
+
+  h += "</div>";
+
+  h += "<div class='fc-total'><div class='fc-total-label'>Total geral</div><div class='fc-total-val'>" + fmt(totalGeral) + "</div></div>";
+  h += "<button class='fc-print-btn' onclick='fcImprimir()'>Imprimir fechamento</button>";
+
+  h += "</div></div></div>";
+
+  var el = document.createElement("div");
+  el.id = "fcModalWrap";
+  el.innerHTML = h;
+  document.body.appendChild(el);
+
+  if (isAdmin) fcSetMode("secretaria");
+}
+
+function fecharFechamentoCaixa() {
+  var el = document.getElementById("fcModalWrap");
+  if (el) el.remove();
+}
+
+function fcSetMode(mode) {
+  var blocks = document.getElementById("fcAdminBlocks");
+  var btnSec = document.getElementById("fcBtnSec");
+  var btnAdm = document.getElementById("fcBtnAdm");
+  if (!blocks) return;
+  if (mode === "admin") {
+    blocks.classList.add("show");
+    if (btnSec) { btnSec.classList.remove("active"); }
+    if (btnAdm) { btnAdm.classList.add("active"); }
+  } else {
+    blocks.classList.remove("show");
+    if (btnSec) { btnSec.classList.add("active"); }
+    if (btnAdm) { btnAdm.classList.remove("active"); }
+  }
+}
+
+function fcImprimir() {
+  var box = document.querySelector(".fc-box");
+  if (!box) return;
+  var win = window.open("","_blank","width=600,height=800");
+  win.document.write("<html><head><title>Fechamento de Caixa</title>");
+  win.document.write("<style>body{font-family:sans-serif;padding:20px;font-size:13px}");
+  win.document.write(".fc-toggle,.fc-print-btn,.fc-close{display:none}");
+  win.document.write(".fc-admin-block{display:block}");
+  win.document.write("</style></head><body>");
+  win.document.write(box.innerHTML);
+  win.document.write("</body></html>");
+  win.document.close();
+  win.print();
 }
 </script>
 <script src="pacientes_busca.js"></script>
