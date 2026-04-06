@@ -5418,6 +5418,7 @@ function abrirFechamentoCaixa() {
 
   var totalFat = 0, qtdFat = 0;
   var totalNaoFat = 0, qtdNaoFat = 0;
+  var totalDescontos = 0;
   var porConvenio = {};
   var porExame = {};
   var porDentista = {};
@@ -5429,6 +5430,7 @@ function abrirFechamentoCaixa() {
     var valor = 0;
     itens.forEach(function(it){ valor += Number(it.preco || 0); });
     if (!valor) valor = Number(a.valor || 0);
+    totalDescontos += Number(a.desconto_valor || a.desc || 0);
 
     var ehForaFat = false;
     if (itens.length) {
@@ -5565,7 +5567,13 @@ function abrirFechamentoCaixa() {
 
   h += "</div>";
 
-  h += "<div class='fc-total'><div class='fc-total-label'>Total geral</div><div class='fc-total-val'>" + fmt(totalGeral) + "</div></div>";
+  if (totalDescontos > 0) {
+    h += "<div class='fc-total' style='margin-bottom:6px'><div class='fc-total-label' style='font-size:13px;color:var(--muted)'>Bruto</div><div style='font-size:16px;font-weight:500;color:var(--txt)'>" + fmt(totalGeral + totalDescontos) + "</div></div>";
+    h += "<div class='fc-total' style='margin-bottom:6px'><div class='fc-total-label' style='font-size:13px;color:#854F0B'>Descontos</div><div style='font-size:16px;font-weight:500;color:#854F0B'>- " + fmt(totalDescontos) + "</div></div>";
+    h += "<div class='fc-total'><div class='fc-total-label'>Total líquido</div><div class='fc-total-val'>" + fmt(totalGeral) + "</div></div>";
+  } else {
+    h += "<div class='fc-total'><div class='fc-total-label'>Total geral</div><div class='fc-total-val'>" + fmt(totalGeral) + "</div></div>";
+  }
   h += "<button class='fc-print-btn' onclick='fcImprimir()'>Imprimir fechamento</button>";
 
   h += "</div></div></div>";
