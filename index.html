@@ -3029,12 +3029,14 @@ function rdash() {
   var td = new Date();
   var tds = pad(td.getDate())+"/"+pad(td.getMonth()+1)+"/"+td.getFullYear();
   var tdAgs = ags.filter(function(a){return a.dt===tds;});
-  var tPts = dents.reduce(function(s,d){return s+d.pts;},0);
+  var tdRealizados = tdAgs.filter(function(a){return (a.status_clinico||a.st)==="realizado";}).length;
+  var tdAgendados = tdAgs.filter(function(a){return (a.status_clinico||a.st)==="agendado"||(a.status_clinico||a.st)==="aguardando";}).length;
+  var tdCancelados = tdAgs.filter(function(a){return (a.status_clinico||a.st)==="cancelado";}).length;
   var h = "<div class='stats-row'>";
-  h += "<div class='sc' style='--ac:var(--g)'><div class='si'>📅</div><div class='sv'>"+tdAgs.length+"</div><div class='sl'>Exames Hoje</div><div class='sch'>Atualizado</div></div>";
-  h += "<div class='sc' style='--ac:var(--tl)'><div class='si'>👤</div><div class='sv'>"+ags.length+"</div><div class='sl'>Agendamentos</div><div class='sch'>Total</div></div>";
+  h += "<div class='sc' style='--ac:var(--g)'><div class='si'>✅</div><div class='sv'>"+tdRealizados+"</div><div class='sl'>Realizados Hoje</div><div class='sch'>Concluídos</div></div>";
+  h += "<div class='sc' style='--ac:var(--tl)'><div class='si'>📅</div><div class='sv'>"+tdAgendados+"</div><div class='sl'>Pendentes Hoje</div><div class='sch'>Agendados</div></div>";
+  h += "<div class='sc' style='--ac:var(--or)'><div class='si'>📊</div><div class='sv'>"+tdAgs.length+"</div><div class='sl'>Total do Dia</div><div class='sch'>Atendimentos</div></div>";
   h += "<div class='sc' style='--ac:var(--pu)'><div class='si'>🦷</div><div class='sv'>"+dents.length+"</div><div class='sl'>Dentistas</div><div class='sch'>Ativos</div></div>";
-  h += "<div class='sc' style='--ac:#c9a84c'><div class='si'>🪙</div><div class='sv'>"+fmtN(tPts)+"</div><div class='sl'>Pontos Distrib.</div><div class='sch'>Acumulado</div></div>";
   h += "</div><div style='display:grid;grid-template-columns:2fr 1fr;gap:18px'>";
   h += "<div class='card'><div class='ctitle'>Agenda Hoje <button class='btn btng bsm' onclick='navTo(\"agendar\")'>+ Novo</button></div>";
   if (!tdAgs.length) { h += "<div style='color:var(--gr);text-align:center;padding:18px;font-size:.85rem'>Nenhum exame hoje.</div>"; }
