@@ -1338,8 +1338,8 @@ async function loadAllData(){
     var r = await Promise.all([
       supa.from("exames_tipos").select("*").eq("ativo",true).order("nome"),
       supa.from("convenios").select("*").eq("ativo",true).order("nome"),
-      supa.from("convenio_precos").select("*"),
-      supa.from("dentistas").select("*").eq("ativo",true).order("pontos",{ascending:false}),
+      supa.from("convenio_precos").select("*").limit(5000),
+      supa.from("dentistas").select("*").eq("ativo",true).order("nome").range(0,999),
       supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(500),
       supa.from("agendamento_exames").select("*").order("ordem",{ascending:true}),
       supa.from("premios").select("*").eq("ativo",true).order("pontos_necessarios"),
@@ -1348,6 +1348,20 @@ async function loadAllData(){
     ]);
 
     var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7], ajR = r[8];
+
+    // Buscar dentistas restantes (paginado)
+    var allDents = dR.data || [];
+    if(allDents.length >= 999){
+      var pg = 1;
+      while(true){
+        var dr2 = await supa.from("dentistas").select("*").eq("ativo",true).order("nome").range(pg*1000, pg*1000+999);
+        if(!dr2.data || !dr2.data.length) break;
+        allDents = allDents.concat(dr2.data);
+        pg++;
+        if(pg > 10) break;
+      }
+      dR = {data: allDents, error: null};
+    }
 
     AJUSTES_CB = ajR.data || [];
     
@@ -1481,6 +1495,8 @@ async function loadAllData(){
           ,firebird_sync: a.firebird_sync || null
           ,firebird_atend_id: a.firebird_atend_id || null
           ,firebird_seq_atend: a.firebird_seq_atend || null
+          ,obs: a.observacoes || ''
+          ,observacoes: a.observacoes || ''
         };
       });
     }
@@ -1618,7 +1634,8 @@ async function dbSaveAg(ag){
   status_fiscal: ag.status_fiscal || "nao_emitida",
   nfse_id: ag.nfse_id || null,
   focus_reference: ag.focus_reference || null,
-  pode_pontuar: ag.pode_pontuar === true
+  pode_pontuar: ag.pode_pontuar === true,
+  observacoes: ag.observacoes || ag.obs || null
 };
 
   var r = ag._new
@@ -2041,7 +2058,7 @@ async function dbResgatar(dentId,premId,pts){
   <button data-p="agendar">Agendar</button>
   <button data-p="exames">Exames</button>
   <button data-p="convenios">Convênios</button>
-  <button data-p="cashback">Cashback</button>
+  <button data-p="cashback">Pontos</button>
   <button data-p="dentistas">Dentistas</button>
   <button data-p="usuarios">Usuários</button>
   <button data-p="config">Config</button>
@@ -2354,7 +2371,7 @@ function renderHistorico() {
   // Busca
   h += "<div class='hist-search'>";
   h += "<div class='field' style='flex:2'><label>Buscar Paciente (nome ou CPF)</label>";
-  h += "<input type='text' id='histBuscaInput' value='" + esc(histBusca) + "' placeholder='Digite o nome ou CPF do paciente...' onkeydown=\"if(event.key==='Enter')buscarHistorico()\">";
+  h += "<input type='text' id='histBuscaInput' value='" + esc(histBusca) + "' placeholder='Nome ou CPF do paciente...' onkeydown=\"if(event.key==='Enter')buscarHistorico()\">";
   h += "</div>";
   h += "<div class='field' style='flex:0'><label>&nbsp;</label>";
   h += "<button class='btn btng' onclick='buscarHistorico()' style='white-space:nowrap'>Buscar</button>";
@@ -2410,10 +2427,12 @@ async function buscarHistorico() {
     var termoLimpo = termo.replace(/\D/g, "");
     var filtro = "";
 
-    // Se parece CPF
+    // Se parece CPF (so numeros, 6+ digitos)
     if (termoLimpo.length >= 6 && /^\d+$/.test(termoLimpo)) {
       filtro = "paciente_cpf=ilike.*" + termoLimpo + "*";
-    } else {
+    }
+    // Senao busca por nome
+    else {
       filtro = "paciente_nome=ilike.*" + encodeURIComponent(termo.toUpperCase()) + "*";
     }
 
@@ -3311,11 +3330,12 @@ function openEditAg(id) {
   b += "</div>";
 
   b += "<div class='field'><label>Exames</label>";
-  b += "<div id='eExWrap'></div>";
+  b += "<div id='eExWrap' style='max-height:200px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.02);padding-right:6px'></div>";
   b += "</div>";
 
   b += "<div id='eAgSumDiv'></div>";
 
+  b += "<div class=\"field\"><label>Buscar dentista</label><input type=\"text\" id=\"eDentBusca\" placeholder=\"Digite para filtrar dentistas\" oninput=\"filtrarDentistasEdit()\"></div>";
   b += "<div class=\"field\"><label>Dentista</label><select id=\"eDent2\">";
   dents.forEach(function(d){
     b += "<option value=\"" + d.id + "\"" + (a.dId === d.id ? " selected" : "") + ">" + esc(d.n) + "</option>";
@@ -3333,6 +3353,8 @@ function openEditAg(id) {
   });
   b += "</select></div>";
 
+  b += "<div class=\"field\"><label>Observações</label><textarea id=\"eObs\" style=\"min-height:52px\">" + esc(a.obs || a.observacoes || "") + "</textarea></div>";
+
   b += "</div>";
 
   openM("Editar Agendamento", b, [
@@ -3349,6 +3371,7 @@ function openEditAg(id) {
       var bairro2 = (document.getElementById("eBairro")?.value || "").trim();
       var municipio2 = (document.getElementById("eMunicipio")?.value || "").trim();
       var uf2 = (document.getElementById("eUf")?.value || "").trim().toUpperCase();
+      var obs2 = (document.getElementById("eObs")?.value || "").trim();
 
       var dtR = document.getElementById("eDt2").value;
       var hr2 = document.getElementById("eHr2").value;
@@ -3386,6 +3409,8 @@ function openEditAg(id) {
       a.paciente_bairro = bairro2;
       a.paciente_municipio = municipio2;
       a.paciente_uf = uf2;
+      a.obs = obs2;
+      a.observacoes = obs2;
 
       a.dt = df5;
       a.hr = hr2;
@@ -4715,7 +4740,7 @@ function rusrs(){
   [
     {r:"admin",l:"Administrador",em:"⚙️",ds:"Acesso total",pl:"rb-a"},
     {r:"agenda",l:"Agenda",em:"📅",ds:"Agendar e exames",pl:"rb-ag"},
-    {r:"cashback",l:"Cashback",em:"🪙",ds:"Fidelidade",pl:"rb-c"},
+    {r:"cashback",l:"Programa de Pontos",em:"🪙",ds:"Fidelidade",pl:"rb-c"},
     {r:"dentista",l:"Dentista",em:"🦷",ds:"Portal dentista",pl:"rb-d"}
   ].forEach(function(ro){
     var cnt=USERS.filter(function(u){ return u.role===ro.r && u.ativo; }).length;
@@ -4925,7 +4950,7 @@ function rcfg(){
 
   h+="<div style='background:rgba(74,184,72,.07);border:1px solid rgba(74,184,72,.2);border-radius:10px;padding:15px;margin-bottom:18px'>";
   h+="<div style='display:flex;align-items:center;justify-content:space-between;gap:12px'>";
-  h+="<div><div style='font-weight:700'>🪙 Cashback Padrao</div><div style='font-size:.78rem;color:var(--gr);margin-top:3px'>% do valor do exame = pontos do dentista</div></div>";
+  h+="<div><div style='font-weight:700'>🪙 Programa de Pontos</div><div style='font-size:.78rem;color:var(--gr);margin-top:3px'>% do valor do exame = pontos do dentista</div></div>";
   h+="<div style='display:flex;align-items:center;gap:8px'>";
   h+="<input type='number' id='cbPct' value='"+CASHBACK_PCT+"' min='1' max='50' style='width:66px;background:rgba(255,255,255,.08);border:1px solid rgba(74,184,72,.3);border-radius:8px;padding:7px;color:var(--wh);font-size:.88rem;outline:none;'>";
   h+="<span style='color:var(--gr)'>%</span>";
@@ -5022,12 +5047,12 @@ function loadWaTemplates(){
     console.error("Erro ao carregar templates WhatsApp:", e);
   }
 }
-function openExM(eid){var ed=eid?exT.find(function(e){return e.id===eid;}):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='fg2'><div class='field'><label>Nome</label><input id='eNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Tomografia'></div><div class='field'><label>Icone</label><input id='eIco' value='"+(ed?ed.ico:"🩻")+"'></div></div><div class='fg2'><div class='field'><label>Preco Particular (R$)</label><input type='number' id='eP' value='"+(ed?ed.p:100)+"'></div><div class='field'><label>Pontos Cashback</label><input type='number' id='ePt' value='"+(ed?ed.pts:40)+"'></div></div></div>";openM(eid?"Editar Exame":"Novo Exame",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:eid?"Salvar":"Adicionar",cls:"btng",fn:function(){var nm=document.getElementById("eNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}if(ed){ed.n=nm;ed.ico=document.getElementById("eIco").value;ed.p=parseInt(document.getElementById("eP").value)||100;ed.pts=parseInt(document.getElementById("ePt").value)||40;}else{exT.push({id:"e"+Date.now(),n:nm,ico:document.getElementById("eIco").value,p:parseInt(document.getElementById("eP").value)||100,pts:parseInt(document.getElementById("ePt").value)||40});}var exObj=eid?exT.find(function(e){return e.id===eid;}):exT[exT.length-1];dbSaveEx(exObj,!eid).then(function(){});var prObj=eid?prems.find(function(p){return p.id===eid;}):prems[prems.length-1];dbSavePrem(prObj,!eid).then(function(){});closeM();rcfg();toast("✅",nm+(eid?" atualizado":" adicionado"));}}]);}
+function openExM(eid){var ed=eid?exT.find(function(e){return e.id===eid;}):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='fg2'><div class='field'><label>Nome</label><input id='eNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Tomografia'></div><div class='field'><label>Icone</label><input id='eIco' value='"+(ed?ed.ico:"🩻")+"'></div></div><div class='fg2'><div class='field'><label>Preco Particular (R$)</label><input type='number' id='eP' value='"+(ed?ed.p:100)+"'></div><div class='field'><label>Pontos Fidelidade</label><input type='number' id='ePt' value='"+(ed?ed.pts:40)+"'></div></div></div>";openM(eid?"Editar Exame":"Novo Exame",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:eid?"Salvar":"Adicionar",cls:"btng",fn:function(){var nm=document.getElementById("eNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}if(ed){ed.n=nm;ed.ico=document.getElementById("eIco").value;ed.p=parseInt(document.getElementById("eP").value)||100;ed.pts=parseInt(document.getElementById("ePt").value)||40;}else{exT.push({id:"e"+Date.now(),n:nm,ico:document.getElementById("eIco").value,p:parseInt(document.getElementById("eP").value)||100,pts:parseInt(document.getElementById("ePt").value)||40});}var exObj=eid?exT.find(function(e){return e.id===eid;}):exT[exT.length-1];dbSaveEx(exObj,!eid).then(function(){});var prObj=eid?prems.find(function(p){return p.id===eid;}):prems[prems.length-1];dbSavePrem(prObj,!eid).then(function(){});closeM();rcfg();toast("✅",nm+(eid?" atualizado":" adicionado"));}}]);}
 function delEx(id){var e=exT.find(function(x){return x.id===id;});openM("Remover Exame","<p style='color:var(--gr)'>Remover <strong>"+esc(e?e.n:id)+"</strong>?</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Remover",cls:"btnr",fn:function(){exT=exT.filter(function(x){return x.id!==id;});dbDelEx(id);closeM();rcfg();toast("🗑️","Removido");}}]);}
 function openPrM(eid){var ed=eid?prems.find(function(p){return p.id===eid;}):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='fg2'><div class='field'><label>Nome</label><input id='pNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Desconto 10%'></div><div class='field'><label>Icone</label><input id='pIco' value='"+(ed?ed.ico:"🎁")+"'></div></div><div class='field'><label>Descricao</label><input id='pDs' value='"+(ed?esc(ed.ds):"")+"'></div><div class='field'><label>Pontos necessarios</label><input type='number' id='pPt' value='"+(ed?ed.pts:500)+"'></div></div>";openM(eid?"Editar Premio":"Novo Premio",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:eid?"Salvar":"Adicionar",cls:"btng",fn:function(){var nm=document.getElementById("pNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}if(ed){ed.n=nm;ed.ico=document.getElementById("pIco").value;ed.ds=document.getElementById("pDs").value;ed.pts=parseInt(document.getElementById("pPt").value)||500;}else{var nid=prems.length?Math.max.apply(null,prems.map(function(x){return x.id;}))+1:1;prems.push({id:nid,n:nm,ico:document.getElementById("pIco").value,ds:document.getElementById("pDs").value,pts:parseInt(document.getElementById("pPt").value)||500});}closeM();rcfg();toast("✅",nm+(eid?" atualizado":" adicionado"));}}]);}
 function delPr(id){var p=prems.find(function(x){return x.id===id;});openM("Remover","<p style='color:var(--gr)'>Remover <strong>"+esc(p?p.n:"")+"</strong>?</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Remover",cls:"btnr",fn:function(){prems=prems.filter(function(x){return x.id!==id;});dbDelPrem(id);closeM();rcfg();toast("🗑️","Removido");}}]);}
 
-function saveCbPct(){var v=parseInt(document.getElementById("cbPct").value)||5;CASHBACK_PCT=v;toast("💾","Cashback "+v+"% salvo!");}
+function saveCbPct(){var v=parseInt(document.getElementById("cbPct").value)||5;CASHBACK_PCT=v;toast("💾","Pontos "+v+"% salvo!");}
 
 function updAgSum(){
   var el = document.getElementById("agSumDiv");
@@ -5127,12 +5152,30 @@ function filtrarDentistasAg(){
     if (txt.includes(termo)){
       opcoes[i].style.display = "";
       
-      // 👉 seleciona automaticamente o primeiro que bate
       if (!encontrou && termo !== "") {
         select.selectedIndex = i;
         encontrou = true;
       }
 
+    } else {
+      opcoes[i].style.display = "none";
+    }
+  }
+}
+function filtrarDentistasEdit(){
+  var termo = (document.getElementById("eDentBusca")?.value || "").toLowerCase();
+  var select = document.getElementById("eDent2");
+  if(!select) return;
+  var opcoes = select.options;
+  var encontrou = false;
+  for (var i = 0; i < opcoes.length; i++){
+    var txt = opcoes[i].text.toLowerCase();
+    if (txt.includes(termo)){
+      opcoes[i].style.display = "";
+      if (!encontrou && termo !== "") {
+        select.selectedIndex = i;
+        encontrou = true;
+      }
     } else {
       opcoes[i].style.display = "none";
     }
