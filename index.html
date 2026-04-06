@@ -2773,7 +2773,7 @@ function histVoltarBusca() {
 
 // ══ ATENDIMENTO ══
 var atDate = null;
-var atFilter = "todos";
+var atFilter = "realizado";
 
 function ratendimento() {
   if (!canAcc("atendimento")) { deny(document.getElementById("pgAt")); return; }
@@ -2846,9 +2846,9 @@ function renderAtendimento() {
   h += "<div class='at-day-title'>";
   if (isHoje) h += "<span class='badge bg' style='font-size:.72rem'>HOJE</span>";
   h += ds + " — " + esc(dayName);
-  h += "<span style='color:var(--gr);font-size:.82rem;font-weight:400;margin-left:auto'>" + dayAgs.length + " atendimento" + (dayAgs.length !== 1 ? "s" : "") + "</span>";
+  h += "<span style='color:var(--g);font-size:1rem;font-weight:700;margin-left:auto;background:rgba(74,184,72,.12);padding:4px 12px;border-radius:8px'>" + dayAgs.length + " atend.</span>";
   h += "</div>";
-  h += "<div class='at-day-sub'>Total: " + dayAgs.length + " | Pendentes: " + (cAg + cAw) + " | Concluídos: " + cRe + "</div>";
+  h += "<div class='at-day-sub'>Pendentes: " + (cAg + cAw) + " | Realizados: " + cRe + " | Cancelados: " + cCa + "</div>";
 
   // Filtros
   h += "<div class='at-flt'>";
@@ -2985,7 +2985,7 @@ function renderAtCalendario() {
 
 function atSelectDay(yr, mo, d) {
   atDate = new Date(yr, mo, d);
-  atFilter = "todos";
+  atFilter = "realizado";
   renderAtendimento();
 }
 
@@ -2999,7 +2999,7 @@ function atCalNav(dir) {
 function atCalGoToday() {
   var now = new Date();
   atDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  atFilter = "todos";
+  atFilter = "realizado";
   renderAtendimento();
 }
 
