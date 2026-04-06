@@ -82,22 +82,23 @@ select:focus{
 /* ══ ATENDIMENTO ══ */
 .at-wrap{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start}
 .at-list{display:flex;flex-direction:column;gap:10px}
-.at-card{background:rgba(18,36,78,.75);border:1px solid rgba(255,255,255,.08);border-radius:12px;
-  padding:16px 18px;cursor:pointer;transition:all .18s;position:relative;overflow:hidden;
-  display:grid;grid-template-columns:52px 1fr auto;gap:14px;align-items:center}
-.at-card:hover{border-color:rgba(74,184,72,.3);transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,0,0,.2)}
-.at-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
+.at-card{background:rgba(18,36,78,.75);border:1px solid rgba(255,255,255,.08);border-radius:8px;
+  padding:8px 12px;cursor:pointer;transition:all .18s;position:relative;overflow:hidden;
+  display:grid;grid-template-columns:42px 1fr auto;gap:8px;align-items:center}
+.at-card:hover{border-color:rgba(74,184,72,.3);box-shadow:0 4px 12px rgba(0,0,0,.2)}
+.at-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
 .at-card.st-agendado::before{background:#b4825f}
 .at-card.st-realizado::before{background:#4ab848}
 .at-card.st-aguardando::before{background:#c9a84c}
 .at-card.st-cancelado::before{background:#8890a0}
-.at-hora{font-family:"DM Mono",monospace;font-size:.82rem;color:var(--g);font-weight:700;text-align:center;
-  background:rgba(74,184,72,.08);border-radius:8px;padding:6px 4px;line-height:1.3}
-.at-hora .hr-end{font-size:.68rem;color:var(--gr);font-weight:500}
+.at-hora{font-family:"DM Mono",monospace;font-size:.72rem;color:var(--g);font-weight:700;text-align:center;
+  background:rgba(74,184,72,.08);border-radius:6px;padding:4px 2px;line-height:1.2}
+.at-hora .hr-end{font-size:.6rem;color:var(--gr);font-weight:500}
 .at-info{min-width:0}
-.at-pac{font-size:.94rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.at-meta{font-size:.76rem;color:var(--gr);margin-top:3px;display:flex;flex-wrap:wrap;gap:4px 12px}
-.at-actions{display:flex;gap:5px;flex-shrink:0}
+.at-pac{font-size:.82rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at-meta{font-size:.68rem;color:var(--gr);margin-top:1px;display:flex;flex-wrap:wrap;gap:2px 8px}
+.at-actions{display:flex;gap:4px;flex-shrink:0}
+.at-list{display:flex;flex-direction:column;gap:4px}
 .at-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
 .at-stat{background:rgba(18,36,78,.75);border:1px solid rgba(255,255,255,.08);border-radius:10px;
   padding:14px;text-align:center;position:relative;overflow:hidden}
@@ -2893,17 +2894,12 @@ function renderAtendimento() {
 
       // Info
       h += "<div class='at-info'>";
-      h += "<div class='at-pac'>" + esc(a.pac) + "</div>";
+      h += "<div class='at-pac'>" + esc(a.pac) + " <span class='badge " + (sc[st] || "bgr") + "' style='font-size:.62rem;padding:2px 6px;vertical-align:middle'>" + (sl[st] || st) + "</span></div>";
       h += "<div class='at-meta'>";
       h += "<span>" + esc(exNomes) + "</span>";
       h += "<span>🦷 " + esc(d.n) + "</span>";
-      if (a.tel) h += "<span>📱 " + esc(a.tel) + "</span>";
       if (a.firebird_seq_atend) h += "<span class='at-seq'>#" + a.firebird_seq_atend + "</span>";
-      h += "</div>";
-      h += "<div style='margin-top:5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap'>";
-      h += "<span class='badge " + (sc[st] || "bgr") + "'>" + (sl[st] || st) + "</span>";
-      h += "<span style='font-size:.74rem;color:var(--gr)'>R$ " + Number(a.vl || 0).toFixed(2).replace(".", ",") + "</span>";
-      if (a.cb) h += "<span style='font-size:.72rem;color:var(--g);font-weight:700'>+" + a.cb + " pts</span>";
+      h += "<span>R$ " + Number(a.vl || 0).toFixed(2).replace(".", ",") + "</span>";
       h += "</div>";
       h += "</div>";
 
