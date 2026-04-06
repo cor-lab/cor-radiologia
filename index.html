@@ -1312,6 +1312,7 @@ async function doLoginSupa(){
     await loadAllData();
     navTo(CU.role==="dentista"?"cashback":CU.role==="agenda"?"atendimento":"dashboard");
     toast("👋","Bem-vindo(a), "+CU.nome.split(" ")[0]+"!");
+    iniciarAutoRefresh();
   }catch(e){
     btn.disabled=false; btn.textContent="Entrar";
     err.classList.add("show");
@@ -1321,6 +1322,7 @@ async function doLoginSupa(){
 }
 
 async function doLogoutSupa(){
+  if(_autoRefreshTimer) clearInterval(_autoRefreshTimer);
   await supa.auth.signOut(); CU=null;
   document.getElementById("AS").style.display="none";
   document.getElementById("LS").style.display="flex";
@@ -2304,7 +2306,126 @@ document.addEventListener("DOMContentLoaded", function() {
   document.getElementById("lEmail").addEventListener("keydown", function(e) {
     if (e.key === "Enter") document.getElementById("lPass").focus();
   });
+
+  // Restaurar sessao ao carregar a pagina
+  restaurarSessao();
 });
+
+// ══ RESTAURAR SESSAO ══
+async function restaurarSessao(){
+  try{
+    var sess = await supa.auth.getSession();
+    if(!sess.data || !sess.data.session || !sess.data.session.user) return;
+
+    var user = sess.data.session.user;
+    var em = user.email;
+
+    var pr = await supa.from("usuarios").select("*").eq("email",em).eq("ativo",true).single();
+    if(pr.error || !pr.data) return;
+
+    var u = pr.data;
+    CU = {
+      id: user.id,
+      nome: u.nome, email: u.email, role: u.role,
+      ini: u.ini || "AD",
+      bg: u.bg || "linear-gradient(135deg,#4ab848,#7dcf6e)",
+      cor: u.cor || "#fff", ativo: true, dentId: u.dent_id
+    };
+
+    document.getElementById("LS").style.display = "none";
+    document.getElementById("AS").style.display = "block";
+    applyNav();
+    await loadAllData();
+    navTo(CU.role === "dentista" ? "cashback" : CU.role === "agenda" ? "atendimento" : "dashboard");
+    console.log("Sessao restaurada: " + CU.nome);
+
+    // Iniciar auto-refresh
+    iniciarAutoRefresh();
+  }catch(e){
+    console.log("Sem sessao ativa:", e.message);
+  }
+}
+
+// ══ AUTO-REFRESH ══
+var _autoRefreshTimer = null;
+var AUTO_REFRESH_INTERVALO = 15000; // 15 segundos
+
+function iniciarAutoRefresh(){
+  if(_autoRefreshTimer) clearInterval(_autoRefreshTimer);
+  _autoRefreshTimer = setInterval(async function(){
+    if(!CU) return;
+    try{
+      // Recarregar agendamentos
+      var agR = await supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(500);
+      var agexR = await supa.from("agendamento_exames").select("*").order("ordem",{ascending:true});
+
+      if(agR.data){
+        var mapAgEx = {};
+        (agexR.data || []).forEach(function(x){
+          if(!mapAgEx[x.agendamento_id]) mapAgEx[x.agendamento_id] = [];
+          mapAgEx[x.agendamento_id].push({
+            exame_id: x.exame_id,
+            convenio_id: x.convenio_id || "",
+            preco: parseFloat(x.preco || 0),
+            nome_exame: x.nome_exame || "",
+            ordem: x.ordem || 0
+          });
+        });
+
+        ags = agR.data.map(function(a){
+          var itens = mapAgEx[a.id] || [];
+          if(!itens.length && a.exame_id){
+            itens = [{exame_id:a.exame_id,convenio_id:a.convenio_id||"",preco:parseFloat(a.valor||0),nome_exame:"",ordem:1}];
+          }
+          itens.sort(function(x,y){return (x.ordem||0)-(y.ordem||0);});
+
+          return {
+            id:a.id, pac:a.paciente_nome, tel:a.paciente_tel||"",
+            paciente_cpf:a.paciente_cpf||"", paciente_cnpj:a.paciente_cnpj||"",
+            paciente_email:a.paciente_email||"",
+            paciente_cep:a.paciente_cep||"", paciente_logradouro:a.paciente_logradouro||"",
+            paciente_numero:a.paciente_numero||"", paciente_complemento:a.paciente_complemento||"",
+            paciente_bairro:a.paciente_bairro||"", paciente_municipio:a.paciente_municipio||"",
+            paciente_uf:a.paciente_uf||"",
+            ex:a.exame_id, exames:itens,
+            dt:iso2br(a.data_exame), hr:(a.hora_exame||"08:00").substring(0,5),
+            dur:a.duracao||30, dId:a.dentista_id, cv:a.convenio_id||"",
+            vl:parseFloat(a.valor||0),
+            valor_bruto:parseFloat(a.valor_bruto||a.valor||0),
+            desconto_percentual:Number(a.desconto_percentual||0),
+            desconto_valor:Number(a.desconto_valor||0),
+            valor_faturado:parseFloat(a.valor_faturado||a.valor||0),
+            forma_pagamento_prevista:a.forma_pagamento_prevista||"avista",
+            forma_pagamento_final:a.forma_pagamento_final||"",
+            cb:a.cashback_pts||0,
+            st:a.status||"agendado", status:a.status||"agendado",
+            status_clinico:a.status_clinico||a.status||"agendado",
+            status_fiscal:a.status_fiscal||"nao_emitida",
+            nfse_id:a.nfse_id||null, focus_reference:a.focus_reference||null,
+            pode_pontuar:a.pode_pontuar===true,
+            firebird_sync:a.firebird_sync||null,
+            firebird_atend_id:a.firebird_atend_id||null,
+            firebird_seq_atend:a.firebird_seq_atend||null,
+            obs:a.observacoes||'', observacoes:a.observacoes||''
+          };
+        });
+      }
+
+      // Atualizar tela atual
+      var activePage = document.querySelector(".page.active");
+      if(activePage){
+        var pid = activePage.id.replace("page-","");
+        if(pid === "atendimento" && typeof renderAtendimento === "function") renderAtendimento();
+        else if(pid === "dashboard" && typeof rdash === "function") rdash();
+      }
+    }catch(e){
+      console.log("Auto-refresh erro:", e.message);
+    }
+  }, AUTO_REFRESH_INTERVALO);
+}
+
+// Iniciar auto-refresh tambem apos login manual
+var _doLoginSupaOriginal = doLoginSupa;
 
 // ══ HELPERS ══
 function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
