@@ -2891,7 +2891,7 @@ function renderAtendimento() {
   [{v:"todos",l:"Todos (" + dayAgs.length + ")"},{v:"agendado",l:"Agendados (" + cAg + ")"},{v:"aguardando",l:"Aguardando (" + cAw + ")"},{v:"realizado",l:"Realizados (" + cRe + ")"},{v:"cancelado",l:"Cancelados (" + cCa + ")"}].forEach(function(f) {
     h += "<div class='at-flt-btn" + (atFilter === f.v ? " active" : "") + "' onclick=\"setAtFilter('" + f.v + "')\">" + f.l + "</div>";
   });
-  if (isHoje && (CU.role === "admin" || CU.role === "agenda")) {
+  if (CU.role === "admin" || CU.role === "agenda") {
     h += "<div class='at-flt-caixa' onclick='abrirFechamentoCaixa()'>&#128179; Fechamento</div>";
   }
   h += "</div>";
