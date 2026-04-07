@@ -5424,12 +5424,12 @@ function abrirFechamentoCaixa() {
   var porDentista = {};
 
   ags.forEach(function(a) {
-    var itens = a.exames || (a.ex ? [{exame_id: a.ex, convenio_id: a.cv, preco: a.valor || 0}] : []);
-    if (!itens.length) itens = [{exame_id: a.exame_id, convenio_id: a.convenio_id, preco: a.valor || 0}];
+    var itens = a.exames || (a.ex ? [{exame_id: a.ex, convenio_id: a.cv, preco: a.valor_bruto || a.vl || 0}] : []);
+    if (!itens.length) itens = [{exame_id: a.exame_id || a.ex, convenio_id: a.convenio_id || a.cv, preco: a.valor_bruto || a.vl || 0}];
 
     var valor = 0;
     itens.forEach(function(it){ valor += Number(it.preco || 0); });
-    if (!valor) valor = Number(a.valor || 0);
+    if (!valor) valor = Number(a.valor_bruto || a.vl || 0);
     totalDescontos += Number(a.desconto_valor || a.desc || 0);
 
     var ehForaFat = false;
