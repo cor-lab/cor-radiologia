@@ -1536,6 +1536,8 @@ async function loadAllData(){
           ,firebird_seq_atend: a.firebird_seq_atend || null
           ,obs: a.observacoes || ''
           ,observacoes: a.observacoes || ''
+          ,paciente_data_nascimento: a.paciente_data_nascimento || ''
+          ,paciente_sexo: a.paciente_sexo || ''
         };
       });
     }
@@ -2445,7 +2447,9 @@ function iniciarAutoRefresh(){
             firebird_sync:a.firebird_sync||null,
             firebird_atend_id:a.firebird_atend_id||null,
             firebird_seq_atend:a.firebird_seq_atend||null,
-            obs:a.observacoes||'', observacoes:a.observacoes||''
+            obs:a.observacoes||'', observacoes:a.observacoes||'',
+            paciente_data_nascimento:a.paciente_data_nascimento||'',
+            paciente_sexo:a.paciente_sexo||''
           };
         });
       }
