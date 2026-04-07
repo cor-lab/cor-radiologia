@@ -1650,6 +1650,8 @@ async function dbSaveAg(ag){
   paciente_bairro: ag.paciente_bairro || null,
   paciente_municipio: ag.paciente_municipio || null,
   paciente_uf: ag.paciente_uf || null,
+  paciente_data_nascimento: ag.paciente_data_nascimento || null,
+  paciente_sexo: ag.paciente_sexo || null,
 
   exame_id: (ag.exames && ag.exames[0]) ? ag.exames[0].exame_id : ag.ex,
   data_exame: br2iso(ag.dt),
@@ -3142,6 +3144,11 @@ function ragendar() {
   h += "</div>";
 
   h += "<div class=\"fg2\">";
+  h += "<div class=\"field\"><label>Data Nascimento</label><input type=\"date\" id=\"pDataNasc\"></div>";
+  h += "<div class=\"field\"><label>Sexo</label><select id=\"pSexo\"><option value=\"\">--</option><option value=\"M\">Masculino</option><option value=\"F\">Feminino</option></select></div>";
+  h += "</div>";
+
+  h += "<div class=\"fg2\">";
   h += "<div class=\"field\"><label>CEP</label><input type=\"text\" id=\"pCep\" placeholder=\"00000-000\" oninput=\"onCepInputAuto(this, false)\"></div>";
   h += "<div class=\"field\"><label>Numero</label><input type=\"text\" id=\"pNumero\" placeholder=\"123\"></div>";
   h += "</div>";
@@ -3475,6 +3482,11 @@ function openEditAg(id) {
   b += "</div>";
 
   b += "<div class=\"fg2\">";
+  b += "<div class=\"field\"><label>Data Nascimento</label><input type=\"date\" id=\"eDataNasc\" value=\"" + esc(a.paciente_data_nascimento || "") + "\"></div>";
+  b += "<div class=\"field\"><label>Sexo</label><select id=\"eSexo\"><option value=\"\">--</option><option value=\"M\"" + ((a.paciente_sexo || "") === "M" ? " selected" : "") + ">Masculino</option><option value=\"F\"" + ((a.paciente_sexo || "") === "F" ? " selected" : "") + ">Feminino</option></select></div>";
+  b += "</div>";
+
+  b += "<div class=\"fg2\">";
   b += "<div class=\"field\"><label>Numero</label><input type=\"text\" id=\"eNumero\" value=\"" + esc(a.paciente_numero || "") + "\" placeholder=\"123\"></div>";
   b += "<div class=\"field\"><label>UF</label><input type=\"text\" id=\"eUf\" value=\"" + esc(a.paciente_uf || "") + "\" placeholder=\"RS\" maxlength=\"2\"></div>";
   b += "</div>";
@@ -3569,6 +3581,11 @@ function openEditAg(id) {
       a.paciente_uf = uf2;
       a.obs = obs2;
       a.observacoes = obs2;
+
+      var dataNasc2 = (document.getElementById("eDataNasc")?.value || "").trim();
+      var sexo2 = (document.getElementById("eSexo")?.value || "").trim();
+      a.paciente_data_nascimento = dataNasc2 || null;
+      a.paciente_sexo = sexo2 || null;
 
       a.dt = df5;
       a.hr = hr2;
@@ -3740,6 +3757,8 @@ async function confAg() {
   var bairro = (document.getElementById("pBairro")?.value || "").trim();
   var municipio = (document.getElementById("pMunicipio")?.value || "").trim();
   var uf = (document.getElementById("pUf")?.value || "").trim().toUpperCase();
+  var dataNasc = (document.getElementById("pDataNasc")?.value || "").trim();
+  var sexo = (document.getElementById("pSexo")?.value || "").trim();
 
   var dtR = document.getElementById("pData").value;
   var hr = document.getElementById("pHora").value;
@@ -3782,6 +3801,8 @@ async function confAg() {
     paciente_bairro: bairro,
     paciente_municipio: municipio,
     paciente_uf: uf,
+    paciente_data_nascimento: dataNasc || null,
+    paciente_sexo: sexo || null,
     ex: itens[0].exame_id,
     exames: itens,
     dt: df4,
