@@ -1,6 +1,7 @@
 // ============================================================
-// MODULO BUSCA DE PACIENTES - COR
-// Adiciona busca inteligente ao campo de paciente
+// MODULO BUSCA DE PACIENTES - COR v2
+// Busca inteligente com vinculação por Nome + Data Nascimento
+// CPF diferente com mesmo nome+datanasc = mesmo paciente (atualiza CPF)
 // Incluir no index.html antes do </body>
 // <script src="pacientes_busca.js"></script>
 // ============================================================
@@ -15,7 +16,7 @@ async function buscarPacientes(termo) {
     var filtro = "";
     var termoLimpo = termo.replace(/\D/g, "");
 
-    // Se parece CPF (so numeros, 11 digitos)
+    // Se parece CPF (so numeros, 6+ digitos)
     if (termoLimpo.length >= 6 && /^\d+$/.test(termoLimpo)) {
         filtro = "cpf=ilike.*" + termoLimpo + "*";
     } else {
@@ -71,12 +72,8 @@ async function criarPacienteSupa(dados) {
 
         var data = await r.json();
 
-        if (Array.isArray(data) && data.length > 0) {
-            return data[0];
-        }
-        if (data && data.id) {
-            return data;
-        }
+        if (Array.isArray(data) && data.length > 0) return data[0];
+        if (data && data.id) return data;
 
         console.error("criarPacienteSupa:", data);
         return null;
@@ -84,6 +81,43 @@ async function criarPacienteSupa(dados) {
         console.error("criarPacienteSupa:", e);
         return null;
     }
+}
+
+// Atualizar CPF de paciente existente no Supabase
+async function atualizarCpfPaciente(pacienteId, novoCpf) {
+    try {
+        var cpfLimpo = (novoCpf || "").replace(/\D/g, "");
+        if (!cpfLimpo || !pacienteId) return false;
+
+        var r = await fetch(
+            SUPA_URL + "/rest/v1/pacientes?id=eq." + pacienteId,
+            {
+                method: "PATCH",
+                headers: {
+                    "apikey": SUPA_KEY,
+                    "Authorization": "Bearer " + SUPA_KEY,
+                    "Content-Type": "application/json",
+                    "Prefer": "return=representation"
+                },
+                body: JSON.stringify({ cpf: cpfLimpo })
+            }
+        );
+
+        var data = await r.json();
+        console.log("[COR] CPF atualizado no paciente " + pacienteId + ":", cpfLimpo);
+        return true;
+    } catch (e) {
+        console.error("atualizarCpfPaciente:", e);
+        return false;
+    }
+}
+
+// Formatar data ISO para DD/MM/AAAA
+function formatarDataBR(dataISO) {
+    if (!dataISO) return "";
+    var partes = dataISO.split("-");
+    if (partes.length === 3) return partes[2] + "/" + partes[1] + "/" + partes[0];
+    return dataISO;
 }
 
 // Renderizar dropdown de resultados
@@ -111,12 +145,14 @@ function renderDropdownPac(resultados, inputId) {
         item.onmouseleave = function () { item.style.background = "none"; };
 
         var cpfDisplay = pac.cpf ? formatarCPF(pac.cpf) : "";
+        var nascDisplay = pac.data_nascimento ? formatarDataBR(pac.data_nascimento) : "";
 
         item.innerHTML =
             "<div>" +
             "<div style='font-weight:600;font-size:.88rem'>" + esc(pac.nome) + "</div>" +
             "<div style='font-size:.74rem;color:var(--gr)'>" +
             (cpfDisplay ? "CPF: " + cpfDisplay + " | " : "") +
+            (nascDisplay ? "Nasc: " + nascDisplay + " | " : "") +
             (pac.telefone ? "Tel: " + pac.telefone : "") +
             "</div></div>" +
             "<div style='font-size:.7rem;color:var(--g);font-weight:700'>Selecionar</div>";
@@ -134,27 +170,39 @@ function renderDropdownPac(resultados, inputId) {
     wrapper.appendChild(dd);
 }
 
-// Selecionar um paciente do dropdown
+// Selecionar um paciente do dropdown — preenche TODOS os campos incluindo CPF
 function selecionarPaciente(pac, inputId) {
     _pacSelecionado = pac;
 
     // Determinar prefixo (p = novo agendamento, e = editar)
-    var prefix = inputId === "pNome" || inputId === "pCpf" ? "p" : "e";
+    var prefix = (inputId === "pNome" || inputId === "pCpf") ? "p" : "e";
 
-    // Preencher campos
+    // Nome do campo no editar é eNm2, não eNome
+    var nomeFieldId = prefix === "e" ? "eNm2" : prefix + "Nome";
+    var telFieldId = prefix === "e" ? "eTel2" : prefix + "Tel";
+
+    // Preencher nome
+    var elNome = document.getElementById(nomeFieldId);
+    if (elNome) elNome.value = pac.nome || "";
+
+    // Preencher telefone
+    var elTel = document.getElementById(telFieldId);
+    if (elTel && pac.telefone) {
+        elTel.value = pac.telefone.replace(/^(\d{2})(\d{4,5})(\d{4})$/, "($1) $2-$3");
+    }
+
+    // Preencher demais campos
     var campos = {
-        "Nome": pac.nome || "",
-        "Tel": pac.telefone ? pac.telefone.replace(/^(\d{2})(\d{4,5})(\d{4})$/, "($1) $2-$3") : "",
         "Email": pac.email || "",
         "Cpf": pac.cpf ? formatarCPF(pac.cpf) : "",
+        "DataNasc": pac.data_nascimento || "",
         "Cep": pac.cep || "",
         "Logradouro": pac.logradouro || "",
         "Numero": pac.numero || "",
         "Complemento": pac.complemento || "",
         "Bairro": pac.bairro || "",
         "Municipio": pac.municipio || "",
-        "Uf": pac.uf || "",
-        "DataNasc": pac.data_nascimento || ""
+        "Uf": pac.uf || ""
     };
 
     Object.keys(campos).forEach(function (campo) {
@@ -175,8 +223,7 @@ function selecionarPaciente(pac, inputId) {
     if (dd) dd.remove();
 
     // Mostrar indicador de paciente selecionado
-    var nomeInput = document.getElementById(prefix + "Nome");
-    mostrarPacienteSelecionado(pac, nomeInput ? (prefix + "Nome") : inputId);
+    mostrarPacienteSelecionado(pac, nomeFieldId);
 
     toast("OK", "Paciente selecionado: " + pac.nome);
 }
@@ -189,15 +236,18 @@ function mostrarPacienteSelecionado(pac, inputId) {
     var input = document.getElementById(inputId);
     if (!input) return;
 
+    var nascDisplay = pac.data_nascimento ? formatarDataBR(pac.data_nascimento) : "";
+
     var badge = document.createElement("div");
     badge.id = "pacSelBadge";
     badge.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 12px;" +
         "background:rgba(74,184,72,.1);border:1px solid rgba(74,184,72,.25);" +
-        "border-radius:8px;margin-top:6px;font-size:.8rem;";
+        "border-radius:8px;margin-top:6px;font-size:.8rem;flex-wrap:wrap;";
     badge.innerHTML =
         "<span style='color:var(--g);font-weight:700'>Paciente vinculado</span>" +
         "<span style='color:var(--wh)'>" + esc(pac.nome) + "</span>" +
         (pac.cpf ? "<span style='color:var(--gr)'>(CPF: " + formatarCPF(pac.cpf) + ")</span>" : "") +
+        (nascDisplay ? "<span style='color:var(--gr)'>(Nasc: " + nascDisplay + ")</span>" : "") +
         "<span style='cursor:pointer;color:var(--rd);font-weight:700;margin-left:auto' " +
         "onclick='desvincularPaciente(\"" + inputId + "\")'>X</span>";
 
@@ -219,102 +269,28 @@ document.addEventListener("click", function (e) {
     }
 });
 
-// Inicializar busca no campo de paciente
+// Inicializar busca no campo de paciente (por nome)
 function initBuscaPaciente(inputId) {
     var input = document.getElementById(inputId);
     if (!input) return;
-
-    // Evitar duplicar o listener
     if (input.dataset.buscaInit) return;
     input.dataset.buscaInit = "1";
 
     input.addEventListener("input", function () {
         var termo = input.value.trim();
-
-        // Limpar timer anterior
         if (_pacBuscaTimer) clearTimeout(_pacBuscaTimer);
 
-        // Fechar dropdown se campo vazio
         if (termo.length < 2) {
             var dd = document.getElementById("pacDropdown");
             if (dd) dd.remove();
             return;
         }
 
-        // Debounce de 300ms
         _pacBuscaTimer = setTimeout(async function () {
             var resultados = await buscarPacientes(termo);
             renderDropdownPac(resultados, inputId);
         }, 300);
     });
-}
-
-// ============================================================
-// INTEGRACAO COM confAg() - salvar paciente_id no agendamento
-// ============================================================
-
-// Guardar referencia da funcao original
-var _confAgOriginal = typeof confAg === "function" ? confAg : null;
-
-// Sobrescrever confAg para incluir paciente_id
-async function confAgComPaciente() {
-    // Se nao tem paciente selecionado, criar um novo
-    if (!_pacSelecionado) {
-        var nm = (document.getElementById("pNome")?.value || "").trim();
-        var cpf = (document.getElementById("pCpf")?.value || "").replace(/\D/g, "");
-        var tel = (document.getElementById("pTel")?.value || "").replace(/\D/g, "");
-        var email = (document.getElementById("pEmail")?.value || "").trim();
-        var cep = (document.getElementById("pCep")?.value || "").trim();
-        var logradouro = (document.getElementById("pLogradouro")?.value || "").trim();
-        var numero = (document.getElementById("pNumero")?.value || "").trim();
-        var complemento = (document.getElementById("pComplemento")?.value || "").trim();
-        var bairro = (document.getElementById("pBairro")?.value || "").trim();
-        var municipio = (document.getElementById("pMunicipio")?.value || "").trim();
-        var uf = (document.getElementById("pUf")?.value || "").trim();
-
-        if (nm) {
-            var novoPac = await criarPacienteSupa({
-                nome: nm, cpf: cpf, telefone: tel, email: email,
-                cep: cep, logradouro: logradouro, numero: numero,
-                complemento: complemento, bairro: bairro,
-                municipio: municipio, uf: uf
-            });
-            if (novoPac) {
-                _pacSelecionado = novoPac;
-                console.log("Paciente criado:", novoPac.id, novoPac.nome);
-            }
-        }
-    }
-
-    // Chamar funcao original
-    if (_confAgOriginal) {
-        await _confAgOriginal();
-    }
-
-    // Depois de salvar, atualizar o paciente_id no agendamento
-    if (_pacSelecionado && _pacSelecionado.id) {
-        var ultimoAg = ags[ags.length - 1];
-        if (ultimoAg && ultimoAg.id) {
-            await fetch(
-                SUPA_URL + "/rest/v1/agendamentos?id=eq." + ultimoAg.id,
-                {
-                    method: "PATCH",
-                    headers: {
-                        "apikey": SUPA_KEY,
-                        "Authorization": "Bearer " + SUPA_KEY,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ paciente_id: _pacSelecionado.id })
-                }
-            );
-            console.log("paciente_id vinculado:", _pacSelecionado.id, "-> agendamento:", ultimoAg.id);
-        }
-    }
-
-    // Limpar selecao
-    _pacSelecionado = null;
-    var badge = document.getElementById("pacSelBadge");
-    if (badge) badge.remove();
 }
 
 // Inicializar busca no campo CPF
@@ -342,7 +318,170 @@ function initBuscaCpf(inputId) {
 }
 
 // ============================================================
-// OBSERVADOR - inicializa busca quando o campo aparece
+// VINCULAÇÃO INTELIGENTE NO confAg()
+// Regra: Nome + Data Nasc iguais = mesmo paciente
+// CPF diferente? Atualiza CPF no cadastro do paciente
+// ============================================================
+
+// Guardar referencia da funcao original
+var _confAgOriginal = typeof confAg === "function" ? confAg : null;
+
+// Sobrescrever confAg para incluir paciente_id e logica de vinculação
+async function confAgComPaciente() {
+    var prefix = "p";
+    var nm = (document.getElementById(prefix + "Nome")?.value || "").trim().toUpperCase();
+    var cpfForm = (document.getElementById(prefix + "Cpf")?.value || "").replace(/\D/g, "");
+    var dataNascForm = (document.getElementById(prefix + "DataNasc")?.value || "").trim();
+    var tel = (document.getElementById(prefix + "Tel")?.value || "").replace(/\D/g, "");
+    var email = (document.getElementById(prefix + "Email")?.value || "").trim();
+    var sexo = (document.getElementById(prefix + "Sexo")?.value || "").trim();
+    var cep = (document.getElementById(prefix + "Cep")?.value || "").trim();
+    var logradouro = (document.getElementById(prefix + "Logradouro")?.value || "").trim();
+    var numero = (document.getElementById(prefix + "Numero")?.value || "").trim();
+    var complemento = (document.getElementById(prefix + "Complemento")?.value || "").trim();
+    var bairro = (document.getElementById(prefix + "Bairro")?.value || "").trim();
+    var municipio = (document.getElementById(prefix + "Municipio")?.value || "").trim();
+    var uf = (document.getElementById(prefix + "Uf")?.value || "").trim().toUpperCase();
+
+    // --- LOGICA DE VINCULAÇÃO ---
+    if (!_pacSelecionado && nm) {
+        // Tentar encontrar paciente por nome exato
+        var candidatos = [];
+        try {
+            var rNome = await fetch(
+                SUPA_URL + "/rest/v1/pacientes?select=*&nome=ilike." + encodeURIComponent(nm) + "&ativo=eq.true&limit=10",
+                {
+                    headers: {
+                        "apikey": SUPA_KEY,
+                        "Authorization": "Bearer " + SUPA_KEY
+                    }
+                }
+            );
+            candidatos = await rNome.json();
+            if (!Array.isArray(candidatos)) candidatos = [];
+        } catch (e) {
+            candidatos = [];
+        }
+
+        // Se achou candidatos com mesmo nome, verificar data nascimento
+        if (candidatos.length > 0 && dataNascForm) {
+            var match = candidatos.find(function (c) {
+                return c.data_nascimento === dataNascForm;
+            });
+
+            if (match) {
+                // Mesmo paciente! Nome + data nascimento batem
+                _pacSelecionado = match;
+                console.log("[COR] Vinculado auto por nome+datanasc:", match.id, match.nome);
+
+                // Se CPF do formulário é diferente do cadastrado, atualiza
+                if (cpfForm && cpfForm !== (match.cpf || "").replace(/\D/g, "")) {
+                    console.log("[COR] CPF diferente -> atualizando de", match.cpf, "para", cpfForm);
+                    await atualizarCpfPaciente(match.id, cpfForm);
+                    _pacSelecionado.cpf = cpfForm;
+                }
+            }
+        }
+
+        // Se ainda não vinculou, buscar por CPF
+        if (!_pacSelecionado && cpfForm && cpfForm.length >= 6) {
+            try {
+                var rCpf = await fetch(
+                    SUPA_URL + "/rest/v1/pacientes?select=*&cpf=eq." + cpfForm + "&ativo=eq.true&limit=5",
+                    {
+                        headers: {
+                            "apikey": SUPA_KEY,
+                            "Authorization": "Bearer " + SUPA_KEY
+                        }
+                    }
+                );
+                var porCpf = await rCpf.json();
+                if (Array.isArray(porCpf) && porCpf.length > 0) {
+                    // Verificar se nome + data nasc batem com algum
+                    var matchCpf = porCpf.find(function (c) {
+                        return c.nome === nm && c.data_nascimento === dataNascForm;
+                    });
+                    if (matchCpf) {
+                        _pacSelecionado = matchCpf;
+                        console.log("[COR] Vinculado por CPF+nome+datanasc:", matchCpf.id);
+                    }
+                    // Se CPF existe mas nome/datanasc diferentes = paciente diferente, cria novo
+                }
+            } catch (e) {
+                console.error("Busca CPF:", e);
+            }
+        }
+
+        // Se não encontrou ninguém, criar paciente novo
+        if (!_pacSelecionado) {
+            var novoPac = await criarPacienteSupa({
+                nome: nm, cpf: cpfForm, telefone: tel, email: email,
+                data_nascimento: dataNascForm, sexo: sexo,
+                cep: cep, logradouro: logradouro, numero: numero,
+                complemento: complemento, bairro: bairro,
+                municipio: municipio, uf: uf
+            });
+            if (novoPac) {
+                _pacSelecionado = novoPac;
+                console.log("[COR] Paciente NOVO criado:", novoPac.id, novoPac.nome);
+            }
+        }
+    }
+
+    // Se já tinha _pacSelecionado (pelo dropdown), verificar se CPF mudou
+    if (_pacSelecionado && cpfForm) {
+        var cpfCadastrado = (_pacSelecionado.cpf || "").replace(/\D/g, "");
+        if (cpfForm !== cpfCadastrado) {
+            // Verificar se nome + data nasc batem (é mesmo paciente)
+            var nomePac = (_pacSelecionado.nome || "").toUpperCase().trim();
+            var nascPac = _pacSelecionado.data_nascimento || "";
+
+            if (nomePac === nm && nascPac === dataNascForm) {
+                console.log("[COR] Mesmo paciente (dropdown), CPF diferente -> atualizando");
+                await atualizarCpfPaciente(_pacSelecionado.id, cpfForm);
+                _pacSelecionado.cpf = cpfForm;
+            }
+        }
+    }
+
+    // Chamar funcao original (confAg do index.html)
+    if (_confAgOriginal) {
+        await _confAgOriginal();
+    }
+
+    // Depois de salvar, vincular paciente_id no agendamento
+    if (_pacSelecionado && _pacSelecionado.id) {
+        var ultimoAg = ags[ags.length - 1];
+        if (ultimoAg && ultimoAg.id) {
+            try {
+                await fetch(
+                    SUPA_URL + "/rest/v1/agendamentos?id=eq." + ultimoAg.id,
+                    {
+                        method: "PATCH",
+                        headers: {
+                            "apikey": SUPA_KEY,
+                            "Authorization": "Bearer " + SUPA_KEY,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ paciente_id: _pacSelecionado.id })
+                    }
+                );
+                ultimoAg.paciente_id = _pacSelecionado.id;
+                console.log("[COR] paciente_id vinculado:", _pacSelecionado.id, "-> ag:", ultimoAg.id);
+            } catch (e) {
+                console.error("Vincular paciente_id:", e);
+            }
+        }
+    }
+
+    // Limpar selecao
+    _pacSelecionado = null;
+    var badge = document.getElementById("pacSelBadge");
+    if (badge) badge.remove();
+}
+
+// ============================================================
+// OBSERVADOR - inicializa busca quando os campos aparecem
 // ============================================================
 
 var _pacObserver = new MutationObserver(function () {
@@ -366,4 +505,15 @@ var _pacObserver = new MutationObserver(function () {
 
 _pacObserver.observe(document.body, { childList: true, subtree: true });
 
-console.log("[COR] Modulo busca de pacientes carregado");
+// ============================================================
+// SOBRESCREVER confAg para usar a versão com vinculação
+// O botão no HTML chama confAg() — redirecionamos para confAgComPaciente()
+// ============================================================
+if (typeof confAg === "function" && !confAg._pacWrapped) {
+    _confAgOriginal = confAg;
+    confAg = confAgComPaciente;
+    confAg._pacWrapped = true;
+    console.log("[COR] confAg sobrescrito com vinculação de paciente");
+}
+
+console.log("[COR] Modulo busca de pacientes v2 carregado");
