@@ -711,6 +711,24 @@ function getExamesSelecionados(idBase){
   return itens;
 }
 
+
+function renderExamesComSearch(searchId, wrapId, idBase, selected, onChangeFn) {
+  var exHtml = exChecklistHtml(idBase, selected || [], onChangeFn);
+  var tmpDiv = document.createElement('div');
+  tmpDiv.innerHTML = exHtml;
+  var searchEl = tmpDiv.querySelector('.exck-search');
+  var listEl = tmpDiv.querySelector('.exck-list');
+  var searchWrap = document.getElementById(searchId);
+  var listWrap = document.getElementById(wrapId);
+  if (searchWrap && searchEl) {
+    searchWrap.innerHTML = searchEl.outerHTML;
+    var inp = searchWrap.querySelector('input');
+    if (inp) inp.setAttribute('oninput', "filtrarExames(this,'" + idBase + "')");
+  }
+  if (listWrap) {
+    listWrap.innerHTML = listEl ? listEl.outerHTML : exHtml;
+  }
+}
 function filtrarExames(inp, idBase){
   var termo = String((inp && inp.value) || "")
     .toLowerCase()
@@ -3167,6 +3185,7 @@ function ragendar() {
 
   h += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"pMunicipio\" placeholder=\"Cidade\"></div>";
   h += "<div class='field'><label>Exames</label>";
+  h += "<div id='pExSearch'></div>";
   h += "<div id='pExWrap'></div>";
   h += "</div>";
 
@@ -3195,8 +3214,7 @@ function ragendar() {
 
   document.getElementById("pgAg").innerHTML = h;
 
-  document.getElementById("pExWrap").innerHTML =
-    exChecklistHtml("pExames", [], "updAgSum");
+  renderExamesComSearch("pExSearch", "pExWrap", "pExames", [], "updAgSum");
 
   var td = new Date();
   var df2 = document.getElementById("pData");
@@ -3504,6 +3522,7 @@ function openEditAg(id) {
   b += "</div>";
 
   b += "<div class='field'><label>Exames</label>";
+  b += "<div id='eExSearch'></div>";
   b += "<div id='eExWrap' style='max-height:200px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.02);padding-right:6px'></div>";
   b += "</div>";
 
@@ -3636,10 +3655,7 @@ function openEditAg(id) {
         preco: Number(a.valor_bruto || a.vl || 0)
       }] : []);
 
-  var wrapEdit = document.getElementById("eExWrap");
-  if (wrapEdit) {
-    wrapEdit.innerHTML = exChecklistHtml("eExames", examesEdit, "updAgSumEdit");
-  }
+  renderExamesComSearch("eExSearch", "eExWrap", "eExames", examesEdit, "updAgSumEdit");
 
   updAgSumEdit();
 }
@@ -3880,8 +3896,7 @@ async function confAg() {
   if (document.getElementById("pMunicipio")) document.getElementById("pMunicipio").value = "";
   if (document.getElementById("pUf")) document.getElementById("pUf").value = "";
 
-  document.getElementById("pExWrap").innerHTML =
-    exChecklistHtml("pExames", [], "updAgSum");
+  renderExamesComSearch("pExSearch", "pExWrap", "pExames", [], "updAgSum");
   document.getElementById("agSumDiv").innerHTML = "";
 
   if (typeof rndAg === "function") {
