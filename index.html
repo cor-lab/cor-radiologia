@@ -3392,6 +3392,19 @@ function agEV(ev, id) {
         lbl:"✅ Realizado",
         cls:"btng",
         fn:async function(){
+          // Validar campos obrigatorios
+          var errosRe = [];
+          if(!ag.paciente_data_nascimento) errosRe.push("Data de nascimento");
+          var cpfRe = (ag.paciente_cpf || "").replace(/\D/g,"");
+          if(cpfRe.length < 11) errosRe.push("CPF");
+          var cepRe = (ag.paciente_cep || "").replace(/\D/g,"");
+          if(cepRe.length < 8) errosRe.push("CEP");
+          var telRe = (ag.tel || ag.paciente_tel || "").replace(/\D/g,"");
+          if(telRe.length < 8) errosRe.push("Telefone");
+          if(errosRe.length){
+            toast("⚠️", "Preencha antes de realizar: " + errosRe.join(", "));
+            return;
+          }
           var ok = await dbUpdAgSt(ag.id,"realizado");
           if(ok){
             ag.st = "realizado";
@@ -3571,6 +3584,23 @@ function openEditAg(id) {
       var dur3 = parseInt(document.getElementById("eDur2").value) || 30;
       var st3 = document.getElementById("eSt2").value;
       var itensEdit = getExamesSelecionados("eExames");
+
+      // Validar campos obrigatorios ao marcar como realizado
+      if (st3 === "realizado") {
+        var errosEd = [];
+        var dataNasc2chk = (document.getElementById("eDataNasc")?.value || "").trim();
+        var cpf2chk = (document.getElementById("eCpf")?.value || "").trim().replace(/\D/g,"");
+        var cep2chk = (document.getElementById("eCep")?.value || "").trim().replace(/\D/g,"");
+        var tel2chk = (document.getElementById("eTel2")?.value || "").trim().replace(/\D/g,"");
+        if (!dataNasc2chk) errosEd.push("Data de nascimento");
+        if (cpf2chk.length < 11) errosEd.push("CPF");
+        if (cep2chk.length < 8) errosEd.push("CEP");
+        if (tel2chk.length < 8) errosEd.push("Telefone");
+        if (errosEd.length) {
+          toast("⚠️", "Preencha antes de realizar: " + errosEd.join(", "));
+          return;
+        }
+      }
       var dId3 = parseInt(document.getElementById("eDent2").value) || a.dId;
 
       if (!itensEdit.length) {
@@ -3792,10 +3822,12 @@ async function confAg() {
   var dur = parseInt(document.getElementById("pDur").value) || 30;
   var dId = parseInt(document.getElementById("dSel").value) || 0;
 
-  if (!nm) { toast("!", "Informe o nome do paciente"); return; }
-  if (!dtR) { toast("!", "Selecione uma data"); return; }
-  if (!hr) { toast("!", "Informe o horario"); return; }
-  if (!dId) { toast("!", "Selecione o dentista"); return; }
+  if (!nm) { toast("!", "Informe o nome do paciente"); _agSaving = false; return; }
+  if (!dtR) { toast("!", "Selecione uma data"); _agSaving = false; return; }
+  if (!hr) { toast("!", "Informe o horario"); _agSaving = false; return; }
+  if (!dId) { toast("!", "Selecione o dentista"); _agSaving = false; return; }
+
+
 
   var pts3 = dtR.split("-");
   var df4 = pts3[2] + "/" + pts3[1] + "/" + pts3[0];
@@ -4175,7 +4207,26 @@ function atualizarValorNota(){
 }
 function filtEx(v){exSrch=v.toLowerCase();bldExRows();}
 function setFlt(el,f){document.querySelectorAll(".ftab").forEach(function(x){x.classList.remove("active");});el.classList.add("active");exFlt=f;bldExRows();}
-function chSt(id,s){var a=ags.find(function(x){return x.id===id;});if(a){a.st=s;dbUpdAgSt(id,s);bldExRows();toast("✅","Status: "+s);}}
+function chSt(id,s){
+  var a=ags.find(function(x){return x.id===id;});
+  if(!a) return;
+  // Validar campos obrigatorios ao marcar como realizado
+  if(s === "realizado") {
+    var erros = [];
+    if(!a.paciente_data_nascimento) erros.push("Data de nascimento");
+    var cpfStr = (a.paciente_cpf || "").replace(/\D/g,"");
+    if(cpfStr.length < 11) erros.push("CPF");
+    var cepStr = (a.paciente_cep || "").replace(/\D/g,"");
+    if(cepStr.length < 8) erros.push("CEP");
+    var telStr = (a.tel || a.paciente_tel || "").replace(/\D/g,"");
+    if(telStr.length < 8) erros.push("Telefone");
+    if(erros.length) {
+      toast("⚠️", "Preencha antes de realizar: " + erros.join(", "));
+      return;
+    }
+  }
+  a.st=s;dbUpdAgSt(id,s);bldExRows();toast("✅","Status: "+s);
+}
 
 function sWAi(id){
   var a = ags.find(function(x){ return x.id === id; });
