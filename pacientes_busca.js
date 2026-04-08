@@ -373,13 +373,6 @@ async function confAgComPaciente() {
                 // Mesmo paciente! Nome + data nascimento batem
                 _pacSelecionado = match;
                 console.log("[COR] Vinculado auto por nome+datanasc:", match.id, match.nome);
-
-                // Se CPF do formulário é diferente do cadastrado, atualiza
-                if (cpfForm && cpfForm !== (match.cpf || "").replace(/\D/g, "")) {
-                    console.log("[COR] CPF diferente -> atualizando de", match.cpf, "para", cpfForm);
-                    await atualizarCpfPaciente(match.id, cpfForm);
-                    _pacSelecionado.cpf = cpfForm;
-                }
             }
         }
 
@@ -428,19 +421,14 @@ async function confAgComPaciente() {
         }
     }
 
-    // Se já tinha _pacSelecionado (pelo dropdown), verificar se CPF mudou
+    // Sempre salva o CPF do formulário no cadastro do paciente vinculado
+    // A regra é: nome + data nasc batem = mesmo paciente, CPF do form é o que vale
     if (_pacSelecionado && cpfForm) {
         var cpfCadastrado = (_pacSelecionado.cpf || "").replace(/\D/g, "");
         if (cpfForm !== cpfCadastrado) {
-            // Verificar se nome + data nasc batem (é mesmo paciente)
-            var nomePac = (_pacSelecionado.nome || "").toUpperCase().trim();
-            var nascPac = _pacSelecionado.data_nascimento || "";
-
-            if (nomePac === nm && nascPac === dataNascForm) {
-                console.log("[COR] Mesmo paciente (dropdown), CPF diferente -> atualizando");
-                await atualizarCpfPaciente(_pacSelecionado.id, cpfForm);
-                _pacSelecionado.cpf = cpfForm;
-            }
+            console.log("[COR] Atualizando CPF do paciente", _pacSelecionado.id, "de", cpfCadastrado || "(vazio)", "para", cpfForm);
+            await atualizarCpfPaciente(_pacSelecionado.id, cpfForm);
+            _pacSelecionado.cpf = cpfForm;
         }
     }
 
