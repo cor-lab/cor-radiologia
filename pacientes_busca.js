@@ -139,7 +139,7 @@ function selecionarPaciente(pac, inputId) {
     _pacSelecionado = pac;
 
     // Determinar prefixo (p = novo agendamento, e = editar)
-    var prefix = inputId === "pNome" ? "p" : "e";
+    var prefix = inputId === "pNome" || inputId === "pCpf" ? "p" : "e";
 
     // Preencher campos
     var campos = {
@@ -153,7 +153,8 @@ function selecionarPaciente(pac, inputId) {
         "Complemento": pac.complemento || "",
         "Bairro": pac.bairro || "",
         "Municipio": pac.municipio || "",
-        "Uf": pac.uf || ""
+        "Uf": pac.uf || "",
+        "DataNasc": pac.data_nascimento || ""
     };
 
     Object.keys(campos).forEach(function (campo) {
@@ -163,12 +164,19 @@ function selecionarPaciente(pac, inputId) {
         }
     });
 
+    // Preencher sexo (select)
+    if (pac.sexo) {
+        var selSexo = document.getElementById(prefix + "Sexo");
+        if (selSexo) selSexo.value = pac.sexo;
+    }
+
     // Fechar dropdown
     var dd = document.getElementById("pacDropdown");
     if (dd) dd.remove();
 
     // Mostrar indicador de paciente selecionado
-    mostrarPacienteSelecionado(pac, inputId);
+    var nomeInput = document.getElementById(prefix + "Nome");
+    mostrarPacienteSelecionado(pac, nomeInput ? (prefix + "Nome") : inputId);
 
     toast("OK", "Paciente selecionado: " + pac.nome);
 }
@@ -205,7 +213,7 @@ function desvincularPaciente(inputId) {
 
 // Fechar dropdown ao clicar fora
 document.addEventListener("click", function (e) {
-    if (!e.target.closest("#pacDropdown") && e.target.id !== "pNome" && e.target.id !== "eNm2") {
+    if (!e.target.closest("#pacDropdown") && e.target.id !== "pNome" && e.target.id !== "eNm2" && e.target.id !== "pCpf" && e.target.id !== "eCpf") {
         var dd = document.getElementById("pacDropdown");
         if (dd) dd.remove();
     }
@@ -309,6 +317,30 @@ async function confAgComPaciente() {
     if (badge) badge.remove();
 }
 
+// Inicializar busca no campo CPF
+function initBuscaCpf(inputId) {
+    var input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.dataset.buscaCpfInit) return;
+    input.dataset.buscaCpfInit = "1";
+
+    input.addEventListener("input", function () {
+        var termo = input.value.replace(/\D/g, "").trim();
+        if (_pacBuscaTimer) clearTimeout(_pacBuscaTimer);
+
+        if (termo.length < 6) {
+            var dd = document.getElementById("pacDropdown");
+            if (dd) dd.remove();
+            return;
+        }
+
+        _pacBuscaTimer = setTimeout(async function () {
+            var resultados = await buscarPacientes(termo);
+            renderDropdownPac(resultados, inputId);
+        }, 300);
+    });
+}
+
 // ============================================================
 // OBSERVADOR - inicializa busca quando o campo aparece
 // ============================================================
@@ -318,9 +350,17 @@ var _pacObserver = new MutationObserver(function () {
     if (pNome && !pNome.dataset.buscaInit) {
         initBuscaPaciente("pNome");
     }
+    var pCpf = document.getElementById("pCpf");
+    if (pCpf && !pCpf.dataset.buscaCpfInit) {
+        initBuscaCpf("pCpf");
+    }
     var eNm2 = document.getElementById("eNm2");
     if (eNm2 && !eNm2.dataset.buscaInit) {
         initBuscaPaciente("eNm2");
+    }
+    var eCpf = document.getElementById("eCpf");
+    if (eCpf && !eCpf.dataset.buscaCpfInit) {
+        initBuscaCpf("eCpf");
     }
 });
 
