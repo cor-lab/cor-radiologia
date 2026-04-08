@@ -36,7 +36,7 @@ function imprimirOS(agId) {
     }
 
     itens.forEach(function(it, idx) {
-        var nomeExame = it._nome || "";
+        var nomeExame = it._nome || it.nome_exame || "";
         if (!nomeExame && it.exame_id) {
             var ex = fex(it.exame_id);
             nomeExame = ex ? ex.n : (it.exame_id || "Exame");
