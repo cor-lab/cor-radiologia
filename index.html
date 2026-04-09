@@ -711,24 +711,6 @@ function getExamesSelecionados(idBase){
   return itens;
 }
 
-
-function renderExamesComSearch(searchId, wrapId, idBase, selected, onChangeFn) {
-  var exHtml = exChecklistHtml(idBase, selected || [], onChangeFn);
-  var tmpDiv = document.createElement('div');
-  tmpDiv.innerHTML = exHtml;
-  var searchEl = tmpDiv.querySelector('.exck-search');
-  var listEl = tmpDiv.querySelector('.exck-list');
-  var searchWrap = document.getElementById(searchId);
-  var listWrap = document.getElementById(wrapId);
-  if (searchWrap && searchEl) {
-    searchWrap.innerHTML = searchEl.outerHTML;
-    var inp = searchWrap.querySelector('input');
-    if (inp) inp.setAttribute('oninput', "filtrarExames(this,'" + idBase + "')");
-  }
-  if (listWrap) {
-    listWrap.innerHTML = listEl ? listEl.outerHTML : exHtml;
-  }
-}
 function filtrarExames(inp, idBase){
   var termo = String((inp && inp.value) || "")
     .toLowerCase()
@@ -3185,7 +3167,6 @@ function ragendar() {
 
   h += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"pMunicipio\" placeholder=\"Cidade\"></div>";
   h += "<div class='field'><label>Exames</label>";
-  h += "<div id='pExSearch'></div>";
   h += "<div id='pExWrap'></div>";
   h += "</div>";
 
@@ -3214,7 +3195,8 @@ function ragendar() {
 
   document.getElementById("pgAg").innerHTML = h;
 
-  renderExamesComSearch("pExSearch", "pExWrap", "pExames", [], "updAgSum");
+  document.getElementById("pExWrap").innerHTML =
+    exChecklistHtml("pExames", [], "updAgSum");
 
   var td = new Date();
   var df2 = document.getElementById("pData");
@@ -3392,19 +3374,6 @@ function agEV(ev, id) {
         lbl:"✅ Realizado",
         cls:"btng",
         fn:async function(){
-          // Validar campos obrigatorios
-          var errosRe = [];
-          if(!ag.paciente_data_nascimento) errosRe.push("Data de nascimento");
-          var cpfRe = (ag.paciente_cpf || "").replace(/\D/g,"");
-          if(cpfRe.length < 11) errosRe.push("CPF");
-          var cepRe = (ag.paciente_cep || "").replace(/\D/g,"");
-          if(cepRe.length < 8) errosRe.push("CEP");
-          var telRe = (ag.tel || ag.paciente_tel || "").replace(/\D/g,"");
-          if(telRe.length < 8) errosRe.push("Telefone");
-          if(errosRe.length){
-            toast("⚠️", "Preencha antes de realizar: " + errosRe.join(", "));
-            return;
-          }
           var ok = await dbUpdAgSt(ag.id,"realizado");
           if(ok){
             ag.st = "realizado";
@@ -3535,7 +3504,6 @@ function openEditAg(id) {
   b += "</div>";
 
   b += "<div class='field'><label>Exames</label>";
-  b += "<div id='eExSearch'></div>";
   b += "<div id='eExWrap' style='max-height:200px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.02);padding-right:6px'></div>";
   b += "</div>";
 
@@ -3584,23 +3552,6 @@ function openEditAg(id) {
       var dur3 = parseInt(document.getElementById("eDur2").value) || 30;
       var st3 = document.getElementById("eSt2").value;
       var itensEdit = getExamesSelecionados("eExames");
-
-      // Validar campos obrigatorios ao marcar como realizado
-      if (st3 === "realizado") {
-        var errosEd = [];
-        var dataNasc2chk = (document.getElementById("eDataNasc")?.value || "").trim();
-        var cpf2chk = (document.getElementById("eCpf")?.value || "").trim().replace(/\D/g,"");
-        var cep2chk = (document.getElementById("eCep")?.value || "").trim().replace(/\D/g,"");
-        var tel2chk = (document.getElementById("eTel2")?.value || "").trim().replace(/\D/g,"");
-        if (!dataNasc2chk) errosEd.push("Data de nascimento");
-        if (cpf2chk.length < 11) errosEd.push("CPF");
-        if (cep2chk.length < 8) errosEd.push("CEP");
-        if (tel2chk.length < 8) errosEd.push("Telefone");
-        if (errosEd.length) {
-          toast("⚠️", "Preencha antes de realizar: " + errosEd.join(", "));
-          return;
-        }
-      }
       var dId3 = parseInt(document.getElementById("eDent2").value) || a.dId;
 
       if (!itensEdit.length) {
@@ -3685,7 +3636,10 @@ function openEditAg(id) {
         preco: Number(a.valor_bruto || a.vl || 0)
       }] : []);
 
-  renderExamesComSearch("eExSearch", "eExWrap", "eExames", examesEdit, "updAgSumEdit");
+  var wrapEdit = document.getElementById("eExWrap");
+  if (wrapEdit) {
+    wrapEdit.innerHTML = exChecklistHtml("eExames", examesEdit, "updAgSumEdit");
+  }
 
   updAgSumEdit();
 }
@@ -3822,12 +3776,10 @@ async function confAg() {
   var dur = parseInt(document.getElementById("pDur").value) || 30;
   var dId = parseInt(document.getElementById("dSel").value) || 0;
 
-  if (!nm) { toast("!", "Informe o nome do paciente"); _agSaving = false; return; }
-  if (!dtR) { toast("!", "Selecione uma data"); _agSaving = false; return; }
-  if (!hr) { toast("!", "Informe o horario"); _agSaving = false; return; }
-  if (!dId) { toast("!", "Selecione o dentista"); _agSaving = false; return; }
-
-
+  if (!nm) { toast("!", "Informe o nome do paciente"); return; }
+  if (!dtR) { toast("!", "Selecione uma data"); return; }
+  if (!hr) { toast("!", "Informe o horario"); return; }
+  if (!dId) { toast("!", "Selecione o dentista"); return; }
 
   var pts3 = dtR.split("-");
   var df4 = pts3[2] + "/" + pts3[1] + "/" + pts3[0];
@@ -3928,7 +3880,8 @@ async function confAg() {
   if (document.getElementById("pMunicipio")) document.getElementById("pMunicipio").value = "";
   if (document.getElementById("pUf")) document.getElementById("pUf").value = "";
 
-  renderExamesComSearch("pExSearch", "pExWrap", "pExames", [], "updAgSum");
+  document.getElementById("pExWrap").innerHTML =
+    exChecklistHtml("pExames", [], "updAgSum");
   document.getElementById("agSumDiv").innerHTML = "";
 
   if (typeof rndAg === "function") {
@@ -4207,26 +4160,7 @@ function atualizarValorNota(){
 }
 function filtEx(v){exSrch=v.toLowerCase();bldExRows();}
 function setFlt(el,f){document.querySelectorAll(".ftab").forEach(function(x){x.classList.remove("active");});el.classList.add("active");exFlt=f;bldExRows();}
-function chSt(id,s){
-  var a=ags.find(function(x){return x.id===id;});
-  if(!a) return;
-  // Validar campos obrigatorios ao marcar como realizado
-  if(s === "realizado") {
-    var erros = [];
-    if(!a.paciente_data_nascimento) erros.push("Data de nascimento");
-    var cpfStr = (a.paciente_cpf || "").replace(/\D/g,"");
-    if(cpfStr.length < 11) erros.push("CPF");
-    var cepStr = (a.paciente_cep || "").replace(/\D/g,"");
-    if(cepStr.length < 8) erros.push("CEP");
-    var telStr = (a.tel || a.paciente_tel || "").replace(/\D/g,"");
-    if(telStr.length < 8) erros.push("Telefone");
-    if(erros.length) {
-      toast("⚠️", "Preencha antes de realizar: " + erros.join(", "));
-      return;
-    }
-  }
-  a.st=s;dbUpdAgSt(id,s);bldExRows();toast("✅","Status: "+s);
-}
+function chSt(id,s){var a=ags.find(function(x){return x.id===id;});if(a){a.st=s;dbUpdAgSt(id,s);bldExRows();toast("✅","Status: "+s);}}
 
 function sWAi(id){
   var a = ags.find(function(x){ return x.id === id; });
@@ -5518,9 +5452,8 @@ function abrirFechamentoCaixa() {
     var itens = a.exames || (a.ex ? [{exame_id: a.ex, convenio_id: a.cv, preco: a.valor_faturado || a.vl || 0}] : []);
     if (!itens.length) itens = [{exame_id: a.exame_id || a.ex, convenio_id: a.convenio_id || a.cv, preco: a.valor_faturado || a.vl || 0}];
 
-    var valor = 0;
-    itens.forEach(function(it){ valor += Number(it.preco || 0); });
-    if (!valor) valor = Number(a.valor_faturado || a.vl || 0);
+    // Usar valor_faturado (liquido) como valor do atendimento
+    var valor = Number(a.valor_faturado || a.vl || 0);
     totalDescontos += Number(a.desconto_valor || a.desc || 0);
 
     var ehForaFat = false;
