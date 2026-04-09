@@ -1558,6 +1558,8 @@ async function loadAllData(){
           ,firebird_seq_atend: a.firebird_seq_atend || null
           ,obs: a.observacoes || ''
           ,observacoes: a.observacoes || ''
+          ,forma_entrega: a.forma_entrega || null
+          ,previsao_entrega: a.previsao_entrega || null
           ,paciente_data_nascimento: a.paciente_data_nascimento || ''
           ,paciente_sexo: a.paciente_sexo || ''
         };
@@ -1700,7 +1702,9 @@ async function dbSaveAg(ag){
   nfse_id: ag.nfse_id || null,
   focus_reference: ag.focus_reference || null,
   pode_pontuar: ag.pode_pontuar === true,
-  observacoes: ag.observacoes || ag.obs || null
+  observacoes: ag.observacoes || ag.obs || null,
+  forma_entrega: ag.forma_entrega || null,
+  previsao_entrega: ag.previsao_entrega || null
 };
 
   var r = ag._new
@@ -3211,6 +3215,15 @@ function ragendar() {
   h += "</select>";
   h += "</div>";
 
+  h += "<div class=\"fg2\">";
+  h += "<div class=\"field\"><label>Forma de Entrega</label><select id=\"pFormaEntrega\">";
+  h += "<option value=\"digital\">Digital</option>";
+  h += "<option value=\"paciente_retira\">Paciente Retira</option>";
+  h += "<option value=\"entrega_dentista\">Entrega no Dentista</option>";
+  h += "</select></div>";
+  h += "<div class=\"field\"><label>Previsão de Entrega</label><input type=\"date\" id=\"pPrevisaoEntrega\"></div>";
+  h += "</div>";
+
   h += "<div class=\"field\"><label>Observacoes</label><textarea id=\"pObs\" style=\"min-height:52px\"></textarea></div>";
   h += "<button class=\"btn btng\" style=\"width:100%;justify-content:center;padding:11px\" onclick=\"confAg()\">Confirmar Agendamento</button>";
   h += "<div id=\"agSumDiv\"></div>";
@@ -3551,6 +3564,15 @@ function openEditAg(id) {
   });
   b += "</select></div>";
 
+  b += "<div class=\"fg2\">";
+  b += "<div class=\"field\"><label>Forma de Entrega</label><select id=\"eFormaEntrega\">";
+  b += "<option value=\"digital\"" + ((a.forma_entrega || "") === "digital" ? " selected" : "") + ">Digital</option>";
+  b += "<option value=\"paciente_retira\"" + ((a.forma_entrega || "") === "paciente_retira" ? " selected" : "") + ">Paciente Retira</option>";
+  b += "<option value=\"entrega_dentista\"" + ((a.forma_entrega || "") === "entrega_dentista" ? " selected" : "") + ">Entrega no Dentista</option>";
+  b += "</select></div>";
+  b += "<div class=\"field\"><label>Previsão de Entrega</label><input type=\"date\" id=\"ePrevisaoEntrega\" value=\"" + esc(a.previsao_entrega || "") + "\"></div>";
+  b += "</div>";
+
   b += "<div class=\"field\"><label>Observações</label><textarea id=\"eObs\" style=\"min-height:52px\">" + esc(a.obs || a.observacoes || "") + "</textarea></div>";
 
   b += "</div>";
@@ -3628,6 +3650,8 @@ function openEditAg(id) {
       a.cv = itensEdit[0].convenio_id || "";
 
       a.forma_pagamento_prevista = formaPgPrevista;
+      a.forma_entrega = document.getElementById("eFormaEntrega")?.value || null;
+      a.previsao_entrega = document.getElementById("ePrevisaoEntrega")?.value || null;
       a.valor_bruto = calcPgEdit.valor_bruto;
       a.desconto_percentual = calcPgEdit.desconto_percentual;
       a.desconto_valor = calcPgEdit.desconto_valor;
@@ -3845,6 +3869,8 @@ async function confAg() {
     valor_faturado: calcPg.valor_faturado,
     forma_pagamento_prevista: formaPagamentoPrevista,
     forma_pagamento_final: null,
+    forma_entrega: document.getElementById("pFormaEntrega")?.value || "digital",
+    previsao_entrega: document.getElementById("pPrevisaoEntrega")?.value || null,
     cb: pts4,
     st: "agendado",
     status: "agendado",
