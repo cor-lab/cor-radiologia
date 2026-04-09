@@ -602,12 +602,6 @@ function exChecklistHtml(idBase, selected, onChangeFn){
 
   var h = "";
   h += "<div class='exck-wrap'>";
-
-  // 🔍 busca
-  h += "<div class='exck-search'>";
-  h += "<input type='text' placeholder='Buscar exame...' oninput=\"filtrarExames(this,'" + idBase + "')\">";
-  h += "</div>";
-
   h += "<div id='" + idBase + "' class='exck-list'>";
 
   (exT || []).forEach(function(ex){
@@ -632,6 +626,15 @@ function exChecklistHtml(idBase, selected, onChangeFn){
       // Só mostra convênio se tem preço cadastrado para este exame
       var temPreco = c.pr && (c.pr[ex.id] !== undefined && c.pr[ex.id] !== null);
       if(!temPreco && !(sel && sel.convenio_id == c.id)) return;
+
+      // Regra UNIMED: exames UNIMED só com convênio UNIMED, e vice-versa
+      var nomeExame = (ex.n || "").toUpperCase();
+      var nomeConv = (c.n || "").toUpperCase();
+      var exameEhUnimed = nomeExame.indexOf("UNIMED") >= 0;
+      var convEhUnimed = nomeConv.indexOf("UNIMED") >= 0;
+      if (exameEhUnimed && !convEhUnimed) return;  // exame UNIMED só mostra convênio UNIMED
+      if (!exameEhUnimed && convEhUnimed) return;   // exame normal não mostra UNIMED
+
       var s = sel && sel.convenio_id == c.id ? "selected" : "";
       h += "<option value='" + c.id + "' " + s + ">" + esc(c.n) + "</option>";
     });
@@ -668,10 +671,29 @@ function toggleExame(idBase, exId, onChangeFn){
   if(ip) ip.disabled = !marcado;
 
   if(marcado){
-    if(sl && !sl.value) sl.value = "";
+    // Se o select tem apenas 1 opção de convênio (além do Particular), auto-selecionar
+    if(sl) {
+      var opcoes = sl.querySelectorAll("option[value]");
+      var opcoesComValor = [];
+      for(var i=0; i<opcoes.length; i++){
+        if(opcoes[i].value) opcoesComValor.push(opcoes[i]);
+      }
+      if(opcoesComValor.length === 1 && !sl.value){
+        sl.value = opcoesComValor[0].value;
+      }
+      if(!sl.value) sl.value = "";
+    }
     if(ip){
       var ex = fex(exId);
-      if(!ip.value || Number(ip.value) <= 0){
+      // Se convênio selecionado, usar preço do convênio
+      if(sl && sl.value){
+        var cvObj = fconv(sl.value);
+        if(cvObj && cvObj.pr && cvObj.pr[exId] !== undefined){
+          ip.value = Number(cvObj.pr[exId]).toFixed(2);
+        } else if(!ip.value || Number(ip.value) <= 0){
+          ip.value = Number(ex ? ex.p || 0 : 0).toFixed(2);
+        }
+      } else if(!ip.value || Number(ip.value) <= 0){
         ip.value = Number(ex ? ex.p || 0 : 0).toFixed(2);
       }
     }
@@ -3167,6 +3189,7 @@ function ragendar() {
 
   h += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"pMunicipio\" placeholder=\"Cidade\"></div>";
   h += "<div class='field'><label>Exames</label>";
+  h += "<input type='text' id='pExSearch' placeholder='Buscar exame...' oninput=\"filtrarExames(this,'pExames')\" style='margin-bottom:6px'>";
   h += "<div id='pExWrap'></div>";
   h += "</div>";
 
@@ -3504,6 +3527,7 @@ function openEditAg(id) {
   b += "</div>";
 
   b += "<div class='field'><label>Exames</label>";
+  b += "<input type='text' id='eExSearch' placeholder='Buscar exame...' oninput=\"filtrarExames(this,'eExames')\" style='margin-bottom:6px'>";
   b += "<div id='eExWrap' style='max-height:200px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.02);padding-right:6px'></div>";
   b += "</div>";
 
