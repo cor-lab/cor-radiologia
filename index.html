@@ -2142,7 +2142,7 @@ async function dbResgatar(dentId,premId,pts){
 </div>
 </header>
 <!-- Modal geral -->
-<div class="mo" id="MO" onclick="if(event.target===this)closeM()">
+<div class="mo" id="MO">
   <div class="mb" id="MB">
     <div class="mh"><span class="mt" id="MT"></span><button class="mx" onclick="closeM()">✕</button></div>
     <div id="MB2"></div><div class="mf" id="MF"></div>
@@ -2364,9 +2364,7 @@ document.addEventListener("DOMContentLoaded", function() {
   document.getElementById("nav").addEventListener("click", function(e) {
     if (e.target.dataset.p) navTo(e.target.dataset.p);
   });
-  document.getElementById("MO").addEventListener("click", function(e) {
-    if (e.target === document.getElementById("MO")) closeM();
-  });
+  // Modal não fecha mais ao clicar fora — apenas pelo botão X ou Voltar
   document.getElementById("lPass").addEventListener("keydown", function(e) {
     if (e.key === "Enter") doLoginSupa();
   });
