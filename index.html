@@ -3326,10 +3326,20 @@ function rndAg() {
       var sm=t2m(a.hr); var dur=a.dur||30; var em2=sm+dur;
       var top2=((sm-AGS*60)/5)*AGSZ; var ht=Math.max((dur/5)*AGSZ,24);
       var ex2=fex(a.ex); var cv2=fconv(a.cv);
+      // Se tiver array de exames, mostra todos
+      var nomesEx = "";
+      if (Array.isArray(a.exames) && a.exames.length) {
+        nomesEx = a.exames.map(function(it){
+          var ex = fex(it.exame_id);
+          return ex ? ex.n : it.exame_id;
+        }).join(", ");
+      } else {
+        nomesEx = ex2 ? ex2.n : "—";
+      }
       var cl=ECS[a.st]||"ec0";
       h += "<div class=\"ag-ev "+cl+"\" style=\"top:"+top2+"px;height:"+ht+"px\" onclick=\"agEV(event,"+a.id+")\">";
       h+="<div class=\"et\">"+esc(a.hr)+" - "+esc(m2t(em2))+" | <strong>"+esc(a.pac)+"</strong>"+(cv2?" ("+esc(cv2.n)+")":"")+"</div>";
-      h+="<div class=\"es\">"+esc(ex2.n)+"</div>";
+      h+="<div class=\"es\">"+esc(nomesEx)+"</div>";
       if(a.st==="realizado") h+="<div class=\"eck\">&#10003;</div>";
       h+="</div>";
     });
