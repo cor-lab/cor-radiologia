@@ -3664,9 +3664,44 @@ function openEditAg(id) {
         return;
       }
       lastAg = a; // 🔥 ESSENCIAL
-      // Recarregar dados do banco para atualizar cache local
-      if (typeof loadAllData === "function") {
-        try { await loadAllData(); } catch(e) { console.warn(e); }
+      // Atualizar cache local: encontrar e atualizar o objeto no array ags
+      for (var i = 0; i < ags.length; i++) {
+        if (ags[i].id === a.id) {
+          ags[i].forma_entrega = a.forma_entrega;
+          ags[i].previsao_entrega = a.previsao_entrega;
+          ags[i].observacoes = a.observacoes;
+          ags[i].obs = a.obs;
+          ags[i].pac = a.pac;
+          ags[i].tel = a.tel;
+          ags[i].dt = a.dt;
+          ags[i].hr = a.hr;
+          ags[i].dur = a.dur;
+          ags[i].dId = a.dId;
+          ags[i].st = a.st;
+          ags[i].status = a.status;
+          ags[i].status_clinico = a.status_clinico;
+          ags[i].exames = a.exames;
+          ags[i].ex = a.ex;
+          ags[i].cv = a.cv;
+          ags[i].vl = a.vl;
+          ags[i].valor_bruto = a.valor_bruto;
+          ags[i].desconto_percentual = a.desconto_percentual;
+          ags[i].desconto_valor = a.desconto_valor;
+          ags[i].valor_faturado = a.valor_faturado;
+          ags[i].forma_pagamento_prevista = a.forma_pagamento_prevista;
+          ags[i].paciente_cpf = a.paciente_cpf;
+          ags[i].paciente_email = a.paciente_email;
+          ags[i].paciente_cep = a.paciente_cep;
+          ags[i].paciente_logradouro = a.paciente_logradouro;
+          ags[i].paciente_numero = a.paciente_numero;
+          ags[i].paciente_complemento = a.paciente_complemento;
+          ags[i].paciente_bairro = a.paciente_bairro;
+          ags[i].paciente_municipio = a.paciente_municipio;
+          ags[i].paciente_uf = a.paciente_uf;
+          ags[i].paciente_data_nascimento = a.paciente_data_nascimento;
+          ags[i].paciente_sexo = a.paciente_sexo;
+          break;
+        }
       }
       closeM();
       rndAg();
@@ -3695,38 +3730,6 @@ function openEditAg(id) {
 
   updAgSumEdit();
 }
-/* BOTÕES FISCAIS */
-if((a.status_clinico || a.st)=="realizado" && (a.status_fiscal || "nao_emitida")!="emitida"){
-  (function(ag){
-    btns.push({
-      lbl:"🧾 Emitir nota",
-      cls:"btng",
-      fn:function(){
-        closeM();
-        abrirModalEmitirNota(ag.id);
-      }
-    });
-  })(a);
-}
-
-if((a.status_fiscal || "")=="emitida"){
-  (function(ag){
-    btns.push({
-      lbl:"🛑 Cancelar nota",
-      cls:"btnr",
-      fn:function(){
-        closeM();
-        cancelarNotaManual(ag.id);
-      }
-    });
-  })(a);
-}
-
-(function(ag){btns.push({lbl:"📲 WhatsApp",cls:"btnt",fn:function(){closeM();sWAi(ag.id);}});})(a);
-
-openM("Agendamento",b,btns);
-
-id="eEx2"
 function onCepInputAuto(el, isEdit){
   if(!el) return;
 
