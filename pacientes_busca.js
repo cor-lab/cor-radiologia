@@ -207,16 +207,18 @@ function selecionarPaciente(pac, inputId) {
 
     Object.keys(campos).forEach(function (campo) {
         var el = document.getElementById(prefix + campo);
-        if (el && campos[campo]) {
+        if (el) {
+            // Sempre atribui — limpa o campo se valor for vazio (evita dados fantasmas do paciente anterior)
             el.value = campos[campo];
         }
     });
 
-    // Preencher sexo (select)
-    if (pac.sexo) {
-        var selSexo = document.getElementById(prefix + "Sexo");
-        if (selSexo) selSexo.value = pac.sexo;
-    }
+    // Limpar sexo se novo paciente não tem
+    var selSexo = document.getElementById(prefix + "Sexo");
+    if (selSexo) selSexo.value = pac.sexo || "";
+
+    // Limpar telefone se novo paciente não tem
+    if (elTel && !pac.telefone) elTel.value = "";
 
     // Fechar dropdown
     var dd = document.getElementById("pacDropdown");

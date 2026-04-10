@@ -3149,7 +3149,7 @@ function ragendar() {
   h += "</div>";
 
   h += "<div class=\"ag-sd\" id=\"agSd\">";
-  h += "<div class=\"ag-st2\">Novo Agendamento</div>";
+  h += "<button class=\"btn btng\" style=\"width:100%;justify-content:center;padding:14px;font-size:16px;font-weight:600;margin-bottom:14px\" onclick=\"limparFormNovoAg()\">+ Novo Agendamento</button>";
   h += "<div class=\"ag-si\" id=\"agSI\"></div>";
 
   h += "<div class=\"field\"><label>Paciente</label><input type=\"text\" id=\"pNome\" placeholder=\"Nome completo\" autocomplete=\"off\"></div>";
@@ -3664,6 +3664,10 @@ function openEditAg(id) {
         return;
       }
       lastAg = a; // 🔥 ESSENCIAL
+      // Recarregar dados do banco para atualizar cache local
+      if (typeof dbLoadAgs === "function") {
+        try { await dbLoadAgs(); } catch(e) { console.warn(e); }
+      }
       closeM();
       rndAg();
       toast("✅","Agendamento atualizado!");
@@ -4147,6 +4151,56 @@ function maskCEP(el){
   el.value = v;
 }
 
+function limparFormNovoAg(){
+  // Limpar todos os campos do formulário de novo agendamento
+  var ids = ["pNome","pTel","pEmail","pCpf","pDataNasc","pCep","pLogradouro","pNumero","pComplemento","pBairro","pMunicipio","pUf","pObs","pPrevisaoEntrega"];
+  ids.forEach(function(id){
+    var el = document.getElementById(id);
+    if(el) el.value = "";
+  });
+  // Selects: voltar pro padrão
+  var pSexo = document.getElementById("pSexo");
+  if(pSexo) pSexo.value = "";
+  var pFormaEntrega = document.getElementById("pFormaEntrega");
+  if(pFormaEntrega) pFormaEntrega.value = "digital";
+  // Limpar paciente vinculado
+  if (typeof _pacSelecionado !== "undefined") _pacSelecionado = null;
+  var ind = document.getElementById("pacVinculadoInd");
+  if(ind) ind.remove();
+  // Limpar dentista
+  var dSel = document.getElementById("dSel");
+  if(dSel) dSel.value = "";
+  var dBusca = document.getElementById("dBusca");
+  if(dBusca) dBusca.value = "";
+  // Limpar exames marcados
+  var pExWrap = document.getElementById("pExWrap");
+  if(pExWrap){
+    var checks = pExWrap.querySelectorAll("input[type='checkbox']");
+    checks.forEach(function(c){
+      if(c.checked){
+        c.checked = false;
+        // Disparar evento change pra resetar selects e preços
+        var row = c.closest(".exck-row");
+        if(row){
+          var sl = row.querySelector("select");
+          var ip = row.querySelector("input[type='number']");
+          if(sl){ sl.value = ""; sl.disabled = true; }
+          if(ip){ ip.disabled = true; }
+        }
+      }
+    });
+  }
+  var pExSearch = document.getElementById("pExSearch");
+  if(pExSearch) pExSearch.value = "";
+  // Resetar resumo
+  if(typeof updAgSum === "function") updAgSum();
+  // Focar no campo nome
+  setTimeout(function(){
+    var nm = document.getElementById("pNome");
+    if(nm) nm.focus();
+  }, 100);
+  if(typeof toast === "function") toast("✓","Formulário limpo");
+}
 function maskPhone(el){
   if(!el) return;
   var v = String(el.value || "").replace(/\D/g, "").slice(0, 11);
