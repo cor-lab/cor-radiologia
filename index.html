@@ -3665,8 +3665,8 @@ function openEditAg(id) {
       }
       lastAg = a; // 🔥 ESSENCIAL
       // Recarregar dados do banco para atualizar cache local
-      if (typeof dbLoadAgs === "function") {
-        try { await dbLoadAgs(); } catch(e) { console.warn(e); }
+      if (typeof loadAllData === "function") {
+        try { await loadAllData(); } catch(e) { console.warn(e); }
       }
       closeM();
       rndAg();
