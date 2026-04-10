@@ -3147,7 +3147,10 @@ function ragendar() {
   h += "</div>";
 
   h += "<div class=\"ag-sd\" id=\"agSd\">";
-  h += "<button class=\"btn btng\" style=\"width:100%;justify-content:center;padding:14px;font-size:16px;font-weight:600;margin-bottom:14px\" onclick=\"limparFormNovoAg()\">+ Novo Agendamento</button>";
+  h += "<div style=\"display:flex;gap:8px;margin-bottom:14px\">";
+  h += "<button class=\"btn btng\" style=\"flex:1;justify-content:center;padding:14px;font-size:15px;font-weight:600\" onclick=\"limparFormNovoAg()\">+ Novo Agendamento</button>";
+  h += "<button class=\"btn btnt\" style=\"flex:1;justify-content:center;padding:14px;font-size:15px;font-weight:600;background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff\" onclick=\"limparFormNovoAg(true)\">⚡ Novo Atendimento</button>";
+  h += "</div>";
   h += "<div class=\"ag-si\" id=\"agSI\"></div>";
 
   h += "<div class=\"field\"><label>Paciente</label><input type=\"text\" id=\"pNome\" placeholder=\"Nome completo\" autocomplete=\"off\"></div>";
@@ -3223,7 +3226,7 @@ function ragendar() {
   h += "</div>";
 
   h += "<div class=\"field\"><label>Observacoes</label><textarea id=\"pObs\" style=\"min-height:52px\"></textarea></div>";
-  h += "<button class=\"btn btng\" style=\"width:100%;justify-content:center;padding:11px\" onclick=\"confAg()\">Confirmar Agendamento</button>";
+  h += "<button class=\"btn btng\" id=\"btnConfAg\" style=\"width:100%;justify-content:center;padding:11px\" onclick=\"confAg(window._modoAtendimento === true)\">Confirmar Agendamento</button>";
   h += "<div id=\"agSumDiv\"></div>";
   h += "</div></div>";
 
@@ -3798,10 +3801,19 @@ function updAgSumEdit(){
       "<div class='smr smt'><span>Valor final do paciente</span><strong>R$ " + calc.valor_faturado.toFixed(2).replace('.', ',') + "</strong></div>" +
     "</div>";
 }
-async function confAg() {
+async function confAg(isAtendimento) {
   if (_agSaving) return;
   _agSaving = true;
   setTimeout(function(){ _agSaving = false; }, 3000);
+
+  // Se for atendimento, pré-define data/hora atuais e força status realizado
+  if (isAtendimento === true) {
+    var agora = new Date();
+    var pData = document.getElementById("pData");
+    var pHora = document.getElementById("pHora");
+    if (pData) pData.value = agora.getFullYear() + "-" + pad(agora.getMonth()+1) + "-" + pad(agora.getDate());
+    if (pHora) pHora.value = pad(agora.getHours()) + ":" + pad(agora.getMinutes());
+  }
 
   var nm = document.getElementById("pNome").value.trim();
   var tl = document.getElementById("pTel").value.trim().replace(/\D/g,"");
@@ -3877,9 +3889,9 @@ async function confAg() {
     forma_entrega: document.getElementById("pFormaEntrega")?.value || "digital",
     previsao_entrega: document.getElementById("pPrevisaoEntrega")?.value || null,
     cb: pts4,
-    st: "agendado",
-    status: "agendado",
-    status_clinico: "agendado",
+    st: isAtendimento ? "realizado" : "agendado",
+    status: isAtendimento ? "realizado" : "agendado",
+    status_clinico: isAtendimento ? "realizado" : "agendado",
     status_fiscal: "nao_emitida",
     _new: true
   };
@@ -3954,6 +3966,11 @@ async function confAg() {
 
   setTimeout(function(){
     try{
+      // Se for atendimento, nao abre WhatsApp
+      if (isAtendimento === true) {
+        toast("✅","Atendimento registrado!");
+        return;
+      }
       if (tl) {
         var waNum = tl.replace(/\D/g, "");
         if (waNum) {
@@ -4152,7 +4169,10 @@ function maskCEP(el){
   el.value = v;
 }
 
-function limparFormNovoAg(){
+function limparFormNovoAg(modoAtendimento){
+  // Marcar o modo globalmente
+  window._modoAtendimento = (modoAtendimento === true);
+
   // Limpar todos os campos do formulário de novo agendamento
   var ids = ["pNome","pTel","pEmail","pCpf","pDataNasc","pCep","pLogradouro","pNumero","pComplemento","pBairro","pMunicipio","pUf","pObs","pPrevisaoEntrega"];
   ids.forEach(function(id){
@@ -4180,7 +4200,6 @@ function limparFormNovoAg(){
     checks.forEach(function(c){
       if(c.checked){
         c.checked = false;
-        // Disparar evento change pra resetar selects e preços
         var row = c.closest(".exck-row");
         if(row){
           var sl = row.querySelector("select");
@@ -4193,6 +4212,28 @@ function limparFormNovoAg(){
   }
   var pExSearch = document.getElementById("pExSearch");
   if(pExSearch) pExSearch.value = "";
+
+  // Se for modo atendimento, pré-preenche data e hora atuais
+  if (modoAtendimento === true) {
+    var agora = new Date();
+    var pData = document.getElementById("pData");
+    var pHora = document.getElementById("pHora");
+    if (pData) pData.value = agora.getFullYear() + "-" + pad(agora.getMonth()+1) + "-" + pad(agora.getDate());
+    if (pHora) pHora.value = pad(agora.getHours()) + ":" + pad(agora.getMinutes());
+  }
+
+  // Atualizar texto do botão de confirmar
+  var btnConf = document.getElementById("btnConfAg");
+  if (btnConf) {
+    if (modoAtendimento === true) {
+      btnConf.textContent = "⚡ Confirmar Atendimento";
+      btnConf.style.background = "linear-gradient(135deg,#06b6d4,#0891b2)";
+    } else {
+      btnConf.textContent = "Confirmar Agendamento";
+      btnConf.style.background = "";
+    }
+  }
+
   // Resetar resumo
   if(typeof updAgSum === "function") updAgSum();
   // Focar no campo nome
@@ -4200,7 +4241,9 @@ function limparFormNovoAg(){
     var nm = document.getElementById("pNome");
     if(nm) nm.focus();
   }, 100);
-  if(typeof toast === "function") toast("✓","Formulário limpo");
+  if(typeof toast === "function") {
+    toast("✓", modoAtendimento === true ? "Modo Atendimento ativado" : "Formulário limpo");
+  }
 }
 function maskPhone(el){
   if(!el) return;

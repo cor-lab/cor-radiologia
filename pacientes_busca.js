@@ -329,7 +329,7 @@ function initBuscaCpf(inputId) {
 var _confAgOriginal = typeof confAg === "function" ? confAg : null;
 
 // Sobrescrever confAg para incluir paciente_id e logica de vinculação
-async function confAgComPaciente() {
+async function confAgComPaciente(isAtendimento) {
     var prefix = "p";
     var nm = (document.getElementById(prefix + "Nome")?.value || "").trim().toUpperCase();
     var cpfForm = (document.getElementById(prefix + "Cpf")?.value || "").replace(/\D/g, "");
@@ -434,9 +434,9 @@ async function confAgComPaciente() {
         }
     }
 
-    // Chamar funcao original (confAg do index.html)
+    // Chamar funcao original (confAg do index.html) repassando o parametro isAtendimento
     if (_confAgOriginal) {
-        await _confAgOriginal();
+        await _confAgOriginal(isAtendimento);
     }
 
     // Depois de salvar, vincular paciente_id no agendamento
