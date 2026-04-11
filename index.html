@@ -813,9 +813,9 @@ function abrirModalEmitirNota(agendamentoId){
   document.getElementById("nfFormaPg").value = formaPgFinal;
   document.getElementById("nfValorServico").value = Number(calcPgFinal.valor_faturado || 0).toFixed(2);
   document.getElementById("nfCpfCnpj").value = ag.paciente_cpf || "";
-  document.getElementById("nfNumero").value = "";
-  document.getElementById("nfProtocolo").value = "";
-  document.getElementById("nfChave").value = "";
+  document.getElementById("nfAmbiente").value = NFSE_AMBIENTE;
+  var nfRes = document.getElementById("nfResultado");
+  if(nfRes){ nfRes.style.display="none"; nfRes.innerHTML=""; }
 
   document.getElementById("mEmitirNota").classList.add("open");
 }
@@ -906,6 +906,8 @@ async function confirmarEmissaoNota() {
       ag.forma_pagamento_prevista ||
       "avista";
 
+    var ambiente = document.getElementById("nfAmbiente")?.value || NFSE_AMBIENTE;
+
     var itensFaturaveis = getItensFaturaveisPaciente(ag.exames || []);
     var valorBase = somarItens(itensFaturaveis);
     var calcPgFinal = calcularValorFinalComDesconto(valorBase, formaPagamentoFinal);
@@ -945,21 +947,21 @@ async function confirmarEmissaoNota() {
     ag.paciente_cpf = cpfCnpj;
 
     const functionUrl = API_BASE + "/emitir-nfse-focus";
-    const SUPABASE_ANON_KEY = "SUA_CHAVE_ATUAL_AQUI";
 
     const payload = {
       agendamento_id: agendamentoId,
-      forma_pagamento_final: formaPagamentoFinal,
-      valor_servico: valorServico,
-      paciente_cpf: cpfCnpj
+      ambiente: ambiente
     };
+
+    var nfRes = document.getElementById("nfResultado");
+    if(nfRes){ nfRes.style.display="block"; nfRes.style.background="#fff3cd"; nfRes.style.color="#856404"; nfRes.innerHTML="⏳ Enviando nota para Focus (" + ambiente + ")..."; }
 
     const resp = await fetch(functionUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": "Bearer " + SUPABASE_ANON_KEY
+        "apikey": ANON_KEY,
+        "Authorization": "Bearer " + ANON_KEY
       },
       body: JSON.stringify(payload)
     });
@@ -968,28 +970,80 @@ async function confirmarEmissaoNota() {
 
     if (!resp.ok) {
       console.error("emitir-nfse-focus:", data);
-      toast("Erro", data?.message || "Falha ao enviar nota para emissão.");
+      var errMsg = data?.error || data?.message || "Falha ao enviar nota para emissão.";
+      if(nfRes){ nfRes.style.background="#f8d7da"; nfRes.style.color="#721c24"; nfRes.innerHTML="❌ Erro: " + errMsg; }
+      toast("Erro", errMsg);
       return;
     }
 
     ag.status_fiscal = "emitindo";
+    ag.focus_reference = data.reference || "";
 
-    if (typeof fecharModalEmitirNota === "function") {
-      fecharModalEmitirNota();
+    if(nfRes){ nfRes.style.background="#d4edda"; nfRes.style.color="#155724"; nfRes.innerHTML="✅ Nota enviada! Ref: " + (data.reference||"") + "<br>Status: processando... aguarde."; }
+
+    toast("Sucesso", "Nota enviada para processamento na Focus (" + ambiente + ").");
+
+    if(typeof renderAgendamentos === "function") renderAgendamentos();
+    if(typeof rndAg === "function") rndAg();
+
+    // Polling automático: consultar status a cada 10s por até 2 min
+    if(data.reference){
+      iniciarPollingNfse(data.reference, ambiente, ag);
     }
 
-    if (typeof renderAgendamentos === "function") {
-      renderAgendamentos();
-    }
-    if (typeof rndAg === "function") {
-      rndAg();
-    }
-
-    toast("Sucesso", "Nota enviada para processamento na Focus.");
   } catch (e) {
     console.error("confirmarEmissaoNota:", e);
     toast("Erro", e?.message || "Falha ao enviar nota para emissão.");
   }
+}
+
+async function iniciarPollingNfse(reference, ambiente, ag){
+  var tentativas = 0;
+  var maxTentativas = 12; // 12 x 10s = 2 min
+  var nfRes = document.getElementById("nfResultado");
+
+  var timer = setInterval(async function(){
+    tentativas++;
+    try {
+      var resp = await fetch(API_BASE + "/consultar-nfse-focus", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": ANON_KEY,
+          "Authorization": "Bearer " + ANON_KEY
+        },
+        body: JSON.stringify({ reference: reference, ambiente: ambiente })
+      });
+      var data = await resp.json().catch(function(){ return {}; });
+      var status = data?.status_mapeado || data?.focus?.status || "";
+
+      if(status === "emitida"){
+        clearInterval(timer);
+        ag.status_fiscal = "emitida";
+        ag.numero_nfse = data?.focus?.numero || "";
+        if(nfRes){ nfRes.style.background="#d4edda"; nfRes.style.color="#155724"; nfRes.innerHTML="✅ NFS-e AUTORIZADA! Nº " + (ag.numero_nfse||"") + " — Ref: " + reference; }
+        toast("Sucesso", "NFS-e autorizada! Nº " + (ag.numero_nfse||""));
+        if(typeof renderAgendamentos === "function") renderAgendamentos();
+        if(typeof rndAg === "function") rndAg();
+      } else if(status === "rejeitada"){
+        clearInterval(timer);
+        ag.status_fiscal = "rejeitada";
+        var errMsg = data?.focus?.erros?.[0]?.mensagem || data?.focus?.mensagem || "Nota rejeitada pela prefeitura.";
+        if(nfRes){ nfRes.style.background="#f8d7da"; nfRes.style.color="#721c24"; nfRes.innerHTML="❌ REJEITADA: " + errMsg; }
+        toast("Erro", "NFS-e rejeitada: " + errMsg);
+        if(typeof renderAgendamentos === "function") renderAgendamentos();
+      } else {
+        if(nfRes){ nfRes.innerHTML="⏳ Aguardando prefeitura... (" + tentativas + "/" + maxTentativas + ") Ref: " + reference; }
+      }
+    } catch(e){
+      console.error("pollingNfse:", e);
+    }
+
+    if(tentativas >= maxTentativas){
+      clearInterval(timer);
+      if(nfRes && ag.status_fiscal === "emitindo"){ nfRes.innerHTML="⏳ Ainda processando. Verifique o painel da Focus ou atualize a página mais tarde. Ref: " + reference; }
+    }
+  }, 10000);
 }
 async function marcarRealizadoEEmitir(agendamentoId){
   try{
@@ -1024,17 +1078,17 @@ async function marcarRealizadoEEmitir(agendamentoId){
     toast("Sucesso", "Agendamento marcado como realizado.");
 
     const functionUrl = API_BASE + "/emitir-nfse-focus";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
 
     const resp = await fetch(functionUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0",
-        "Authorization": "Bearer " + "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0"
+        "apikey": ANON_KEY,
+        "Authorization": "Bearer " + ANON_KEY
       },
       body: JSON.stringify({
-        agendamento_id: agendamentoId
+        agendamento_id: agendamentoId,
+        ambiente: NFSE_AMBIENTE
       })
     });
 
@@ -2204,22 +2258,15 @@ async function dbResgatar(dentId,premId,pts){
       <input id="nfCpfCnpj" type="text" placeholder="Opcional por enquanto" />
     </div>
 
-    <div class="fg2" style="margin-top:12px;">
-      <div class="field">
-        <label>Número da NFS-e</label>
-        <input id="nfNumero" type="text" placeholder="Ex.: 123" />
-      </div>
-
-      <div class="field">
-        <label>Protocolo</label>
-        <input id="nfProtocolo" type="text" placeholder="Ex.: abc123" />
-      </div>
-    </div>
-
     <div class="field" style="margin-top:12px;">
-      <label>Chave de acesso</label>
-      <input id="nfChave" type="text" placeholder="Ex.: chave-teste" />
+      <label>Ambiente de emissão</label>
+      <select id="nfAmbiente">
+        <option value="producao">Produção (nota real)</option>
+        <option value="homologacao">Homologação (teste)</option>
+      </select>
     </div>
+
+    <div id="nfResultado" style="margin-top:12px;display:none;padding:10px;border-radius:6px;font-size:13px;"></div>
 
     <div class="mf">
       <button class="btn btno" onclick="fecharModalEmitirNota()">Cancelar</button>
@@ -2513,7 +2560,9 @@ var convs = [];
 var dents = [];
 var prems = [];
 
-const API_BASE = "https://flpvzvtbhuyjjdqyrsza.supabase.co/functions/v1/emitir-nfse-focus";
+const API_BASE = "https://flpvzvtbhuyjjdqyrsza.supabase.co/functions/v1";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
+var NFSE_AMBIENTE = "producao"; // "homologacao" ou "producao"
 
 var ags = [];
 var waT = {
