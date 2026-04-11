@@ -1,13 +1,17 @@
 // ============================================================
 // MODULO ETIQUETA - COR
-// Gera e imprime etiquetas para envelopes de exames
+// Gera e imprime etiquetas para envelopes, protocolo e CD
 // Tamanho: 10cm x 2,9cm (impressora termica)
 // <script src="etiqueta.js"></script>
 // ============================================================
 
 var LOGO_COR_ETQ = "logo.png";
 
-async function imprimirEtiqueta(agId) {
+// ============================================================
+// ENTRADA PRINCIPAL — tipo: "envelope" (default), "protocolo", "cd"
+// ============================================================
+async function imprimirEtiqueta(agId, tipo) {
+    tipo = tipo || "envelope";
     var a = ags.find(function(x) { return x.id === agId; });
     if (!a) { toast("Erro", "Agendamento nao encontrado"); return; }
 
@@ -30,7 +34,20 @@ async function imprimirEtiqueta(agId) {
     var dataAtend = a.dt || "-";
     var horaAtend = a.hr || "-";
 
-    if (!a.dId) { gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, null); return; }
+    // CD e Protocolo nao precisam de endereco
+    if (tipo === "cd") {
+        gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend);
+        return;
+    }
+
+    if (!a.dId) {
+        if (tipo === "protocolo") {
+            gerarEtiquetaProtocolo(a, dentNome, null);
+        } else {
+            gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, null);
+        }
+        return;
+    }
 
     try {
         var resp = await fetch(
@@ -39,19 +56,35 @@ async function imprimirEtiqueta(agId) {
         );
         var enderecos = await resp.json();
         if (!enderecos || !enderecos.length) {
-            gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, null);
+            if (tipo === "protocolo") {
+                gerarEtiquetaProtocolo(a, dentNome, null);
+            } else {
+                gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, null);
+            }
         } else if (enderecos.length === 1) {
-            gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, enderecos[0]);
+            if (tipo === "protocolo") {
+                gerarEtiquetaProtocolo(a, dentNome, enderecos[0]);
+            } else {
+                gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, enderecos[0]);
+            }
         } else {
-            mostrarSeletorEndereco(a, dentNome, dataAtend, horaAtend, idade, enderecos);
+            mostrarSeletorEndereco(a, dentNome, dataAtend, horaAtend, idade, enderecos, tipo);
         }
     } catch(e) {
         console.error("imprimirEtiqueta:", e);
-        gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, null);
+        if (tipo === "protocolo") {
+            gerarEtiquetaProtocolo(a, dentNome, null);
+        } else {
+            gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, null);
+        }
     }
 }
 
-function mostrarSeletorEndereco(a, dentNome, dataAtend, horaAtend, idade, enderecos) {
+// ============================================================
+// SELETOR DE ENDERECO (envelope + protocolo)
+// ============================================================
+function mostrarSeletorEndereco(a, dentNome, dataAtend, horaAtend, idade, enderecos, tipo) {
+    tipo = tipo || "envelope";
     var old = document.getElementById("mSeletorEndereco");
     if (old) old.remove();
 
@@ -83,14 +116,19 @@ function mostrarSeletorEndereco(a, dentNome, dataAtend, horaAtend, idade, endere
         "<p style='color:#aaa;font-size:13px;margin:0 0 10px'>Dr(a). " + esc(dentNome) + " possui " + enderecos.length + " enderecos cadastrados:</p>" +
         opcoesHtml + "</div></div>";
     document.body.appendChild(modal);
-    window._etqDados = { a:a, dentNome:dentNome, dataAtend:dataAtend, horaAtend:horaAtend, idade:idade, enderecos:enderecos };
+    window._etqDados = { a:a, dentNome:dentNome, dataAtend:dataAtend, horaAtend:horaAtend, idade:idade, enderecos:enderecos, tipo:tipo };
 }
 
 function selecionarEndereco(idx) {
     var d = window._etqDados; if (!d) return;
     var endereco = idx >= 0 ? d.enderecos[idx] : null;
+    var tipo = d.tipo || "envelope";
     fecharSeletorEndereco();
-    gerarEtiquetaHtml(d.a, d.dentNome, d.dataAtend, d.horaAtend, d.idade, endereco);
+    if (tipo === "protocolo") {
+        gerarEtiquetaProtocolo(d.a, d.dentNome, endereco);
+    } else {
+        gerarEtiquetaHtml(d.a, d.dentNome, d.dataAtend, d.horaAtend, d.idade, endereco);
+    }
 }
 
 function fecharSeletorEndereco() {
@@ -98,6 +136,9 @@ function fecharSeletorEndereco() {
     window._etqDados = null;
 }
 
+// ============================================================
+// ETIQUETA ENVELOPE (original)
+// ============================================================
 function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
     var cidade = "", enderecoStr = "", complementoStr = "";
     if (endereco) {
@@ -107,7 +148,7 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
     }
 
     var html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>" +
-        "<title>Etiqueta</title>" +
+        "<title>Etiqueta Envelope</title>" +
         "<style>" +
         "@page{size:100mm 29mm;margin:0}" +
         "*{margin:0;padding:0;box-sizing:border-box}" +
@@ -157,4 +198,95 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
     win.document.close();
 }
 
-console.log("[COR] Modulo etiqueta carregado");
+// ============================================================
+// ETIQUETA PROTOCOLO (sem logo, sem data/hora/idade)
+// Layout: Nome paciente (bold) + DR(a) + Cidade + Endereco + Complemento
+// ============================================================
+function gerarEtiquetaProtocolo(a, dentNome, endereco) {
+    var cidade = "", enderecoStr = "", complementoStr = "";
+    if (endereco) {
+        cidade = endereco.cidade || "Santa Maria";
+        enderecoStr = endereco.endereco || "";
+        complementoStr = endereco.complemento || "";
+    }
+
+    var html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>" +
+        "<title>Etiqueta Protocolo</title>" +
+        "<style>" +
+        "@page{size:100mm 29mm;margin:0}" +
+        "*{margin:0;padding:0;box-sizing:border-box}" +
+        "body{font-family:Arial,sans-serif;width:100mm;height:29mm;overflow:hidden;color:#000}" +
+
+        ".etq{width:100mm;height:29mm;padding:2mm 3mm 1.5mm 3mm;border:0.5pt solid #ccc}" +
+
+        ".nome{font-size:12pt;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
+        "margin-bottom:1mm}" +
+
+        ".dados{font-size:8.5pt;line-height:1.45;padding-left:3mm}" +
+        ".dados .lbl{font-weight:bold;margin-right:2mm}" +
+        ".dados .dr{font-style:italic;font-size:9pt}" +
+
+        "@media print{body{-webkit-print-color-adjust:exact}.etq{border:none}}" +
+        "</style></head><body><div class='etq'>" +
+
+        "<div class='nome'>" + esc(a.pac || "SEM NOME").toUpperCase() + "</div>" +
+
+        "<div class='dados'>" +
+        "<div class='dr'><i>DR(a):</i>&nbsp;&nbsp;&nbsp;&nbsp;" + esc(dentNome) + "</div>";
+
+    if (cidade)
+        html += "<div><span class='lbl'>CIDADE</span>" + esc(cidade) + "</div>";
+    if (enderecoStr)
+        html += "<div><span class='lbl'>ENDERECO</span>" + esc(enderecoStr) + "</div>";
+    if (complementoStr)
+        html += "<div><span class='lbl'>COMPLEMENTO</span>" + esc(complementoStr) + "</div>";
+
+    html += "</div></div>" +
+        "<script>window.onload=function(){window.print();}<\/script></body></html>";
+
+    var win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+}
+
+// ============================================================
+// ETIQUETA CD (logo + nome + data/hora + dentista, sem endereco)
+// Layout compacto: tudo no topo, resto em branco
+// ============================================================
+function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
+    var dataHora = dataAtend + " " + horaAtend;
+
+    var html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>" +
+        "<title>Etiqueta CD</title>" +
+        "<style>" +
+        "@page{size:100mm 29mm;margin:0}" +
+        "*{margin:0;padding:0;box-sizing:border-box}" +
+        "body{font-family:Arial,sans-serif;width:100mm;height:29mm;overflow:hidden;color:#000}" +
+
+        ".etq{width:100mm;height:29mm;padding:1.5mm 2.5mm 1mm 2.5mm;border:0.5pt solid #ccc}" +
+
+        ".topo{display:flex;align-items:flex-start}" +
+        ".topo img{height:9mm;margin-right:2.5mm;flex-shrink:0}" +
+        ".topo-txt{overflow:hidden}" +
+        ".topo-txt .nome{font-size:12pt;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+        ".topo-txt .sub{font-size:7.5pt;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.3mm}" +
+
+        "@media print{body{-webkit-print-color-adjust:exact}.etq{border:none}}" +
+        "</style></head><body><div class='etq'>" +
+
+        "<div class='topo'>" +
+        "<img src='" + LOGO_COR_ETQ + "'>" +
+        "<div class='topo-txt'>" +
+        "<div class='nome'>" + esc(a.pac || "SEM NOME").toUpperCase() + "</div>" +
+        "<div class='sub'>Data:&nbsp;&nbsp;" + esc(dataHora) + "&nbsp;&nbsp;&nbsp;DR(a):&nbsp;&nbsp;&nbsp;" + esc(dentNome) + "</div>" +
+        "</div></div>" +
+
+        "</div>" +
+        "<script>window.onload=function(){window.print();}<\/script></body></html>";
+
+    var win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+}
+
+console.log("[COR] Modulo etiqueta v2 carregado (envelope, protocolo, CD)");
