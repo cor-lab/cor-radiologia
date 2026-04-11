@@ -671,13 +671,27 @@ function toggleExame(idBase, exId, onChangeFn){
   if(ip) ip.disabled = !marcado;
 
   if(marcado){
-    // Se o select tem apenas 1 opção de convênio (além do Particular), auto-selecionar
+    // Auto-selecionar convênio ao marcar exame
     if(sl) {
       var opcoes = sl.querySelectorAll("option[value]");
       var opcoesComValor = [];
       for(var i=0; i<opcoes.length; i++){
         if(opcoes[i].value) opcoesComValor.push(opcoes[i]);
       }
+      // Se nome do exame contém "(CONVENIO)", auto-selecionar esse convênio
+      var rowEl = sl.closest("[data-exame]");
+      var nomeExame = rowEl ? (rowEl.getAttribute("data-nome") || "") : "";
+      var matchConv = nomeExame.match(/\(([^)]+)\)/);
+      if(!sl.value && matchConv){
+        var convHint = matchConv[1].toUpperCase().trim();
+        for(var j=0; j<opcoesComValor.length; j++){
+          if(opcoesComValor[j].textContent.toUpperCase().indexOf(convHint) >= 0){
+            sl.value = opcoesComValor[j].value;
+            break;
+          }
+        }
+      }
+      // Se ainda não selecionou e só tem 1 opção, auto-selecionar
       if(opcoesComValor.length === 1 && !sl.value){
         sl.value = opcoesComValor[0].value;
       }
