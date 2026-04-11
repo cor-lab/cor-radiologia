@@ -540,14 +540,18 @@ tr:last-child td{border-bottom:none}
   border:1px solid rgba(255,255,255,.08);
   border-radius:7px;
   background:rgba(255,255,255,.03);
+  min-height:36px;
 }
 .exck-name{
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
+  white-space:normal;
+  overflow:visible;
+  text-overflow:unset;
+  word-wrap:break-word;
+  overflow-wrap:break-word;
   font-size:.80rem;
   font-weight:600;
   min-width:0;
+  line-height:1.3;
 }
 .exck-conv select{
   width:100%;
