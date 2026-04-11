@@ -217,22 +217,22 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
         "*{margin:0;padding:0;box-sizing:border-box}" +
         "body{font-family:Arial,sans-serif;width:100mm;height:29mm;overflow:hidden;color:#000}" +
 
-        ".etq{width:100mm;height:29mm;padding:2mm 3mm 1.5mm 3mm;border:0.5pt solid #ccc}" +
+        ".etq{width:100mm;height:29mm;padding:1.5mm 3mm 1.5mm 3mm;border:0.5pt solid #ccc}" +
 
-        ".nome{font-size:12pt;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
-        "margin-bottom:1mm}" +
+        ".dentista{font-size:12pt;font-weight:bold;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
+        "margin-bottom:0.5mm}" +
 
-        ".dados{font-size:8.5pt;line-height:1.45;padding-left:3mm}" +
+        ".dados{font-size:8.5pt;line-height:1.4;padding-left:1mm}" +
         ".dados .lbl{font-weight:bold;margin-right:2mm}" +
-        ".dados .dr{font-style:italic;font-size:9pt}" +
+
+        ".paciente{font-size:8pt;color:#444;border-top:1pt solid #999;margin-top:0.8mm;padding-top:0.8mm}" +
 
         "@media print{body{-webkit-print-color-adjust:exact}.etq{border:none}}" +
         "</style></head><body><div class='etq'>" +
 
-        "<div class='nome'>" + esc(a.pac || "SEM NOME").toUpperCase() + "</div>" +
+        "<div class='dentista'>DR(a): " + esc(dentNome).toUpperCase() + "</div>" +
 
-        "<div class='dados'>" +
-        "<div class='dr'><i>DR(a):</i>&nbsp;&nbsp;&nbsp;&nbsp;" + esc(dentNome) + "</div>";
+        "<div class='dados'>";
 
     if (cidade)
         html += "<div><span class='lbl'>CIDADE</span>" + esc(cidade) + "</div>";
@@ -241,7 +241,11 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
     if (complementoStr)
         html += "<div><span class='lbl'>COMPLEMENTO</span>" + esc(complementoStr) + "</div>";
 
-    html += "</div></div>" +
+    html += "</div>" +
+
+        "<div class='paciente'>Pac: " + esc(a.pac || "-") + "</div>" +
+
+        "</div>" +
         "<script>window.onload=function(){window.print();}<\/script></body></html>";
 
     var win = window.open("", "_blank");
