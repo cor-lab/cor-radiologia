@@ -2978,7 +2978,9 @@ function renderAtendimento() {
         h += "<button class='btn btng bsm bico' onclick='event.stopPropagation();atMarkRealizado(" + a.id + ")' title='Marcar Realizado'>✓</button>";
       }
       h += "<button class='btn btno bsm bico' onclick='event.stopPropagation();imprimirOS(" + a.id + ")' title='Imprimir OS'>🖨️</button>";
-      h += "<button class='btn btno bsm bico' onclick='event.stopPropagation();imprimirEtiqueta(" + a.id + ")' title='Imprimir Etiqueta'>🏷️</button>";
+      h += "<div style='position:relative;display:inline-block' class='etq-dropdown'>";
+      h += "<button class='btn btno bsm bico' onclick='event.stopPropagation();toggleEtqMenu(this," + a.id + ")' title='Etiquetas'>🏷️</button>";
+      h += "</div>";
       h += "<button class='btn btnt bsm bico' onclick='event.stopPropagation();sWAi(" + a.id + ")' title='WhatsApp'>📲</button>";
       h += "</div>";
 
@@ -3496,7 +3498,9 @@ function agEV(ev, id) {
 
   (function(ag){
     (function(ag){btns.push({lbl:"🖨️ Imprimir OS", cls:"btno", fn:function(){ closeM(); imprimirOS(ag.id); }});})(a);
-    (function(ag){btns.push({lbl:"🏷️ Etiqueta", cls:"btno", fn:function(){ imprimirEtiqueta(ag.id); }});})(a);
+    (function(ag){btns.push({lbl:"🏷️ Etiq. Envelope", cls:"btno", fn:function(){ imprimirEtiqueta(ag.id, "envelope"); }});})(a);
+    (function(ag){btns.push({lbl:"📋 Etiq. Protocolo", cls:"btno", fn:function(){ imprimirEtiqueta(ag.id, "protocolo"); }});})(a);
+    (function(ag){btns.push({lbl:"💿 Etiq. CD", cls:"btno", fn:function(){ imprimirEtiqueta(ag.id, "cd"); }});})(a);
     btns.push({lbl:"📲 WhatsApp", cls:"btnt", fn:function(){ closeM(); sWAi(ag.id); }});
   })(a);
 
@@ -5066,7 +5070,161 @@ function rdent(){
 }
 function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong></div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:var(--g);font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button><button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button></div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
 function filtDt(v){dtSrch=v.toLowerCase();bldDtRows();}
-function openDtM(eid){var ed=eid?fdent(eid):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='field'><label>Nome</label><input id='dNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Dr. Joao Silva'></div><div class='fg2'><div class='field'><label>CRO</label><input id='dCro' value='"+(ed?esc(ed.cro):"")+"'></div><div class='field'><label>Especialidade</label><input id='dEsp' value='"+(ed?esc(ed.esp):"")+"'></div></div><div class='fg2'><div class='field'><label>Telefone</label><input id='dTel' value='"+(ed?esc(ed.tel):"")+"'></div><div class='field'><label>Iniciais</label><input id='dIni' value='"+(ed?esc(ed.ini):"")+"' maxlength='2'></div></div><div class='fg2'><div class='field'><label>Nivel</label><select id='dNv'>";["Bronze","Prata","Ouro","Diamante"].forEach(function(n){b+="<option value='"+n+"'"+(ed&&ed.nv===n?" selected":"")+">"+n+"</option>";});b+="</select></div><div class='field'><label>Cor avatar</label><input type='color' id='dCl' value='#4ab848'></div></div></div>";openM(ed?"Editar Dentista":"Cadastrar Dentista",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:ed?"Salvar":"Cadastrar",cls:"btng",fn:function(){var nm=document.getElementById("dNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}var cl=document.getElementById("dCl").value;var bg="linear-gradient(135deg,"+cl+","+cl+"cc)";var ini=document.getElementById("dIni").value.toUpperCase()||nm.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2).toUpperCase();if(ed){ed.n=nm;ed.cro=document.getElementById("dCro").value;ed.esp=document.getElementById("dEsp").value;ed.tel=document.getElementById("dTel").value;ed.nv=document.getElementById("dNv").value;ed.ini=ini;}else{var nid=dents.length?Math.max.apply(null,dents.map(function(x){return x.id;}))+1:1;dents.push({id:nid,n:nm,cro:document.getElementById("dCro").value,esp:document.getElementById("dEsp").value,tel:document.getElementById("dTel").value,nv:document.getElementById("dNv").value,ini:ini,ind:0,pts:0,bg:bg,cor:"#fff"});}var isNew2=!ed;var dObj=ed||dents[dents.length-1];dbSaveDent(dObj,isNew2).then(function(){});closeM();rdent();toast("✅",nm+(ed?" atualizado":" cadastrado"));}}]);}
+function openDtM(eid){
+  var ed=eid?fdent(eid):null;
+  var b="<div style='display:flex;flex-direction:column;gap:10px'>"+
+    "<div class='field'><label>NOME</label><input id='dNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Dr. Joao Silva'></div>"+
+    "<div class='fg2'><div class='field'><label>CRO</label><input id='dCro' value='"+(ed?esc(ed.cro):"")+"'></div>"+
+    "<div class='field'><label>ESPECIALIDADE</label><input id='dEsp' value='"+(ed?esc(ed.esp):"")+"'></div></div>"+
+    "<div class='fg2'><div class='field'><label>TELEFONE</label><input id='dTel' value='"+(ed?esc(ed.tel):"")+"'></div>"+
+    "<div class='field'><label>INICIAIS</label><input id='dIni' value='"+(ed?esc(ed.ini):"")+"' maxlength='2'></div></div>"+
+    "<div class='fg2'><div class='field'><label>NIVEL</label><select id='dNv'>";
+  ["Bronze","Prata","Ouro","Diamante"].forEach(function(n){
+    b+="<option value='"+n+"'"+(ed&&ed.nv===n?" selected":"")+">"+n+"</option>";
+  });
+  b+="</select></div><div class='field'><label>COR AVATAR</label><input type='color' id='dCl' value='"+(ed&&ed.bg?ed.bg.match(/#[0-9a-fA-F]{6}/)?ed.bg.match(/#[0-9a-fA-F]{6}/)[0]:"#4ab848":"#4ab848")+"'></div></div>";
+
+  // Seção de endereços
+  b+="<div style='border-top:1px solid #3a3a5e;margin-top:6px;padding-top:8px'>"+
+    "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'>"+
+    "<label style='font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:1px'>Enderecos de Entrega</label>"+
+    "<button class='btn btng bsm' onclick='dentEndAddRow()' style='font-size:11px;padding:3px 10px'>+ Novo</button></div>"+
+    "<div id='dentEndList'>"+(ed?"<div style='color:#666;font-size:12px;padding:6px'>Carregando...</div>":"<div style='color:#666;font-size:12px;padding:6px'>Salve o dentista primeiro para adicionar enderecos</div>")+"</div>"+
+    "</div></div>";
+
+  openM(ed?"Editar Dentista":"Cadastrar Dentista",b,[
+    {lbl:"Cancelar",cls:"btno",fn:closeM},
+    {lbl:ed?"Salvar":"Cadastrar",cls:"btng",fn:function(){
+      var nm=document.getElementById("dNm").value.trim();
+      if(!nm){toast("⚠️","Informe o nome");return;}
+      var cl=document.getElementById("dCl").value;
+      var bg="linear-gradient(135deg,"+cl+","+cl+"cc)";
+      var ini=document.getElementById("dIni").value.toUpperCase()||nm.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2).toUpperCase();
+      if(ed){
+        ed.n=nm;ed.cro=document.getElementById("dCro").value;ed.esp=document.getElementById("dEsp").value;
+        ed.tel=document.getElementById("dTel").value;ed.nv=document.getElementById("dNv").value;ed.ini=ini;
+      } else {
+        var nid=dents.length?Math.max.apply(null,dents.map(function(x){return x.id;}))+1:1;
+        dents.push({id:nid,n:nm,cro:document.getElementById("dCro").value,esp:document.getElementById("dEsp").value,
+          tel:document.getElementById("dTel").value,nv:document.getElementById("dNv").value,ini:ini,ind:0,pts:0,bg:bg,cor:"#fff"});
+      }
+      var isNew2=!ed;var dObj=ed||dents[dents.length-1];
+      dbSaveDent(dObj,isNew2).then(function(){
+        dentEndSaveAll(dObj.id);
+      });
+      closeM();rdent();toast("✅",nm+(ed?" atualizado":" cadastrado"));
+    }}
+  ]);
+
+  // Carregar endereços se editando
+  if(ed) dentEndLoad(ed.id);
+}
+
+// ── ENDERECOS DE DENTISTAS ──
+window._dentEndCache = [];
+
+async function dentEndLoad(dentId){
+  window._dentEndCache = [];
+  var el=document.getElementById("dentEndList"); if(!el) return;
+  try {
+    var r=await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?dentista_id=eq."+dentId+"&order=id.asc",
+      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+    var ends=await r.json();
+    if(!ends||!ends.length){
+      el.innerHTML="<div style='color:#666;font-size:12px;padding:6px'>Nenhum endereco cadastrado</div>";
+      return;
+    }
+    window._dentEndCache=ends.map(function(e){return{id:e.id,dentista_id:dentId,descricao:e.descricao||"",endereco:e.endereco||"",complemento:e.complemento||"",bairro:e.bairro||"",cep:e.cep||"",cidade:e.cidade||"",_status:"existing"};});
+    dentEndRender();
+  } catch(e){ el.innerHTML="<div style='color:#f66;font-size:12px'>Erro ao carregar enderecos</div>"; }
+}
+
+function dentEndRender(){
+  var el=document.getElementById("dentEndList"); if(!el) return;
+  if(!window._dentEndCache.length){
+    el.innerHTML="<div style='color:#666;font-size:12px;padding:6px'>Nenhum endereco cadastrado</div>";
+    return;
+  }
+  var h="";
+  window._dentEndCache.forEach(function(e,i){
+    if(e._status==="deleted") return;
+    h+="<div style='background:#0d1117;border:1px solid #3a3a5e;border-radius:8px;padding:8px 10px;margin-bottom:6px'>"+
+      "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:5px'>"+
+      "<span style='color:#4ade80;font-size:11px;font-weight:bold'>Endereco "+(i+1)+"</span>"+
+      "<button onclick='dentEndRemove("+i+")' style='background:none;border:none;color:#f66;cursor:pointer;font-size:13px' title='Remover'>✕</button></div>"+
+      "<div class='field' style='margin-bottom:4px'><label style='font-size:10px'>DESCRICAO</label>"+
+      "<input id='deDesc"+i+"' value='"+esc(e.descricao)+"' placeholder='Ex: Consultorio Centro' style='font-size:12px;padding:5px 8px'></div>"+
+      "<div class='fg2' style='gap:6px'>"+
+      "<div class='field' style='flex:2'><label style='font-size:10px'>ENDERECO</label>"+
+      "<input id='deEnd"+i+"' value='"+esc(e.endereco)+"' placeholder='Rua, numero' style='font-size:12px;padding:5px 8px'></div>"+
+      "<div class='field' style='flex:1'><label style='font-size:10px'>COMPLEMENTO</label>"+
+      "<input id='deCompl"+i+"' value='"+esc(e.complemento)+"' placeholder='Sala, bloco' style='font-size:12px;padding:5px 8px'></div></div>"+
+      "<div class='fg2' style='gap:6px;margin-top:4px'>"+
+      "<div class='field'><label style='font-size:10px'>BAIRRO</label>"+
+      "<input id='deBairro"+i+"' value='"+esc(e.bairro)+"' style='font-size:12px;padding:5px 8px'></div>"+
+      "<div class='field'><label style='font-size:10px'>CIDADE</label>"+
+      "<input id='deCidade"+i+"' value='"+esc(e.cidade)+"' placeholder='Santa Maria' style='font-size:12px;padding:5px 8px'></div>"+
+      "<div class='field' style='max-width:90px'><label style='font-size:10px'>CEP</label>"+
+      "<input id='deCep"+i+"' value='"+esc(e.cep)+"' style='font-size:12px;padding:5px 8px'></div></div>"+
+      "</div>";
+  });
+  el.innerHTML=h;
+}
+
+function dentEndAddRow(){
+  window._dentEndCache.push({id:null,dentista_id:null,descricao:"",endereco:"",complemento:"",bairro:"",cep:"",cidade:"Santa Maria",_status:"new"});
+  dentEndRender();
+  // Scroll para o novo endereço
+  var el=document.getElementById("dentEndList");
+  if(el) el.scrollTop=el.scrollHeight;
+}
+
+function dentEndRemove(idx){
+  if(window._dentEndCache[idx]._status==="new"){
+    window._dentEndCache.splice(idx,1);
+  } else {
+    window._dentEndCache[idx]._status="deleted";
+  }
+  dentEndRender();
+}
+
+function dentEndCollectFromForm(){
+  window._dentEndCache.forEach(function(e,i){
+    if(e._status==="deleted") return;
+    var desc=document.getElementById("deDesc"+i);
+    if(desc) e.descricao=desc.value.trim();
+    var end=document.getElementById("deEnd"+i);
+    if(end) e.endereco=end.value.trim();
+    var compl=document.getElementById("deCompl"+i);
+    if(compl) e.complemento=compl.value.trim();
+    var bairro=document.getElementById("deBairro"+i);
+    if(bairro) e.bairro=bairro.value.trim();
+    var cidade=document.getElementById("deCidade"+i);
+    if(cidade) e.cidade=cidade.value.trim();
+    var cep=document.getElementById("deCep"+i);
+    if(cep) e.cep=cep.value.trim();
+  });
+}
+
+async function dentEndSaveAll(dentId){
+  dentEndCollectFromForm();
+  for(var i=0;i<window._dentEndCache.length;i++){
+    var e=window._dentEndCache[i];
+    var payload={dentista_id:dentId,descricao:e.descricao,endereco:e.endereco,complemento:e.complemento,bairro:e.bairro,cep:e.cep,cidade:e.cidade};
+    try {
+      if(e._status==="deleted"&&e.id){
+        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?id=eq."+e.id,
+          {method:"DELETE",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+      } else if(e._status==="new"){
+        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos",
+          {method:"POST",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
+      } else if(e.id){
+        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?id=eq."+e.id,
+          {method:"PATCH",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
+      }
+    } catch(err){ console.error("dentEndSave erro:",err); }
+  }
+}
 function delDt(id){var d=fdent(id);openM("Remover","<p style='color:var(--gr)'>Remover <strong>"+esc(d?d.n:"")+"</strong>?</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Remover",cls:"btnr",fn:function(){dents=dents.filter(function(x){return x.id!==id;});dbDelDent(id);closeM();rdent();toast("🗑️","Removido");}}]);}
 
 // ══ USUARIOS ══
@@ -5808,6 +5966,38 @@ function fcImprimir() {
 </script>
 <script src="pacientes_busca.js"></script>
 <script src="ordem_servico.js"></script>
+<script>
+// Dropdown menu para etiquetas no card compacto
+function toggleEtqMenu(btn, agId) {
+  var old = document.getElementById("etqMenuDrop");
+  if (old) { old.remove(); return; }
+  var rect = btn.getBoundingClientRect();
+  var menu = document.createElement("div");
+  menu.id = "etqMenuDrop";
+  menu.style.cssText = "position:fixed;z-index:9999;background:#1a1a2e;border:1px solid #3a3a5e;border-radius:8px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.5);min-width:160px";
+  menu.style.top = (rect.bottom + 4) + "px";
+  menu.style.left = rect.left + "px";
+  var items = [
+    {ico:"🏷️", lbl:"Envelope", tipo:"envelope"},
+    {ico:"📋", lbl:"Protocolo", tipo:"protocolo"},
+    {ico:"💿", lbl:"CD", tipo:"cd"}
+  ];
+  items.forEach(function(it){
+    var b = document.createElement("button");
+    b.textContent = it.ico + " " + it.lbl;
+    b.style.cssText = "display:block;width:100%;text-align:left;padding:8px 14px;background:none;border:none;color:#e0e0e0;cursor:pointer;font-size:13px;white-space:nowrap";
+    b.onmouseover = function(){ this.style.background="#2a2a4e"; };
+    b.onmouseout = function(){ this.style.background="none"; };
+    b.onclick = function(e){ e.stopPropagation(); menu.remove(); imprimirEtiqueta(agId, it.tipo); };
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  setTimeout(function(){
+    function fechar(e){ if(!menu.contains(e.target)&&e.target!==btn){ menu.remove(); document.removeEventListener("click",fechar,true); }}
+    document.addEventListener("click", fechar, true);
+  }, 10);
+}
+</script>
 <script src="etiqueta.js"></script>
 </body>
 </html>
