@@ -50,12 +50,12 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .hd-foto img{width:100%;height:100%;object-fit:cover}\
 .hd-ph{color:#aaa;font-size:10px;text-align:center}\
 .hd-info{flex:1}\
-.hd-nome{font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3aaa35,#2d8a2e);padding:5px 14px;border-radius:4px;margin-bottom:6px;letter-spacing:.5px}\
+.hd-nome{font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3aaa35,#2d8a2e);padding:5px 14px;border-radius:4px;margin-bottom:6px;letter-spacing:.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
 .hd-g{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;font-size:11px;line-height:1.6}\
 .hd-l{font-weight:700;color:#555}\
 .hd-logo{width:90px;flex-shrink:0;text-align:right}\
 .hd-logo img{width:80px}\
-.st{font-size:12px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3aaa35,#2d8a2e);padding:4px 12px;border-radius:3px;text-align:center;text-transform:uppercase;letter-spacing:1px;margin:8px 0 6px}\
+.st{font-size:12px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3aaa35,#2d8a2e);padding:4px 12px;border-radius:3px;text-align:center;text-transform:uppercase;letter-spacing:1px;margin:8px 0 6px;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
 .sst{font-size:11px;font-weight:700;color:#2d8a2e;text-align:center;text-transform:uppercase;letter-spacing:.5px;margin:4px 0;padding:2px 0;border-bottom:1px solid #3aaa35}\
 .fr{display:flex;gap:6px;margin:3px 0;align-items:baseline}\
 .fl{font-weight:700;font-size:10px;color:#333;white-space:nowrap}\
@@ -67,7 +67,7 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .cb{width:13px;height:13px;border:1.5px solid #555;border-radius:2px;flex-shrink:0}\
 .ln{border-bottom:1px solid #ccc;height:20px}\
 .tb{width:100%;border-collapse:collapse;margin:4px 0}\
-.tb th{background:#3aaa35;color:#fff;padding:5px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;text-align:left;border:1px solid #2d8a2e}\
+.tb th{background:#3aaa35;color:#fff;padding:5px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;text-align:left;border:1px solid #2d8a2e;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
 .tb td{padding:4px 8px;border:1px solid #ddd;height:22px;font-size:10px}\
 .tb tr:nth-child(even) td{background:#f8fdf8}\
 .er{display:flex;align-items:center;gap:4px;margin:3px 0;flex-wrap:wrap}\
@@ -77,19 +77,20 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .cdp{display:flex;justify-content:flex-start;align-items:flex-end;min-height:85vh}\
 .cde{display:flex;border:1.5px solid #333;width:100mm;height:100mm;position:relative;overflow:hidden}\
 .cd-left{width:34mm;flex-shrink:0;display:flex;flex-direction:column;border-right:1.5px solid #333}\
-.cd-logo-box{height:38mm;display:flex;align-items:center;justify-content:center;padding:2mm;background:#fff}\
+.cd-logo-box{height:38mm;display:flex;align-items:center;justify-content:center;padding:2mm;background:#ffffff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
 .cd-logo-box img{max-height:34mm;max-width:30mm;object-fit:contain}\
 .cd-foto-box{flex:1;overflow:hidden;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-top:1px solid #ccc}\
 .cd-foto-box img{width:100%;height:100%;object-fit:cover}\
 .cd-dados{flex:1;display:flex;flex-direction:column;padding:0;position:relative}\
 .cd-top-right{padding:5mm 4mm 2mm;text-align:right;font-size:11px;line-height:2.2}\
 .cd-top-right b{color:#333;font-weight:600}\
-.cd-body{padding:0 4mm 4mm;flex:1;display:flex;flex-direction:column;justify-content:flex-end}\
-.cdn{font-size:14px;font-weight:700;color:#fff;background:#3aaa35;padding:5px 10px;margin-bottom:8px;letter-spacing:.3px;display:block;word-break:break-word;line-height:1.3}\
+.cd-sep{height:4px;background:#3aaa35;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
+.cd-body{padding:3mm 4mm 4mm;flex:1;display:flex;flex-direction:column;justify-content:flex-start}\
+.cdn{font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:8px;letter-spacing:.3px;display:block;word-break:break-word;line-height:1.3}\
 .cd-info-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 6px;font-size:11px;line-height:2}\
 .cd-info-grid b{color:#333;font-weight:600;white-space:nowrap}\
 .cd-info-grid span{color:#1a1a2e}\
-@media print{body{margin:0!important;padding:0!important}.pg{padding:10mm 10mm 10mm 15mm!important}}\
+@media print{body{margin:0!important;padding:0!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.pg{padding:10mm 10mm 10mm 15mm!important}}\
 '}
 
 function _fic_hd(a,dn){
@@ -234,9 +235,10 @@ h+='<div class="cd-foto-box"><div style="color:#bbb;font-size:9px;text-align:cen
 }
 h+='</div>';
 
-// Coluna direita: Data/Fone (canto superior direito) + Nome barra verde + Dr, Idade, Nasc
+// Coluna direita: Data/Fone → barra verde → Nome + Dr, Idade, Nasc
 h+='<div class="cd-dados">';
 h+='<div class="cd-top-right"><b>Data:</b> '+db+'<br><b>Fone:</b> '+_fic_e(a.tel||'')+'</div>';
+h+='<div class="cd-sep"></div>';
 h+='<div class="cd-body">';
 h+='<div class="cdn">'+_fic_e(a.pac||'SEM NOME').toUpperCase()+'</div>';
 h+='<div class="cd-info-grid">';
@@ -265,6 +267,7 @@ if(nm)nomes.push(nm)});
 var exNm=nomes.join(', ')||'Atendimento';
 
 var html='<!DOCTYPE html><html><head><meta charset="UTF-8">';
+html+='<base href="'+window.location.href.replace(/[^\/]*$/,'')+'">';
 html+='<title>Fichas - '+_fic_e(a.pac)+'</title>';
 html+='<style>'+_fic_css()+'</style></head><body>';
 html+=_fic1(a,dn);
