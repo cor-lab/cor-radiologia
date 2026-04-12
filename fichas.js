@@ -40,7 +40,7 @@ function _fic_css(){return'\
 @import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap");\
 *{margin:0;padding:0;box-sizing:border-box}\
 body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px}\
-@page{size:A4 portrait;margin:12mm 10mm 10mm 10mm}\
+@page{size:A4 portrait;margin:10mm 10mm 10mm 15mm}\
 .pg{page-break-after:always;padding:0;position:relative}\
 .pg:last-child{page-break-after:auto}\
 .hd{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;padding-bottom:10px;border-bottom:3px solid #3aaa35}\
