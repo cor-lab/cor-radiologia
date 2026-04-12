@@ -15,20 +15,21 @@
 
 var FICHAS_VERSION = '1.1';
 
-// Caminho das fotos: \\192.168.0.200\imagens\{SEQ/1000}\{SEQ}fs.jpg
-// Mapeado como I:\ no PC da clínica
-// No navegador usa file:///I:/
+// Fotos servidas via HTTP pelo servidor_fotos.py (porta 8080)
+// URL: http://192.168.0.200:8080/{SEQ/1000}/{SEQ}fs.jpg
+var FICHAS_FOTO_BASE = 'http://192.168.0.200:8080';
+
 function _fic_fotoPath(seqAtend) {
     if (!seqAtend) return '';
     var seq = parseInt(seqAtend);
     var pasta = Math.floor(seq / 1000);
-    return 'file:///I:/' + pasta + '/' + seq + 'fs.jpg';
+    return FICHAS_FOTO_BASE + '/' + pasta + '/' + seq + 'fs.jpg';
 }
 
 function _fic_fotoTag(seqAtend) {
     var path = _fic_fotoPath(seqAtend);
     if (!path) return '<div class="hd-ph">Foto<br>Paciente</div>';
-    return '<img src="' + path + '" onerror="this.parentNode.innerHTML=\'<div class=hd-ph>Foto<br>Paciente</div>\'" alt="Foto">';
+    return '<img src="' + path + '" onerror="this.parentNode.innerHTML=\'<div class=hd-ph>Foto<br>indisponível</div>\'" alt="Foto">';
 }
 
 function _fic_fmt(d){if(!d)return'';var p=(d+'').substring(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:d}
