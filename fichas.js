@@ -227,7 +227,7 @@ var h='<div class="pg"><div class="cdp"><div class="cde">';
 
 // Coluna esquerda: Logo (topo) + Foto (embaixo)
 h+='<div class="cd-left">';
-h+='<div class="cd-logo-box"><img src="logo.png" alt="COR"></div>';
+h+='<div class="cd-logo-box"><img src="logo_site.jpg" alt="COR"></div>';
 if(fotoUrl){
 h+='<div class="cd-foto-box"><img src="'+fotoUrl+'" onerror="this.parentNode.innerHTML=\'<div style=color:#bbb;font-size:9px;text-align:center;padding-top:20mm>Foto<br>indisponível</div>\'" alt="Foto"></div>';
 }else{
