@@ -75,21 +75,20 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .eo{display:flex;align-items:center;gap:3px;font-size:10px}\
 .en{border-bottom:1px solid #bbb;min-width:60px;min-height:13px}\
 .cdp{display:flex;justify-content:flex-start;align-items:flex-end;min-height:85vh}\
-.cde{display:flex;border:1.5px solid #444;width:100mm;height:100mm;position:relative;overflow:hidden;border-radius:2px}\
-.cd-left{width:34mm;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid #ddd}\
-.cd-logo-box{height:34mm;display:flex;align-items:center;justify-content:center;padding:2mm;border-bottom:1px solid #eee;background:#fff}\
-.cd-logo-box img{max-height:28mm;max-width:30mm;object-fit:contain}\
-.cd-foto-box{flex:1;overflow:hidden;background:#f7f7f7;display:flex;align-items:center;justify-content:center}\
+.cde{display:flex;border:1.5px solid #333;width:100mm;height:100mm;position:relative;overflow:hidden}\
+.cd-left{width:34mm;flex-shrink:0;display:flex;flex-direction:column;border-right:1.5px solid #333}\
+.cd-logo-box{height:38mm;display:flex;align-items:center;justify-content:center;padding:2mm;background:#fff}\
+.cd-logo-box img{max-height:34mm;max-width:30mm;object-fit:contain}\
+.cd-foto-box{flex:1;overflow:hidden;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-top:1px solid #ccc}\
 .cd-foto-box img{width:100%;height:100%;object-fit:cover}\
 .cd-dados{flex:1;display:flex;flex-direction:column;padding:0;position:relative}\
-.cd-top-right{padding:4mm 4mm 0;text-align:right;font-size:10.5px;line-height:2}\
-.cd-top-right b{color:#444;font-weight:600}\
-.cd-body{padding:3mm 4mm;flex:1;display:flex;flex-direction:column;justify-content:flex-start}\
-.cdn{font-size:13px;font-weight:700;color:#fff;background:#3aaa35;padding:4px 10px;border-radius:3px;margin-bottom:10px;letter-spacing:.3px;display:block;word-break:break-word}\
-.cd-info-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 6px;font-size:10.5px;line-height:1.9}\
-.cd-info-grid b{color:#444;font-weight:600;white-space:nowrap}\
+.cd-top-right{padding:5mm 4mm 2mm;text-align:right;font-size:11px;line-height:2.2}\
+.cd-top-right b{color:#333;font-weight:600}\
+.cd-body{padding:0 4mm 4mm;flex:1;display:flex;flex-direction:column;justify-content:flex-end}\
+.cdn{font-size:14px;font-weight:700;color:#fff;background:#3aaa35;padding:5px 10px;margin-bottom:8px;letter-spacing:.3px;display:block;word-break:break-word;line-height:1.3}\
+.cd-info-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 6px;font-size:11px;line-height:2}\
+.cd-info-grid b{color:#333;font-weight:600;white-space:nowrap}\
 .cd-info-grid span{color:#1a1a2e}\
-.cd-info-sep{height:6px}\
 @media print{body{margin:0!important;padding:0!important}.pg{padding:10mm 10mm 10mm 15mm!important}}\
 '}
 
