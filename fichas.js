@@ -1,7 +1,9 @@
 // ============================================================
 // FICHAS.JS — Módulo de Fichas para Impressão
 // COR - Centro Odontológico de Radiologia
-// v1.0 — 12/04/2026
+// v2.0 — 12/04/2026
+// Ficha 4 refeita conforme layout original (10×10cm)
+// Ficha 3 margens revisadas (28 linhas sem quebra)
 //
 // 4 fichas impressas simultaneamente (cada uma em página A4):
 //   1. Ficha do Paciente (dados + ortodônticas + história médica)
@@ -13,7 +15,7 @@
 // Depende de: ags[], fdent(), fex(), fconv(), SUPA_URL, SUPA_KEY
 // ============================================================
 
-var FICHAS_VERSION = '1.1';
+var FICHAS_VERSION = '2.0';
 
 // Fotos servidas via HTTP pelo servidor_fotos.py (porta 8080)
 // URL: http://192.168.0.200:8080/{SEQ/1000}/{SEQ}fs.jpg
@@ -73,19 +75,21 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .eo{display:flex;align-items:center;gap:3px;font-size:10px}\
 .en{border-bottom:1px solid #bbb;min-width:60px;min-height:13px}\
 .cdp{display:flex;justify-content:flex-start;align-items:flex-end;min-height:85vh}\
-.cde{display:flex;border:1.5px solid #333;width:100mm;height:100mm;position:relative;overflow:hidden}\
-.cde::before{content:"✂ recortar";position:absolute;top:-15px;left:8px;font-size:8px;color:#999;letter-spacing:1px}\
-.cd-col-l{width:35mm;flex-shrink:0;display:flex;flex-direction:column;border-right:1.5px solid #333}\
-.cd-col-l-logo{height:28mm;display:flex;align-items:center;justify-content:center;border-bottom:1px solid #ddd;padding:4px}\
-.cd-col-l-logo img{height:22mm}\
-.cd-col-l-foto{flex:1;overflow:hidden;background:#f5f5f5;display:flex;align-items:center;justify-content:center}\
-.cd-col-l-foto img{width:100%;height:100%;object-fit:cover}\
-.cd-col-r{flex:1;display:flex;flex-direction:column;padding:0}\
-.cd-col-r-top{padding:6mm 4mm 3mm;text-align:right;font-size:10px;line-height:1.8;border-bottom:1px solid #eee}\
-.cd-col-r-bot{padding:3mm 4mm;flex:1;display:flex;flex-direction:column;justify-content:flex-end}\
-.cd-col-r-bot .cdn{font-size:12px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3aaa35,#2d8a2e);padding:3px 10px;border-radius:3px;margin-bottom:8px;letter-spacing:.3px;display:inline-block}\
-.cd-col-r-bot .cd-rows{font-size:10.5px;line-height:1.8}\
-.cd-col-r-bot .cd-rows b{color:#555}\
+.cde{display:flex;border:1.5px solid #444;width:100mm;height:100mm;position:relative;overflow:hidden;border-radius:2px}\
+.cd-left{width:34mm;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid #ddd}\
+.cd-logo-box{height:34mm;display:flex;align-items:center;justify-content:center;padding:2mm;border-bottom:1px solid #eee;background:#fff}\
+.cd-logo-box img{max-height:28mm;max-width:30mm;object-fit:contain}\
+.cd-foto-box{flex:1;overflow:hidden;background:#f7f7f7;display:flex;align-items:center;justify-content:center}\
+.cd-foto-box img{width:100%;height:100%;object-fit:cover}\
+.cd-dados{flex:1;display:flex;flex-direction:column;padding:0;position:relative}\
+.cd-top-right{padding:4mm 4mm 0;text-align:right;font-size:10.5px;line-height:2}\
+.cd-top-right b{color:#444;font-weight:600}\
+.cd-body{padding:3mm 4mm;flex:1;display:flex;flex-direction:column;justify-content:flex-start}\
+.cdn{font-size:13px;font-weight:700;color:#fff;background:#3aaa35;padding:4px 10px;border-radius:3px;margin-bottom:10px;letter-spacing:.3px;display:block;word-break:break-word}\
+.cd-info-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 6px;font-size:10.5px;line-height:1.9}\
+.cd-info-grid b{color:#444;font-weight:600;white-space:nowrap}\
+.cd-info-grid span{color:#1a1a2e}\
+.cd-info-sep{height:6px}\
 @media print{body{margin:0!important;padding:0!important}.pg{padding:10mm 10mm 10mm 15mm!important}}\
 '}
 
@@ -205,44 +209,42 @@ h+='<div class="fr"><span class="fl">C1 A C2:</span><span class="fn"></span><spa
 h+='</div>';
 return h+'</div>'}
 
-/* ═══ FICHA 3 — INTERVENÇÕES ═══ */
+/* ═══ FICHA 3 — INTERVENÇÕES (38 linhas, preenchendo até o rodapé) ═══ */
 function _fic3(a,dn,exNm){
 var h='<div class="pg">'+_fic_hd(a,dn);
 h+='<div class="st">Intervenções</div>';
 h+='<table class="tb"><thead><tr><th style="width:80px">Data</th><th>Trabalhos Realizados</th><th>Trabalhos a Realizar</th></tr></thead><tbody>';
-h+='<tr><td>'+_fic_fmt(a.dt)+'</td><td>'+_fic_e(exNm)+'</td><td></td></tr>';
-for(var i=0;i<28;i++)h+='<tr><td></td><td></td><td></td></tr>';
+h+='<tr><td style="height:18px">'+_fic_fmt(a.dt)+'</td><td style="height:18px">'+_fic_e(exNm)+'</td><td style="height:18px"></td></tr>';
+for(var i=0;i<37;i++)h+='<tr><td style="height:18px"></td><td style="height:18px"></td><td style="height:18px"></td></tr>';
 return h+'</tbody></table></div>'}
 
-/* ═══ FICHA 4 — ETIQUETA CD ═══ */
+/* ═══ FICHA 4 — ETIQUETA CD (10×10cm, canto inferior esquerdo) ═══ */
 function _fic4(a,dn){
 var id=_fic_idade(a.paciente_data_nascimento||''),nb=_fic_fmt(a.paciente_data_nascimento||''),db=_fic_fmt(a.dt);
 var seq=a.firebird_seq_atend||'';
 var fotoUrl=seq?(FICHAS_FOTO_BASE+'/'+Math.floor(parseInt(seq)/1000)+'/'+parseInt(seq)+'fs.jpg'):'';
 var h='<div class="pg"><div class="cdp"><div class="cde">';
 
-// Coluna esquerda: foto + logo
+// Coluna esquerda: Logo (topo) + Foto (embaixo)
 h+='<div class="cd-left">';
 h+='<div class="cd-logo-box"><img src="logo.png" alt="COR"></div>';
 if(fotoUrl){
-h+='<div class="cd-foto-box"><img src="'+fotoUrl+'" onerror="this.style.display=\'none\'" alt="Foto"></div>';
+h+='<div class="cd-foto-box"><img src="'+fotoUrl+'" onerror="this.parentNode.innerHTML=\'<div style=color:#bbb;font-size:9px;text-align:center;padding-top:20mm>Foto<br>indisponível</div>\'" alt="Foto"></div>';
 }else{
-h+='<div class="cd-foto-box"><div style="color:#aaa;font-size:9px;text-align:center;padding-top:30px">Foto<br>Paciente</div></div>';
+h+='<div class="cd-foto-box"><div style="color:#bbb;font-size:9px;text-align:center;padding-top:20mm">Foto<br>Paciente</div></div>';
 }
 h+='</div>';
 
-// Coluna direita: dados
+// Coluna direita: Data/Fone (canto superior direito) + Nome barra verde + Dr, Idade, Nasc
 h+='<div class="cd-dados">';
-h+='<div class="cdn" style="margin-bottom:8px">'+_fic_e(a.pac||'SEM NOME').toUpperCase()+'</div>';
+h+='<div class="cd-top-right"><b>Data:</b> '+db+'<br><b>Fone:</b> '+_fic_e(a.tel||'')+'</div>';
+h+='<div class="cd-body">';
+h+='<div class="cdn">'+_fic_e(a.pac||'SEM NOME').toUpperCase()+'</div>';
 h+='<div class="cd-info-grid">';
 h+='<b>Dr.(a):</b><span>'+_fic_e(dn)+'</span>';
 h+='<b>Idade:</b><span>'+id+'</span>';
 h+='<b>Nasc.:</b><span>'+nb+'</span>';
 h+='</div>';
-h+='<div class="cd-info-sep"></div>';
-h+='<div class="cd-info-grid">';
-h+='<b>Data:</b><span>'+db+'</span>';
-h+='<b>Fone:</b><span>'+_fic_e(a.tel||'')+'</span>';
 h+='</div>';
 h+='</div>';
 
