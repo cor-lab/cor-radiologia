@@ -73,9 +73,8 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px}\
 .eo{display:flex;align-items:center;gap:3px;font-size:10px}\
 .en{border-bottom:1px solid #bbb;min-width:60px;min-height:13px}\
 .cdp{display:flex;justify-content:flex-start;align-items:flex-end;min-height:90vh}\
-.cde{display:flex;gap:10px;align-items:center;border:2px solid #3aaa35;border-radius:8px;padding:10px;width:400px}\
-.cdf{width:80px;height:95px;border-radius:6px;overflow:hidden;border:2px solid #ddd;flex-shrink:0;background:#f0f0f0;display:flex;align-items:center;justify-content:center}\
-.cdf img{width:100%;height:100%;object-fit:cover}\
+.cde{display:flex;gap:10px;align-items:center;border:2px dashed #999;border-radius:0;padding:10px;width:400px;position:relative}\
+.cde::before{content:"✂ recortar";position:absolute;top:-14px;left:10px;font-size:8px;color:#999;letter-spacing:1px}\
 .cdi{flex:1}\
 .cdn{font-size:12px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3aaa35,#2d8a2e);padding:3px 8px;border-radius:3px;margin-bottom:5px}\
 .cdd{font-size:10px;line-height:1.6}\
