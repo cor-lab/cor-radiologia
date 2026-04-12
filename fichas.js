@@ -72,15 +72,19 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .el{font-weight:700;font-size:10.5px;color:#1a1a2e;min-width:120px}\
 .eo{display:flex;align-items:center;gap:3px;font-size:10px}\
 .en{border-bottom:1px solid #bbb;min-width:60px;min-height:13px}\
-.cdp{display:flex;justify-content:flex-start;align-items:flex-end;min-height:90vh}\
-.cde{display:flex;gap:10px;align-items:center;border:2px dashed #999;border-radius:0;padding:10px;width:400px;position:relative}\
-.cde::before{content:"✂ recortar";position:absolute;top:-14px;left:10px;font-size:8px;color:#999;letter-spacing:1px}\
-.cdi{flex:1}\
-.cdn{font-size:12px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3aaa35,#2d8a2e);padding:3px 8px;border-radius:3px;margin-bottom:5px}\
-.cdd{font-size:10px;line-height:1.6}\
-.cdd b{color:#555}\
-.cdl{width:55px}\
-.cdl img{width:100%}\
+.cdp{display:flex;justify-content:flex-start;align-items:flex-end;min-height:85vh}\
+.cde{display:flex;gap:0;align-items:stretch;border:1.5px solid #333;width:440px;min-height:140px;position:relative}\
+.cde::before{content:"✂ recortar";position:absolute;top:-15px;left:10px;font-size:8px;color:#999;letter-spacing:1px}\
+.cd-left{width:120px;flex-shrink:0;display:flex;flex-direction:column;border-right:1.5px solid #333}\
+.cd-logo-box{padding:6px 8px;border-bottom:1px solid #ddd;text-align:center}\
+.cd-logo-box img{width:70px}\
+.cd-foto-box{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f5f5f5}\
+.cd-foto-box img{width:100%;height:100%;object-fit:cover}\
+.cd-dados{flex:1;padding:10px 12px;display:flex;flex-direction:column;justify-content:center}\
+.cdn{font-size:12px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3aaa35,#2d8a2e);padding:4px 10px;border-radius:3px;letter-spacing:.3px}\
+.cd-info-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 8px;font-size:10.5px;line-height:1.8}\
+.cd-info-grid b{color:#555;font-weight:700;white-space:nowrap}\
+.cd-info-sep{border-top:1px solid #ddd;margin:5px 0}\
 @media print{body{margin:0!important;padding:0!important}.pg{padding:10mm 10mm 10mm 15mm!important}}\
 '}
 
@@ -206,23 +210,42 @@ var h='<div class="pg">'+_fic_hd(a,dn);
 h+='<div class="st">Intervenções</div>';
 h+='<table class="tb"><thead><tr><th style="width:80px">Data</th><th>Trabalhos Realizados</th><th>Trabalhos a Realizar</th></tr></thead><tbody>';
 h+='<tr><td>'+_fic_fmt(a.dt)+'</td><td>'+_fic_e(exNm)+'</td><td></td></tr>';
-for(var i=0;i<35;i++)h+='<tr><td></td><td></td><td></td></tr>';
+for(var i=0;i<28;i++)h+='<tr><td></td><td></td><td></td></tr>';
 return h+'</tbody></table></div>'}
 
 /* ═══ FICHA 4 — ETIQUETA CD ═══ */
 function _fic4(a,dn){
 var id=_fic_idade(a.paciente_data_nascimento||''),nb=_fic_fmt(a.paciente_data_nascimento||''),db=_fic_fmt(a.dt);
+var seq=a.firebird_seq_atend||'';
+var fotoUrl=seq?(FICHAS_FOTO_BASE+'/'+Math.floor(parseInt(seq)/1000)+'/'+parseInt(seq)+'fs.jpg'):'';
 var h='<div class="pg"><div class="cdp"><div class="cde">';
-h+='<div class="cdl"><img src="logo.png" alt="COR"></div>';
-h+='<div class="cdi">';
-h+='<div class="cdn">'+_fic_e(a.pac||'SEM NOME').toUpperCase()+'</div>';
-h+='<div class="cdd">';
-h+='<b>Dr.(a):</b> '+_fic_e(dn)+'<br>';
-h+='<b>Idade:</b> '+id+'<br>';
-h+='<b>Nasc.:</b> '+nb+'<br>';
-h+='<b>Data:</b> '+db+'<br>';
-h+='<b>Fone:</b> '+_fic_e(a.tel||'');
-h+='</div></div></div></div></div>';
+
+// Coluna esquerda: foto + logo
+h+='<div class="cd-left">';
+h+='<div class="cd-logo-box"><img src="logo.png" alt="COR"></div>';
+if(fotoUrl){
+h+='<div class="cd-foto-box"><img src="'+fotoUrl+'" onerror="this.style.display=\'none\'" alt="Foto"></div>';
+}else{
+h+='<div class="cd-foto-box"><div style="color:#aaa;font-size:9px;text-align:center;padding-top:30px">Foto<br>Paciente</div></div>';
+}
+h+='</div>';
+
+// Coluna direita: dados
+h+='<div class="cd-dados">';
+h+='<div class="cdn" style="margin-bottom:8px">'+_fic_e(a.pac||'SEM NOME').toUpperCase()+'</div>';
+h+='<div class="cd-info-grid">';
+h+='<b>Dr.(a):</b><span>'+_fic_e(dn)+'</span>';
+h+='<b>Idade:</b><span>'+id+'</span>';
+h+='<b>Nasc.:</b><span>'+nb+'</span>';
+h+='</div>';
+h+='<div class="cd-info-sep"></div>';
+h+='<div class="cd-info-grid">';
+h+='<b>Data:</b><span>'+db+'</span>';
+h+='<b>Fone:</b><span>'+_fic_e(a.tel||'')+'</span>';
+h+='</div>';
+h+='</div>';
+
+h+='</div></div></div>';
 return h}
 
 /* ══════════════════════════════════════════════════════════
