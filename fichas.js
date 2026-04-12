@@ -39,9 +39,9 @@ function _fic_e(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function _fic_css(){return'\
 @import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap");\
 *{margin:0;padding:0;box-sizing:border-box}\
-body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px}\
+body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margin:0;padding:0}\
 @page{size:A4 portrait;margin:10mm 10mm 10mm 15mm}\
-.pg{page-break-after:always;padding:0;position:relative}\
+.pg{page-break-after:always;padding:10mm 10mm 10mm 15mm;position:relative}\
 .pg:last-child{page-break-after:auto}\
 .hd{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;padding-bottom:10px;border-bottom:3px solid #3aaa35}\
 .hd-foto{width:90px;height:110px;border:2px solid #ccc;border-radius:6px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}\
@@ -81,7 +81,7 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px}\
 .cdd b{color:#555}\
 .cdl{width:55px}\
 .cdl img{width:100%}\
-@media print{.pg{padding:0!important}}\
+@media print{body{margin:0!important;padding:0!important}.pg{padding:10mm 10mm 10mm 15mm!important}}\
 '}
 
 function _fic_hd(a,dn){
