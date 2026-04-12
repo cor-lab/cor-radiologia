@@ -505,7 +505,7 @@ tr:last-child td{border-bottom:none}
 .ag-cl.hf{border-top-color:rgba(255,255,255,.018)}
 .ag-ev{position:absolute;left:3px;right:3px;border-radius:6px;padding:4px 8px 4px 14px;font-size:.78rem;cursor:pointer;overflow:hidden;z-index:2;box-shadow:0 1px 6px rgba(0,0,0,.18);transition:filter .14s,transform .14s;display:flex;flex-direction:column;gap:1px;border:1px solid rgba(0,0,0,.1);background:#fff;color:#1a1a2e;border-left:none}
 .ag-ev:hover{filter:brightness(.97);z-index:3;transform:scale(1.01);box-shadow:0 3px 12px rgba(0,0,0,.22)}
-.et{font-size:.72rem;font-weight:700;font-family:"DM Sans",sans-serif;white-space:nowrap;letter-spacing:.01em;line-height:1.4;color:#1a1a2e}
+.et{font-size:.72rem;font-weight:700;font-family:"DM Sans",sans-serif;white-space:nowrap;letter-spacing:.01em;line-height:1.4;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis}
 .en{font-weight:700;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1a1a2e}
 .es{font-size:.70rem;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#333}
 .eck{position:absolute;right:5px;top:4px;font-size:.7rem;color:#4ab848}
@@ -3277,7 +3277,7 @@ setTimeout(function(){
 
 var agView = "dia";
 var agBase = new Date();
-var AGS = 7; var AGE = 19; var AGSZ = 14;
+var AGS = 7; var AGE = 19; var AGSZ = 34;
 var ECS = {agendado:"ec0",realizado:"ec1",aguardando:"ec2",cancelado:"ec3"};
 
 var _agSaving = false;
@@ -3326,7 +3326,7 @@ function rndAg() {
   h+="<div class=\"ag-tc\"><div style=\"height:44px;border-bottom:1px solid rgba(255,255,255,.07)\"></div>";
   for(var i=0;i<slots;i++){
     var mm=AGS*60+i*5; var isH=(mm%60===0);
-    h+="<div class=\"ag-ts"+(isH?"":" hf")+"\">"+(isH?m2t(mm):"")+"</div>";
+    h+="<div class=\"ag-ts"+(isH?"":" hf")+"\" style=\"height:"+AGSZ+"px\">"+(isH?m2t(mm):"")+"</div>";
   }
   h+="</div><div style=\"flex:1;display:flex\">";
   days.forEach(function(day){
@@ -3346,7 +3346,7 @@ function rndAg() {
     });
     dayAgs.forEach(function(a){
       var sm=t2m(a.hr); var dur=a.dur||30; var em2=sm+dur;
-      var top2=((sm-AGS*60)/5)*AGSZ; var ht=Math.max((dur/5)*AGSZ,50);
+      var top2=((sm-AGS*60)/5)*AGSZ; var ht=50;
       var ex2=fex(a.ex); var cv2=fconv(a.cv);
       // Se tiver array de exames, mostra todos
       var nomesEx = "";
