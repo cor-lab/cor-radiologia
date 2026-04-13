@@ -966,7 +966,7 @@ async function confirmarEmissaoNota() {
     ag.paciente_cpf = cpfCnpj;
 
     const functionUrl = API_BASE + "/emitir-nfse-focus";
-    const SUPABASE_ANON_KEY = "SUA_CHAVE_ATUAL_AQUI";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
 
     const payload = {
       agendamento_id: agendamentoId,
@@ -2546,7 +2546,7 @@ var convs = [];
 var dents = [];
 var prems = [];
 
-const API_BASE = "https://flpvzvtbhuyjjdqyrsza.supabase.co/functions/v1/emitir-nfse-focus";
+const API_BASE = "https://flpvzvtbhuyjjdqyrsza.supabase.co/functions/v1";
 
 var ags = [];
 var waT = {
