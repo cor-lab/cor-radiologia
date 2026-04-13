@@ -1,6 +1,6 @@
 // ============================================================
 // MODULO ORDEM DE SERVICO (OS) - COR
-// v2.2 — data nascimento + idade + entrega + rodapé completo
+// v2.4 — rodapé com mais espaço para assinaturas
 // ============================================================
 
 var LOGO_COR_B64 = "logo.png";
@@ -37,16 +37,13 @@ function imprimirOS(agId) {
     var horaAtend = a.hr || "-";
     var nomePaciente = a.pac || "-";
 
-    // ── Data de nascimento e idade ──
     var dataNascISO = a.paciente_data_nascimento || "";
     var dataNascBR = _formatarDataBR(dataNascISO);
     var idade = _calcularIdade(dataNascISO);
     var idadeTexto = idade !== "" ? idade + " anos" : "-";
 
-    // ── Valor cobrado ──
     var valorCobrado = Number(a.vl || 0);
 
-    // ── Forma de entrega ──
     var formaEntrega = a.forma_entrega || "-";
     var previsaoEntrega = a.previsao_entrega || "";
     if (previsaoEntrega && previsaoEntrega.length >= 10) {
@@ -105,7 +102,7 @@ function imprimirOS(agId) {
     var html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>" +
         "<title>OS #" + seqAtend + " - COR</title>" +
         "<style>" +
-        "body{font-family:Arial,sans-serif;margin:0;padding:20px;padding-bottom:160px;color:#1a1a2e}" +
+        "body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#1a1a2e}" +
         "table{width:100%;border-collapse:collapse}" +
         "th{background:#2d3a6e;color:#fff;padding:8px 10px;text-align:left;font-size:12px}" +
         ".header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #2d3a6e;padding-bottom:15px;margin-bottom:15px}" +
@@ -117,20 +114,23 @@ function imprimirOS(agId) {
         ".info-grid .label{font-weight:bold;color:#555;font-size:11px;text-transform:uppercase}" +
         ".info-grid .valor{font-size:14px}" +
         ".total-row{background:#f0f4ff;font-weight:bold;font-size:15px}" +
-        ".barcode{text-align:center;margin:15px 0}" +
-        ".entrega-box{margin:15px 0;padding:10px 15px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;display:flex;gap:30px;font-size:13px}" +
+        ".barcode{text-align:center;margin:12px 0}" +
+        ".entrega-box{margin:12px 0;padding:10px 15px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;display:flex;gap:30px;font-size:13px}" +
         ".entrega-box .label{font-weight:bold;color:#555;font-size:11px;text-transform:uppercase}" +
         ".entrega-box .valor{font-size:14px;margin-top:2px}" +
-        ".rodape{position:fixed;bottom:15px;left:20px;right:20px;font-size:12px;color:#555}" +
-        ".rodape-info{display:flex;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #ddd;font-size:11px;color:#777}" +
-        ".rodape-assinaturas{display:grid;grid-template-columns:1fr 1fr;gap:40px}" +
+        ".setores{margin:18px 0 10px;page-break-inside:avoid}" +
+        ".setores-titulo{font-size:12px;font-weight:bold;color:#2d3a6e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;border-bottom:2px solid #2d3a6e;padding-bottom:4px}" +
+        ".setores-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 30px}" +
+        ".setor-bloco{border:1px solid #ddd;border-radius:6px;padding:10px 12px;background:#fafbfc}" +
+        ".setor-nome{font-size:11px;font-weight:bold;color:#2d3a6e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}" +
+        ".setor-linha{border-top:1px solid #999;margin-top:28px;padding-top:4px;font-size:10px;color:#888;text-align:center}" +
+        ".rodape{margin-top:100px;font-size:12px;color:#555;page-break-inside:avoid}" +
+        ".rodape-info{display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #ddd;font-size:11px;color:#777}" +
+        ".rodape-assinaturas{display:grid;grid-template-columns:1fr 1fr;gap:60px}" +
         ".rodape-assinaturas .bloco{text-align:center}" +
-        ".rodape-assinaturas .linha-ass{border-top:1px solid #999;padding-top:5px;margin-top:35px;font-size:12px;color:#666}" +
+        ".rodape-assinaturas .linha-ass{border-top:1px solid #999;padding-top:5px;margin-top:60px;font-size:12px;color:#666}" +
         ".rodape-assinaturas .nome-ass{font-size:11px;color:#999;margin-top:2px}" +
-        "@media print{" +
-        "  body{padding:15px;padding-bottom:160px}" +
-        "  .rodape{position:fixed;bottom:10px;left:15px;right:15px}" +
-        "}" +
+        "@media print{body{padding:15px}}" +
         "</style></head><body>" +
 
         // ── Cabeçalho ──
@@ -142,7 +142,7 @@ function imprimirOS(agId) {
         "</div>" +
         "</div>" +
 
-        // ── Dados do paciente (grid 3 colunas) ──
+        // ── Dados do paciente ──
         "<div class='info-grid'>" +
         "<div><div class='label'>Paciente</div><div class='valor'>" + esc(nomePaciente) + "</div></div>" +
         "<div><div class='label'>CPF</div><div class='valor'>" + (a.paciente_cpf ? formatarCPF(a.paciente_cpf) : "-") + "</div></div>" +
@@ -179,7 +179,18 @@ function imprimirOS(agId) {
         "<div class='barcode'>" + barcodeSvg + "<br>" +
         "<span style='font-size:14px;font-family:monospace;letter-spacing:2px'>" + seqAtend + "</span></div>" +
 
-        // ── Rodapé fixo ──
+        // ── Assinaturas dos setores técnicos ──
+        "<div class='setores'>" +
+        "<div class='setores-titulo'>Execução — Assinatura dos Atendentes por Setor</div>" +
+        "<div class='setores-grid'>" +
+        "<div class='setor-bloco'><div class='setor-nome'>Raios X</div><div class='setor-linha'>Assinatura / Visto</div></div>" +
+        "<div class='setor-bloco'><div class='setor-nome'>Tomografia</div><div class='setor-linha'>Assinatura / Visto</div></div>" +
+        "<div class='setor-bloco'><div class='setor-nome'>Fotos e Escaneamento</div><div class='setor-linha'>Assinatura / Visto</div></div>" +
+        "<div class='setor-bloco'><div class='setor-nome'>Periapicais</div><div class='setor-linha'>Assinatura / Visto</div></div>" +
+        "</div>" +
+        "</div>" +
+
+        // ── Rodapé: assinaturas paciente/atendente (mais espaço) ──
         "<div class='rodape'>" +
         "<div class='rodape-info'>" +
         "<span><strong>Paciente:</strong> " + esc(nomePaciente) + "</span>" +
@@ -230,4 +241,4 @@ function gerarBarcodeSvg(texto) {
     return "<svg width='" + (x + 10) + "' height='" + (height + 5) + "' xmlns='http://www.w3.org/2000/svg'>" + bars + "</svg>";
 }
 
-console.log("[COR] Modulo ordem de servico v2.2 carregado");
+console.log("[COR] Modulo ordem de servico v2.4 carregado");
