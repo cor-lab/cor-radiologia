@@ -925,8 +925,11 @@ async function confirmarEmissaoNota() {
       "avista";
 
     var itensFaturaveis = getItensFaturaveisPaciente(ag.exames || []);
-    var valorBase = somarItens(itensFaturaveis);
-    var calcPgFinal = calcularValorFinalComDesconto(valorBase, formaPagamentoFinal);
+    var itensCD = itensFaturaveis.filter(function(it){ return itemTemDesconto(it); });
+    var itensSD = itensFaturaveis.filter(function(it){ return !itemTemDesconto(it); });
+    var calcPgFinal = calcularValorFinalComDesconto(somarItens(itensCD), formaPagamentoFinal);
+    calcPgFinal.valor_bruto += somarItens(itensSD);
+    calcPgFinal.valor_faturado += somarItens(itensSD);
     var valorServico = calcPgFinal.valor_faturado;
 
     if (valorServico <= 0) {
@@ -1423,10 +1426,11 @@ async function loadAllData(){
       supa.from("agendamento_exames").select("*").order("ordem",{ascending:true}),
       supa.from("premios").select("*").eq("ativo",true).order("pontos_necessarios"),
       supa.from("usuarios").select("*").eq("ativo",true).order("nome"),
-      supa.from("cashback_ajustes").select("*").order("created_at",{ascending:false})
+      supa.from("cashback_ajustes").select("*").order("created_at",{ascending:false}),
+      supa.from("dentista_enderecos").select("*").order("id")
     ]);
 
-    var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7], ajR = r[8];
+    var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7], ajR = r[8], deR = r[9];
 
     // Buscar dentistas restantes (paginado)
     var allDents = dR.data || [];
@@ -1497,6 +1501,15 @@ async function loadAllData(){
           cor: d.cor || "#fff"
         };
       });
+
+      // Mapear enderecos dos dentistas (primeiro endereco de cada)
+      var dentEndMap = {};
+      (deR.data || []).forEach(function(e){
+        if (!dentEndMap[e.dentista_id]) {
+          dentEndMap[e.dentista_id] = (e.endereco || "") + (e.bairro ? ", " + e.bairro : "");
+        }
+      });
+      dents.forEach(function(d){ d.end = dentEndMap[d.id] || ""; });
     }
 
     var mapAgEx = {};
@@ -2490,6 +2503,8 @@ function iniciarAutoRefresh(){
             firebird_atend_id:a.firebird_atend_id||null,
             firebird_seq_atend:a.firebird_seq_atend||null,
             obs:a.observacoes||'', observacoes:a.observacoes||'',
+            forma_entrega:a.forma_entrega||null,
+            previsao_entrega:a.previsao_entrega||null,
             paciente_data_nascimento:a.paciente_data_nascimento||'',
             paciente_sexo:a.paciente_sexo||''
           };
@@ -2985,6 +3000,7 @@ function renderAtendimento() {
       h += "<div class='at-meta'>";
       h += "<span>" + esc(exNomes) + "</span>";
       h += "<span>🦷 " + esc(d.n) + "</span>";
+      if (d.end) h += "<span style='color:var(--gr);font-size:.7rem'>📍 " + esc(d.end) + "</span>";
       if (a.firebird_seq_atend) h += "<span class='at-seq'>#" + a.firebird_seq_atend + "</span>";
       h += "<span>R$ " + Number(a.vl || 0).toFixed(2).replace(".", ",") + "</span>";
       h += "</div>";
@@ -3221,12 +3237,13 @@ function ragendar() {
   h += "</div>";
 
   h += "<div class=\"field\"><label>Buscar dentista</label><input type=\"text\" id=\"dBusca\" placeholder=\"Digite para filtrar dentistas\" oninput=\"filtrarDentistasAg()\"></div>";
-  h += "<div class=\"field\"><label>Dentista</label><select id=\"dSel\">";
+  h += "<div class=\"field\"><label>Dentista</label><select id=\"dSel\" onchange=\"mostrarEndDent()\">";
   h += "<option value=\"\">— Selecione —</option>";
   dents.forEach(function(d){
     h += "<option value=\"" + d.id + "\">" + esc(d.n) + "</option>";
   });
   h += "</select></div>";
+  h += "<div id='dentEndInfo' style='font-size:.78rem;color:var(--gr);padding:0 2px 4px;margin-top:-6px'></div>";
 
   h += "<div class=\"field\">";
   h += "<label>Forma de pagamento</label>";
@@ -3415,6 +3432,7 @@ function agEV(ev, id) {
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📅</span> <strong>" + esc(a.dt) + "</strong> — " + esc(a.hr) + " ate " + em3 + "</div>";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">" + ex3.ico + "</span> " + esc(ex3.n) + " — <strong>R$ " + a.vl + "</strong></div>";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🦷</span> " + esc(d3.n) + "</div>";
+  if(d3.end) b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📍</span> <span style=\"color:var(--gr);font-size:.82rem\">" + esc(d3.end) + "</span></div>";
   if(cv3) b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">💚</span> " + esc(cv3.n) + "</div>";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📲</span> Tel: <strong>" + (a.tel ? esc(a.tel) : "<span style='color:var(--or)'>Nao cadastrado</span>") + "</strong></div>";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🪙</span> <strong style=\"color:var(--g)\">+" + a.cb + " pts</strong></div>";
@@ -3645,9 +3663,12 @@ function openEditAg(id) {
       var formaPgPrevista = document.getElementById("eFormaPg").value;
 
       var itensFaturaveisEdit = getItensFaturaveisPaciente(itensEdit);
-      var valorBrutoEdit = somarItens(itensFaturaveisEdit);
+      var itensEditCD = itensFaturaveisEdit.filter(function(it){ return itemTemDesconto(it); });
+      var itensEditSD = itensFaturaveisEdit.filter(function(it){ return !itemTemDesconto(it); });
 
-      var calcPgEdit = calcularValorFinalComDesconto(valorBrutoEdit, formaPgPrevista);
+      var calcPgEdit = calcularValorFinalComDesconto(somarItens(itensEditCD), formaPgPrevista);
+      calcPgEdit.valor_bruto += somarItens(itensEditSD);
+      calcPgEdit.valor_faturado += somarItens(itensEditSD);
 
       if(!nm2){ toast("⚠️","Informe o nome"); return; }
       if(!dtR || !hr2){ toast("⚠️","Informe data e hora"); return; }
@@ -3826,8 +3847,11 @@ function updAgSumEdit(){
   });
 
   var itensFaturaveis = getItensFaturaveisPaciente(itens);
-  var bruto = somarItens(itensFaturaveis);
-  var calc = calcularValorFinalComDesconto(bruto, formaPg);
+  var brutoCD = somarItens(itensFaturaveis.filter(function(it){ return itemTemDesconto(it); }));
+  var brutoSD = somarItens(itensFaturaveis.filter(function(it){ return !itemTemDesconto(it); }));
+  var calc = calcularValorFinalComDesconto(brutoCD, formaPg);
+  calc.valor_bruto += brutoSD;
+  calc.valor_faturado += brutoSD;
 
   div.innerHTML =
     "<div class='smb'>" +
@@ -3888,11 +3912,16 @@ async function confAg(isAtendimento) {
   var d4 = fdent(dId);
 
   var itensFaturaveis = getItensFaturaveisPaciente(itens);
-  var pr = somarItens(itensFaturaveis);
-  var pts4 = d4 ? calcCb(pr, d4.nv) : 0;
+  var itensComDesconto = itensFaturaveis.filter(function(it){ return itemTemDesconto(it); });
+  var itensSemDesconto = itensFaturaveis.filter(function(it){ return !itemTemDesconto(it); });
+  var prComDesconto = somarItens(itensComDesconto);
+  var prSemDesconto = somarItens(itensSemDesconto);
+  var pts4 = d4 ? calcCb(prComDesconto + prSemDesconto, d4.nv) : 0;
 
   var formaPagamentoPrevista = document.getElementById("pFormaPg")?.value || "avista";
-  var calcPg = calcularValorFinalComDesconto(pr, formaPagamentoPrevista);
+  var calcPg = calcularValorFinalComDesconto(prComDesconto, formaPagamentoPrevista);
+  calcPg.valor_bruto += prSemDesconto;
+  calcPg.valor_faturado += prSemDesconto;
 
   var ag = {
     pac: nm,
@@ -3924,6 +3953,8 @@ async function confAg(isAtendimento) {
     forma_pagamento_final: null,
     forma_entrega: document.getElementById("pFormaEntrega")?.value || "digital",
     previsao_entrega: document.getElementById("pPrevisaoEntrega")?.value || null,
+    observacoes: document.getElementById("pObs")?.value?.trim() || null,
+    obs: document.getElementById("pObs")?.value?.trim() || null,
     cb: pts4,
     st: isAtendimento ? "realizado" : "agendado",
     status: isAtendimento ? "realizado" : "agendado",
@@ -5618,12 +5649,19 @@ function updAgSum(){
 
   // 🔥 AQUI ESTÁ A CORREÇÃO
   var itensFaturaveis = getItensFaturaveisPaciente(itens);
-  var pr = somarItens(itensFaturaveis);
+  var itensComDesconto = itensFaturaveis.filter(function(it){ return itemTemDesconto(it); });
+  var itensSemDesconto = itensFaturaveis.filter(function(it){ return !itemTemDesconto(it); });
+  var prComDesconto = somarItens(itensComDesconto);
+  var prSemDesconto = somarItens(itensSemDesconto);
 
-  var pts4 = d ? calcCb(pr, d.nv) : 0;
+  var pts4 = d ? calcCb(prComDesconto + prSemDesconto, d.nv) : 0;
 
   var formaPagamentoPrevista = document.getElementById("pFormaPg")?.value || "avista";
-  var calcPg = calcularValorFinalComDesconto(pr, formaPagamentoPrevista);
+  // Desconto só se aplica a Particular e Tabela 2025
+  var calcPg = calcularValorFinalComDesconto(prComDesconto, formaPagamentoPrevista);
+  // Convênios: preço fixo (sem desconto)
+  calcPg.valor_bruto += prSemDesconto;
+  calcPg.valor_faturado += prSemDesconto;
 
   var formaLabel = "À vista";
   if(formaPagamentoPrevista === "3x") formaLabel = "3x";
@@ -5686,6 +5724,15 @@ function filtrarDentistasAg(){
       opcoes[i].style.display = "none";
     }
   }
+  mostrarEndDent();
+}
+function mostrarEndDent(){
+  var el = document.getElementById("dentEndInfo");
+  if(!el) return;
+  var dId = parseInt(document.getElementById("dSel").value) || 0;
+  if(!dId){ el.innerHTML = ""; return; }
+  var d = fdent(dId);
+  if(d && d.end){ el.innerHTML = "📍 " + d.end; } else { el.innerHTML = ""; }
 }
 function filtrarRankingDents(){
   var termo = (document.getElementById("cbDentBusca")?.value || "").toLowerCase();
@@ -5741,6 +5788,18 @@ function itemEhConvenioForaDoFaturamento(it){
   var nomeConvenio = cv && cv.n ? String(cv.n).toLowerCase() : "";
 
   return nomeConvenio.indexOf("unimed") >= 0 || nomeConvenio.indexOf("syns") >= 0;
+}
+
+function itemTemDesconto(it){
+  // Particular e Tabela 2025 têm desconto à vista/parcelamento
+  // Convenio 2025, SUS e outros convênios: preço fixo, sem desconto
+  var cvId = (it && it.convenio_id) ? String(it.convenio_id).trim() : "";
+  if(!cvId || cvId === "fb_13" || cvId === "13") return true; // Particular
+  var cv = fconv(cvId);
+  var nome = cv && cv.n ? cv.n.toLowerCase() : "";
+  if(nome.indexOf("particular") >= 0) return true;
+  if(nome.indexOf("tabela") >= 0) return true;  // Tabela 2025
+  return false;
 }
 
 function getItensFaturaveisPaciente(itens){
