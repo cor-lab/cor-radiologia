@@ -4021,6 +4021,9 @@ async function confAg(isAtendimento) {
   if (typeof rndAg === "function") {
     rndAg();
   }
+  if (typeof renderAtendimento === "function") {
+    renderAtendimento();
+  }
   if (typeof updAgSum === "function") {
     updAgSum();
   }
