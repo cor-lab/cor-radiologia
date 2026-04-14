@@ -3940,8 +3940,7 @@ async function confAg(isAtendimento) {
 
   var nomesExames = itens.map(function(it){
     var ex = fex(it.exame_id);
-    var cv = fconv(it.convenio_id || "");
-    return ex ? (ex.n + (cv ? " (" + cv.n + ")" : "")) : it.exame_id;
+    return ex ? ex.n : it.exame_id;
   }).join(", ");
 
   var wm = waFmt(waT.ag, {
