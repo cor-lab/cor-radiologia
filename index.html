@@ -4371,17 +4371,12 @@ function sWAi(id){
   if (Array.isArray(a.exames) && a.exames.length) {
     nomesExames = a.exames.map(function(it){
       var ex = fex(it.exame_id);
-      var cv = fconv(it.convenio_id || "");
-
       var nomeEx = ex ? ex.n : (it.nome_exame || it.exame_id || "Exame");
-      var nomeCv = cv ? cv.n : "Particular";
-
-      return nomeEx + " (" + nomeCv + ")";
+      return nomeEx;
     }).join(", ");
   } else {
     var ex = fex(a.ex);
-    var cv = fconv(a.cv || "");
-    nomesExames = (ex ? ex.n : "Exame") + " (" + (cv ? cv.n : "Particular") + ")";
+    nomesExames = ex ? ex.n : "Exame";
   }
 
   var msg = String(waT.ag || "")
