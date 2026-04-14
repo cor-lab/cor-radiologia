@@ -273,11 +273,11 @@ html+=_fic1(a,dn);
 html+=_fic2(a,dn);
 html+=_fic3(a,dn,exNm);
 html+=_fic4(a,dn);
-html+='<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script>';
+html+='<script>window.onload=function(){setTimeout(function(){window.print()},500)}<\/script>';
 html+='</body></html>';
 
-var blob=new Blob([html],{type:'text/html'});
-var blobUrl=URL.createObjectURL(blob);
-var w=window.open(blobUrl,'_blank','width=900,height=700');
+// Abrir via servidor local HTTP pra evitar bloqueio mixed content das fotos
+var encoded=btoa(unescape(encodeURIComponent(html)));
+var w=window.open(FICHAS_FOTO_BASE+'/print#'+encoded,'_blank','width=900,height=700');
 if(!w){toast("Erro","Popup bloqueado. Permita popups para imprimir.");return}
 }
