@@ -2,7 +2,7 @@
 // FICHAS.JS — Módulo de Fichas para Impressão
 // COR - Centro Odontológico de Radiologia
 // v2.0 — 12/04/2026
-// Ficha 4 refeita conforme layout original (10×10cm)
+// Ficha 4 refeita conforme layout original (6×7cm — A×L)
 // Ficha 3 margens revisadas (28 linhas sem quebra)
 //
 // 4 fichas impressas simultaneamente (cada uma em página A4):
@@ -42,8 +42,8 @@ function _fic_css(){return'\
 @import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap");\
 *{margin:0;padding:0;box-sizing:border-box}\
 body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margin:0;padding:0}\
-@page{size:A4 portrait;margin:0}\
-.pg{page-break-after:always;padding:10mm 10mm 10mm 15mm;position:relative;min-height:297mm}\
+@page{size:A4 portrait;margin:10mm 10mm 10mm 15mm}\
+.pg{page-break-after:always;padding:10mm 10mm 10mm 15mm;position:relative}\
 .pg:last-child{page-break-after:auto}\
 .hd{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;padding-bottom:10px;border-bottom:3px solid #3aaa35}\
 .hd-foto{width:90px;height:110px;border:2px solid #ccc;border-radius:6px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}\
@@ -75,19 +75,19 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .eo{display:flex;align-items:center;gap:3px;font-size:10px}\
 .en{border-bottom:1px solid #bbb;min-width:60px;min-height:13px}\
 .cdp{display:flex;justify-content:flex-start;align-items:flex-end;min-height:85vh}\
-.cde{display:flex;border:1.5px solid #333;width:100mm;height:100mm;position:relative;overflow:hidden}\
-.cd-left{width:34mm;flex-shrink:0;display:flex;flex-direction:column;border-right:1.5px solid #333}\
-.cd-logo-box{height:38mm;display:flex;align-items:center;justify-content:center;padding:2mm;background:#ffffff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
-.cd-logo-box img{max-height:34mm;max-width:30mm;object-fit:contain}\
+.cde{display:flex;border:1.5px solid #333;width:70mm;height:60mm;position:relative;overflow:hidden}\
+.cd-left{width:24mm;flex-shrink:0;display:flex;flex-direction:column;border-right:1.5px solid #333}\
+.cd-logo-box{height:22mm;display:flex;align-items:center;justify-content:center;padding:1mm;background:#ffffff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
+.cd-logo-box img{max-height:20mm;max-width:20mm;object-fit:contain}\
 .cd-foto-box{flex:1;overflow:hidden;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-top:1px solid #ccc}\
 .cd-foto-box img{width:100%;height:100%;object-fit:cover}\
 .cd-dados{flex:1;display:flex;flex-direction:column;padding:0;position:relative}\
-.cd-top-right{padding:5mm 4mm 2mm;text-align:right;font-size:11px;line-height:2.2}\
+.cd-top-right{padding:3mm 3mm 1mm;text-align:right;font-size:9px;line-height:1.8}\
 .cd-top-right b{color:#333;font-weight:600}\
-.cd-sep{height:4px;background:#3aaa35;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
-.cd-body{padding:3mm 4mm 4mm;flex:1;display:flex;flex-direction:column;justify-content:flex-start}\
-.cdn{font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:8px;letter-spacing:.3px;display:block;word-break:break-word;line-height:1.3}\
-.cd-info-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 6px;font-size:11px;line-height:2}\
+.cd-sep{height:3px;background:#3aaa35;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
+.cd-body{padding:2mm 3mm 3mm;flex:1;display:flex;flex-direction:column;justify-content:flex-start}\
+.cdn{font-size:11px;font-weight:700;color:#1a1a2e;margin-bottom:4px;letter-spacing:.3px;display:block;word-break:break-word;line-height:1.3}\
+.cd-info-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 4px;font-size:9px;line-height:1.6}\
 .cd-info-grid b{color:#333;font-weight:600;white-space:nowrap}\
 .cd-info-grid span{color:#1a1a2e}\
 @media print{body{margin:0!important;padding:0!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.pg{padding:10mm 10mm 10mm 15mm!important}}\
@@ -218,7 +218,7 @@ h+='<tr><td style="height:18px">'+_fic_fmt(a.dt)+'</td><td style="height:18px">'
 for(var i=0;i<37;i++)h+='<tr><td style="height:18px"></td><td style="height:18px"></td><td style="height:18px"></td></tr>';
 return h+'</tbody></table></div>'}
 
-/* ═══ FICHA 4 — ETIQUETA CD (10×10cm, canto inferior esquerdo) ═══ */
+/* ═══ FICHA 4 — ETIQUETA CD (6×7cm A×L, canto inferior esquerdo) ═══ */
 function _fic4(a,dn){
 var id=_fic_idade(a.paciente_data_nascimento||''),nb=_fic_fmt(a.paciente_data_nascimento||''),db=_fic_fmt(a.dt);
 var seq=a.firebird_seq_atend||'';
@@ -229,9 +229,9 @@ var h='<div class="pg"><div class="cdp"><div class="cde">';
 h+='<div class="cd-left">';
 h+='<div class="cd-logo-box"><img src="logo_site.jpg" alt="COR"></div>';
 if(fotoUrl){
-h+='<div class="cd-foto-box"><img src="'+fotoUrl+'" onerror="this.parentNode.innerHTML=\'<div style=color:#bbb;font-size:9px;text-align:center;padding-top:20mm>Foto<br>indisponível</div>\'" alt="Foto"></div>';
+h+='<div class="cd-foto-box"><img src="'+fotoUrl+'" onerror="this.parentNode.innerHTML=\'<div style=color:#bbb;font-size:8px;text-align:center;padding-top:10mm>Foto<br>indisponível</div>\'" alt="Foto"></div>';
 }else{
-h+='<div class="cd-foto-box"><div style="color:#bbb;font-size:9px;text-align:center;padding-top:20mm">Foto<br>Paciente</div></div>';
+h+='<div class="cd-foto-box"><div style="color:#bbb;font-size:8px;text-align:center;padding-top:10mm">Foto<br>Paciente</div></div>';
 }
 h+='</div>';
 
