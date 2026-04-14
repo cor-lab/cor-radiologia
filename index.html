@@ -2510,7 +2510,7 @@ function fdent(id) { return dents.find(function(d){return d.id===id;}); }
 function fconv(id) { return convs.find(function(c){return c.id===id;}); }
 function epreco(exId, cId) { var ex=fex(exId); var c=fconv(cId); return (c&&c.pr[exId])?c.pr[exId]:ex.p; }
 function cpts(exId, nivel) { var ex=fex(exId); var b=(nlv[nivel]||nlv.Bronze).bonus; return Math.round(ex.pts*b); }
-function waFmt(tpl,vars) { var s=tpl; for(var k in vars) s=s.split("{"+k+"}").join(vars[k]); return s; }
+function waFmt(tpl,vars) { var v={}; for(var k in vars) v[k]=vars[k]; if(v.exame) v.exame=v.exame.replace(/\s*\([^)]*\)/g,'').trim(); var s=tpl; for(var k in v) s=s.split("{"+k+"}").join(v[k]); return s; }
 function waHtml(msg) { return esc(msg).replace(/\n/g,"<br>").replace(/\*(.*?)\*/g,"<strong>$1</strong>"); }
 
 // ══ DATA ══
@@ -4381,7 +4381,7 @@ function sWAi(id){
 
   var msg = String(waT.ag || "")
     .replaceAll("{nome}", a.pac || "")
-    .replaceAll("{exame}", nomesExames || "")
+    .replaceAll("{exame}", (nomesExames || "").replace(/\s*\([^)]*\)/g,'').trim())
     .replaceAll("{data}", a.dt || "")
     .replaceAll("{hora}", a.hr || "")
     .replaceAll("{clinica}", "COR — Centro Odontologico de Radiologia");
