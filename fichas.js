@@ -107,7 +107,7 @@ return'<div class="hd">'+
 '<span class="hd-l">Nascimento:</span><span>'+nb+'</span>'+
 '<span class="hd-l">Idade:</span><span>'+id+'</span>'+
 '</div></div>'+
-'<div class="hd-logo"><img src="logo.png" alt="COR"></div></div>'}
+'<div class="hd-logo"><img src="https://cor-lab.github.io/cor-radiologia/logo.png" alt="COR"></div></div>'}
 
 /* ═══ FICHA 1 — PACIENTE ═══ */
 function _fic1(a,dn){
@@ -227,7 +227,7 @@ var h='<div class="pg"><div class="cdp"><div class="cde">';
 
 // Coluna esquerda: Logo (topo) + Foto (embaixo)
 h+='<div class="cd-left">';
-h+='<div class="cd-logo-box"><img src="logo_site.jpg" alt="COR"></div>';
+h+='<div class="cd-logo-box"><img src="https://cor-lab.github.io/cor-radiologia/logo_site.jpg" alt="COR"></div>';
 if(fotoUrl){
 h+='<div class="cd-foto-box"><img src="'+fotoUrl+'" onerror="this.parentNode.innerHTML=\'<div style=color:#bbb;font-size:8px;text-align:center;padding-top:10mm>Foto<br>indisponível</div>\'" alt="Foto"></div>';
 }else{
@@ -267,16 +267,17 @@ if(nm)nomes.push(nm)});
 var exNm=nomes.join(', ')||'Atendimento';
 
 var html='<!DOCTYPE html><html><head><meta charset="UTF-8">';
-html+='<base href="'+window.location.href.replace(/[^\/]*$/,'')+'">';
 html+='<title>Fichas - '+_fic_e(a.pac)+'</title>';
 html+='<style>'+_fic_css()+'</style></head><body>';
 html+=_fic1(a,dn);
 html+=_fic2(a,dn);
 html+=_fic3(a,dn,exNm);
 html+=_fic4(a,dn);
+html+='<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script>';
 html+='</body></html>';
 
-var w=window.open('','_blank','width=900,height=700');
+var blob=new Blob([html],{type:'text/html'});
+var blobUrl=URL.createObjectURL(blob);
+var w=window.open(blobUrl,'_blank','width=900,height=700');
 if(!w){toast("Erro","Popup bloqueado. Permita popups para imprimir.");return}
-w.document.write(html);w.document.close();
-setTimeout(function(){w.print()},600)}
+}
