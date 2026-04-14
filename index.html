@@ -515,7 +515,7 @@ tr:last-child td{border-bottom:none}
 .ag-gw::-webkit-scrollbar{width:5px;height:5px}
 .ag-gw::-webkit-scrollbar-thumb{background:rgba(74,184,72,.3);border-radius:3px}
 .ag-tc{width:50px;flex-shrink:0;position:sticky;left:0;z-index:10;background:rgba(13,24,48,.97)}
-.ag-ts{height:14px;display:flex;align-items:flex-start;justify-content:flex-end;padding-right:8px;padding-top:0;font-size:.60rem;color:var(--gr);font-family:"DM Mono",monospace;border-top:1px solid rgba(255,255,255,.05);line-height:1}
+.ag-ts{height:18px;display:flex;align-items:flex-start;justify-content:flex-end;padding-right:8px;padding-top:0;font-size:.62rem;color:var(--gr);font-family:"DM Mono",monospace;border-top:1px solid rgba(255,255,255,.05);line-height:1}
 .ag-ts.hf{border-top-color:rgba(255,255,255,.02);font-size:0}
 .ag-dc{flex:1;border-left:1px solid rgba(255,255,255,.06);position:relative;min-width:140px}
 .ag-dh{text-align:center;padding:10px 4px;position:sticky;top:0;background:rgba(18,36,78,.98);z-index:5;border-bottom:1px solid rgba(255,255,255,.08)}
@@ -525,7 +525,7 @@ tr:last-child td{border-bottom:none}
 .ag-cl{height:14px;border-top:1px solid rgba(255,255,255,.045);cursor:pointer;transition:background .1s}
 .ag-cl:hover{background:rgba(74,184,72,.06)}
 .ag-cl.hf{border-top-color:rgba(255,255,255,.018)}
-.ag-ev{position:absolute;left:3px;right:3px;border-radius:6px;padding:4px 8px 4px 14px;font-size:.78rem;cursor:pointer;overflow:hidden;z-index:2;box-shadow:0 1px 6px rgba(0,0,0,.18);transition:filter .14s,transform .14s;display:flex;flex-direction:column;gap:1px;border:1px solid rgba(0,0,0,.1);background:#fff;color:#1a1a2e;border-left:none}
+.ag-ev{position:absolute;border-radius:6px;padding:5px 8px 5px 14px;font-size:.78rem;cursor:pointer;overflow:hidden;z-index:2;box-shadow:0 1px 6px rgba(0,0,0,.18);transition:filter .14s,transform .14s;display:flex;flex-direction:column;gap:2px;border:1px solid rgba(0,0,0,.1);background:#fff;color:#1a1a2e;border-left:none}
 .ag-ev:hover{filter:brightness(.97);z-index:3;transform:scale(1.01);box-shadow:0 3px 12px rgba(0,0,0,.22)}
 .et{font-size:.72rem;font-weight:700;font-family:"DM Sans",sans-serif;white-space:nowrap;letter-spacing:.01em;line-height:1.4;color:#1a1a2e}
 .en{font-weight:700;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1a1a2e}
@@ -3307,7 +3307,7 @@ setTimeout(function(){
 
 var agView = "dia";
 var agBase = new Date();
-var AGS = 7; var AGE = 19; var AGSZ = 14;
+var AGS = 7; var AGE = 19; var AGSZ = 18;
 var ECS = {agendado:"ec0",realizado:"ec1",aguardando:"ec2",cancelado:"ec3"};
 
 var _agSaving = false;
@@ -3374,11 +3374,41 @@ function rndAg() {
       var dp=a.dt.split("/");
       return new Date(parseInt(dp[2]),parseInt(dp[1])-1,parseInt(dp[0])).toDateString()===day.toDateString();
     });
+    // Calcular colunas para eventos sobrepostos
+    dayAgs.sort(function(a,b){ return t2m(a.hr)-t2m(b.hr); });
+    var evCols=[]; // {sm, em, col, totalCols}
     dayAgs.forEach(function(a){
+      var sm=t2m(a.hr); var dur=a.dur||30; var em=sm+dur;
+      // Achar coluna livre
+      var col=0;
+      for(var c=0;c<100;c++){
+        var livre=true;
+        for(var j=0;j<evCols.length;j++){
+          if(evCols[j].col===c && sm<evCols[j].em && em>evCols[j].sm){ livre=false; break; }
+        }
+        if(livre){ col=c; break; }
+      }
+      evCols.push({id:a.id, sm:sm, em:em, col:col});
+    });
+    // Calcular total de colunas por grupo de overlap
+    dayAgs.forEach(function(a,idx){
+      var me=evCols[idx];
+      var maxCol=me.col;
+      for(var j=0;j<evCols.length;j++){
+        if(me.sm<evCols[j].em && me.em>evCols[j].sm){
+          if(evCols[j].col>maxCol) maxCol=evCols[j].col;
+        }
+      }
+      me.totalCols=maxCol+1;
+    });
+    dayAgs.forEach(function(a,idx){
       var sm=t2m(a.hr); var dur=a.dur||30; var em2=sm+dur;
-      var top2=((sm-AGS*60)/5)*AGSZ; var ht=Math.max((dur/5)*AGSZ,50);
+      var top2=((sm-AGS*60)/5)*AGSZ; var ht=Math.max((dur/5)*AGSZ,54);
+      var ec=evCols[idx];
+      var colW=100/ec.totalCols;
+      var evLeft=(ec.col*colW)+1;
+      var evWidth=colW-2;
       var ex2=fex(a.ex); var cv2=fconv(a.cv);
-      // Se tiver array de exames, mostra todos
       var nomesEx = "";
       if (Array.isArray(a.exames) && a.exames.length) {
         nomesEx = a.exames.map(function(it){
@@ -3389,8 +3419,8 @@ function rndAg() {
         nomesEx = ex2 ? ex2.n : "—";
       }
       var cl=ECS[a.st]||"ec0";
-      h += "<div class=\"ag-ev "+cl+"\" style=\"top:"+top2+"px;height:"+ht+"px\" onclick=\"agEV(event,"+a.id+")\">";
-      h+="<div class=\"et\">"+esc(a.hr)+" - "+esc(m2t(em2))+" | <strong>"+esc(a.pac)+"</strong>"+(cv2?" ("+esc(cv2.n)+")":"")+"</div>";
+      h += "<div class=\"ag-ev "+cl+"\" style=\"top:"+top2+"px;height:"+ht+"px;left:"+evLeft+"%;width:"+evWidth+"%\" onclick=\"agEV(event,"+a.id+")\">";
+      h+="<div class=\"et\">"+esc(a.hr)+" – "+esc(m2t(em2))+" | <strong>"+esc(a.pac)+"</strong></div>";
       h+="<div class=\"es\">"+esc(nomesEx)+"</div>";
       if(a.st==="realizado") h+="<div class=\"eck\">&#10003;</div>";
       h+="</div>";
