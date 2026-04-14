@@ -45,7 +45,7 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 @page{size:A4 portrait;margin:0}\
 .pg{page-break-after:always;padding:10mm 10mm 10mm 15mm;position:relative}\
 .pg:last-child{page-break-after:auto}\
-.hd{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;padding-bottom:10px;border-bottom:3px solid #3aaa35}\
+.hd{display:flex;align-items:flex-start;gap:12px;margin:15mm 0 10px 40mm;padding-bottom:10px;border-bottom:3px solid #3aaa35}\
 .hd-foto{width:90px;height:110px;border:2px solid #ccc;border-radius:6px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}\
 .hd-foto img{width:100%;height:100%;object-fit:cover}\
 .hd-ph{color:#aaa;font-size:10px;text-align:center}\
@@ -91,7 +91,38 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .cd-info-grid b{color:#333;font-weight:600;white-space:nowrap}\
 .cd-info-grid span{color:#1a1a2e}\
 @media print{body{margin:0!important;padding:0!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.pg{padding:10mm 10mm 10mm 15mm!important}}\
+.punch{position:absolute;left:3mm;width:5mm;height:0;border-top:1px solid #aaa}\
+.punch1{top:115mm}\
+.punch2{top:198mm}\
+.visor{margin:8mm 0 8px 18mm;width:115mm;font-size:10.5px;line-height:1.5}\
+.visor-nome{font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:3px;letter-spacing:.3px}\
+.visor-g{display:grid;grid-template-columns:auto 1fr;gap:1px 6px}\
+.visor-l{font-weight:700;color:#555;font-size:10px}\
+.visor-sep{border-bottom:2px solid #3aaa35;margin:4px 0}\
+.visor-addr{display:grid;grid-template-columns:1fr auto;gap:1px 12px;font-size:10px}\
 '}
+
+function _fic_punch(){return'<div class="punch punch1"></div><div class="punch punch2"></div>'}
+
+function _fic_visor(a,dn){
+var nb=_fic_fmt(a.paciente_data_nascimento||''),id=_fic_idade(a.paciente_data_nascimento||''),db=_fic_fmt(a.dt);
+var ed=a.paciente_logradouro||'',ba=a.paciente_bairro||'',ci=a.paciente_municipio||'',ce=a.paciente_cep||'',nu=a.paciente_numero||'';
+var h='<div class="visor">';
+h+='<div class="visor-nome">'+_fic_e(a.pac||'SEM NOME').toUpperCase()+'</div>';
+h+='<div class="visor-g">';
+h+='<span class="visor-l">Telefone:</span><span>'+_fic_e(a.tel||'')+'</span>';
+h+='<span class="visor-l">Data:</span><span>'+db+'</span>';
+h+='<span class="visor-l">Nascimento:</span><span>'+nb+'</span>';
+h+='<span class="visor-l">Idade:</span><span>'+id+'</span>';
+h+='</div>';
+h+='<div class="visor-sep"></div>';
+h+='<div class="visor-addr">';
+h+='<div><span class="visor-l">Endereço:</span> '+_fic_e(ed).toUpperCase()+'</div><div><span class="visor-l">Nº:</span> '+_fic_e(nu)+'</div>';
+h+='<div><span class="visor-l">Bairro:</span> '+_fic_e(ba).toUpperCase()+'</div><div><span class="visor-l">CEP:</span> '+_fic_e(ce)+'</div>';
+h+='<div><span class="visor-l">Cidade:</span> '+_fic_e(ci).toUpperCase()+'</div><div><span class="visor-l">UF:</span> RS</div>';
+h+='</div></div>';
+return h;
+}
 
 function _fic_hd(a,dn){
 var nb=_fic_fmt(a.paciente_data_nascimento||''),id=_fic_idade(a.paciente_data_nascimento||''),db=_fic_fmt(a.dt);
@@ -112,7 +143,7 @@ return'<div class="hd">'+
 /* ═══ FICHA 1 — PACIENTE ═══ */
 function _fic1(a,dn){
 var ed=a.paciente_logradouro||'',ba=a.paciente_bairro||'',ci=a.paciente_municipio||'',ce=a.paciente_cep||'',nu=a.paciente_numero||'';
-var h='<div class="pg">'+_fic_hd(a,dn);
+var h='<div class="pg">'+_fic_punch()+_fic_hd(a,dn);
 h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 16px;margin:8px 0">';
 h+='<div>';
 h+='<div class="fr"><span class="fl">Pai:</span><span class="fn"></span></div>';
@@ -153,12 +184,12 @@ h+='<div class="fr"><span class="fl">Estágio desenvolvimento ósseo:</span><spa
 h+='<div class="fr"><span class="fl">Cirurgia anterior:</span><span class="fn"></span></div>';
 h+='<div class="fr"><span class="fl">Saúde atual:</span><span class="fn"></span></div>';
 h+='</div>';
-for(var l=0;l<6;l++)h+='<div class="ln"></div>';
+for(var l=0;l<5;l++)h+='<div class="ln"></div>';
 return h+'</div>'}
 
 /* ═══ FICHA 2 — EXAME CLÍNICO ═══ */
 function _fic2(a,dn){
-var h='<div class="pg">'+_fic_hd(a,dn);
+var h='<div class="pg">'+_fic_punch()+_fic_hd(a,dn);
 h+='<div class="st">Exame Clínico</div>';
 
 h+='<div class="er"><span class="el">RESPIRAÇÃO:</span><span class="fl">PREDOMINÂNCIA:</span><span class="eo"><span class="cb"></span> NASAL</span><span class="eo"><span class="cb"></span> BUCAL</span><span class="eo"><span class="cb"></span> MISTA</span></div>';
@@ -211,7 +242,7 @@ return h+'</div>'}
 
 /* ═══ FICHA 3 — INTERVENÇÕES (38 linhas, preenchendo até o rodapé) ═══ */
 function _fic3(a,dn,exNm){
-var h='<div class="pg">'+_fic_hd(a,dn);
+var h='<div class="pg">'+_fic_punch()+_fic_hd(a,dn);
 h+='<div class="st">Intervenções</div>';
 h+='<table class="tb"><thead><tr><th style="width:80px">Data</th><th>Trabalhos Realizados</th><th>Trabalhos a Realizar</th></tr></thead><tbody>';
 h+='<tr><td style="height:18px">'+_fic_fmt(a.dt)+'</td><td style="height:18px">'+_fic_e(exNm)+'</td><td style="height:18px"></td></tr>';
@@ -223,7 +254,7 @@ function _fic4(a,dn){
 var id=_fic_idade(a.paciente_data_nascimento||''),nb=_fic_fmt(a.paciente_data_nascimento||''),db=_fic_fmt(a.dt);
 var seq=a.firebird_seq_atend||'';
 var fotoUrl=seq?(FICHAS_FOTO_BASE+'/'+Math.floor(parseInt(seq)/1000)+'/'+parseInt(seq)+'fs.jpg'):'';
-var h='<div class="pg"><div class="cdp"><div class="cde">';
+var h='<div class="pg">'+_fic_punch()+'<div class="cdp"><div class="cde">';
 
 // Coluna esquerda: Logo (topo) + Foto (embaixo)
 h+='<div class="cd-left">';
