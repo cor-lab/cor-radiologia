@@ -5550,29 +5550,52 @@ function svWA(){
   if(a) waT.ag = a.value;
   if(l) waT.lb = l.value;
 
-  try{
-    localStorage.setItem("cor_wa_templates", JSON.stringify({
-      ag: waT.ag,
-      lb: waT.lb
-    }));
-  }catch(e){
-    console.error("Erro ao salvar templates WhatsApp:", e);
-  }
+  var payload = { ag: waT.ag, lb: waT.lb };
 
-  toast("💾","Templates salvos!");
+  // Salvar no Supabase (persistente)
+  supa.from("configuracoes").upsert({
+    chave: "wa_templates",
+    valor: payload,
+    updated_at: new Date().toISOString()
+  }, { onConflict: "chave" }).then(function(res){
+    if(res.error){
+      console.error("Erro Supabase wa_templates:", res.error);
+      toast("⚠️","Erro ao salvar no servidor. Salvo local.");
+    } else {
+      toast("💾","Templates salvos no servidor!");
+    }
+  });
+
+  // Fallback localStorage
+  try{ localStorage.setItem("cor_wa_templates", JSON.stringify(payload)); }catch(e){}
 }
 function loadWaTemplates(){
+  // Carregar do Supabase (prioridade)
+  supa.from("configuracoes").select("valor").eq("chave","wa_templates").single().then(function(res){
+    if(res.data && res.data.valor){
+      var saved = res.data.valor;
+      if(saved.ag) waT.ag = saved.ag;
+      if(saved.lb) waT.lb = saved.lb;
+      console.log("WA templates carregados do Supabase");
+      return;
+    }
+    // Fallback: localStorage
+    loadWaTemplatesLocal();
+  }).catch(function(){
+    loadWaTemplatesLocal();
+  });
+}
+function loadWaTemplatesLocal(){
   try{
     var raw = localStorage.getItem("cor_wa_templates");
     if(!raw) return;
-
     var saved = JSON.parse(raw);
     if(saved && typeof saved === "object"){
       if(saved.ag) waT.ag = saved.ag;
       if(saved.lb) waT.lb = saved.lb;
     }
   }catch(e){
-    console.error("Erro ao carregar templates WhatsApp:", e);
+    console.error("Erro ao carregar templates WA local:", e);
   }
 }
 function openExM(eid){var ed=eid?exT.find(function(e){return e.id===eid;}):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='fg2'><div class='field'><label>Nome</label><input id='eNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Tomografia'></div><div class='field'><label>Icone</label><input id='eIco' value='"+(ed?ed.ico:"🩻")+"'></div></div><div class='fg2'><div class='field'><label>Preco Particular (R$)</label><input type='number' id='eP' value='"+(ed?ed.p:100)+"'></div><div class='field'><label>Pontos Fidelidade</label><input type='number' id='ePt' value='"+(ed?ed.pts:40)+"'></div></div></div>";openM(eid?"Editar Exame":"Novo Exame",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:eid?"Salvar":"Adicionar",cls:"btng",fn:function(){var nm=document.getElementById("eNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}if(ed){ed.n=nm;ed.ico=document.getElementById("eIco").value;ed.p=parseInt(document.getElementById("eP").value)||100;ed.pts=parseInt(document.getElementById("ePt").value)||40;}else{exT.push({id:"e"+Date.now(),n:nm,ico:document.getElementById("eIco").value,p:parseInt(document.getElementById("eP").value)||100,pts:parseInt(document.getElementById("ePt").value)||40});}var exObj=eid?exT.find(function(e){return e.id===eid;}):exT[exT.length-1];dbSaveEx(exObj,!eid).then(function(){});var prObj=eid?prems.find(function(p){return p.id===eid;}):prems[prems.length-1];dbSavePrem(prObj,!eid).then(function(){});closeM();rcfg();toast("✅",nm+(eid?" atualizado":" adicionado"));}}]);}
