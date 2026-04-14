@@ -42,7 +42,7 @@ function _fic_css(){return'\
 @import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap");\
 *{margin:0;padding:0;box-sizing:border-box}\
 body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margin:0;padding:0}\
-@page{size:A4 portrait;margin:10mm 10mm 10mm 15mm}\
+@page{size:A4 portrait;margin:0}\
 .pg{page-break-after:always;padding:10mm 10mm 10mm 15mm;position:relative}\
 .pg:last-child{page-break-after:auto}\
 .hd{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;padding-bottom:10px;border-bottom:3px solid #3aaa35}\
@@ -74,7 +74,7 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .el{font-weight:700;font-size:10.5px;color:#1a1a2e;min-width:120px}\
 .eo{display:flex;align-items:center;gap:3px;font-size:10px}\
 .en{border-bottom:1px solid #bbb;min-width:60px;min-height:13px}\
-.cdp{display:flex;justify-content:flex-start;align-items:flex-end;min-height:85vh}\
+.cdp{display:flex;justify-content:flex-start;align-items:flex-start;min-height:auto;padding-top:5mm}\
 .cde{display:flex;border:1.5px solid #333;width:70mm;height:60mm;position:relative;overflow:hidden}\
 .cd-left{width:24mm;flex-shrink:0;display:flex;flex-direction:column;border-right:1.5px solid #333}\
 .cd-logo-box{height:22mm;display:flex;align-items:center;justify-content:center;padding:1mm;background:#ffffff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
