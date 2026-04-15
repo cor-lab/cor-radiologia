@@ -3577,6 +3577,31 @@ function agEV(ev, id) {
   })(a);
 }
 
+  if((a.status_clinico || a.st)=="realizado"){
+  (function(ag){
+    btns.push({
+      lbl:"↩️ Reverter p/ Agendado",
+      cls:"btnr",
+      fn:async function(){
+        if(!confirm("Tem certeza que deseja reverter para Agendado?\nIsso vai desfazer a realização no Firebird também.")) return;
+        try{
+          var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?id=eq."+ag.id,{
+            method:"PATCH",
+            headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},
+            body:JSON.stringify({status:"agendado",status_clinico:"agendado",pending_revert:true,firebird_seq_atend:null})
+          });
+          if(r.ok){
+            ag.st="agendado";ag.status="agendado";ag.status_clinico="agendado";ag.firebird_seq_atend=null;
+            closeM();rndAg();
+            if(typeof renderAtendimento==="function") renderAtendimento();
+            toast("✅","Revertido para Agendado. Firebird será atualizado em breve.");
+          }else{toast("Erro","Falha ao reverter: "+r.status);}
+        }catch(e){toast("Erro","Falha: "+e.message);}
+      }
+    });
+  })(a);
+}
+
   (function(ag){
     (function(ag){btns.push({lbl:"🖨️ Imprimir OS", cls:"btno", fn:function(){ closeM(); imprimirOS(ag.id); }});})(a);
     (function(ag){btns.push({lbl:"🏷️ Etiq. Envelope", cls:"btno", fn:function(){ imprimirEtiqueta(ag.id, "envelope"); }});})(a);
