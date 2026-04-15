@@ -75,19 +75,20 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .eo{display:flex;align-items:center;gap:3px;font-size:10px}\
 .en{border-bottom:1px solid #bbb;min-width:60px;min-height:13px}\
 .cdp{display:flex;justify-content:flex-start;align-items:flex-start;min-height:auto;padding-top:5mm}\
-.cde{display:flex;border:1.5px solid #333;width:70mm;height:60mm;position:relative;overflow:hidden}\
-.cd-left{width:24mm;flex-shrink:0;display:flex;flex-direction:column;border-right:1.5px solid #333}\
-.cd-logo-box{height:15mm;display:flex;align-items:center;justify-content:center;padding:1mm;background:#ffffff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
-.cd-logo-box img{max-height:13mm;max-width:22mm;object-fit:contain}\
-.cd-foto-box{flex:1;overflow:hidden;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-top:1px solid #ccc}\
+.cd-crop{border:0.5px dashed #999;width:87mm;height:67mm;display:flex;align-items:center;justify-content:center}\
+.cde{display:flex;flex-direction:column;border:0.5px solid #ccc;width:60mm;height:50mm;position:relative;overflow:hidden}\
+.cd-header{display:flex;align-items:center;padding:1.5mm;gap:1.5mm;min-height:15mm}\
+.cd-header-logo{flex-shrink:0;display:flex;align-items:center}\
+.cd-header-logo img{height:12mm;object-fit:contain}\
+.cd-header-info{flex:1;text-align:right;font-size:7.5px;line-height:1.7;padding-right:1mm}\
+.cd-header-info b{color:#333;font-weight:600}\
+.cd-sep{height:2.5px;background:#3aaa35;margin:0;flex-shrink:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
+.cd-content{display:flex;flex:1;overflow:hidden}\
+.cd-foto-box{width:22mm;flex-shrink:0;overflow:hidden;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-right:1px solid #ddd}\
 .cd-foto-box img{width:100%;height:100%;object-fit:cover}\
-.cd-dados{flex:1;display:flex;flex-direction:column;padding:0;position:relative}\
-.cd-top-right{padding:3mm 3mm 1mm;text-align:right;font-size:9px;line-height:1.8}\
-.cd-top-right b{color:#333;font-weight:600}\
-.cd-sep{height:3px;background:#3aaa35;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
-.cd-body{padding:2mm 3mm 3mm;flex:1;display:flex;flex-direction:column;justify-content:flex-start}\
-.cdn{font-size:11px;font-weight:700;color:#1a1a2e;margin-bottom:4px;letter-spacing:.3px;display:block;word-break:break-word;line-height:1.3}\
-.cd-info-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 4px;font-size:9px;line-height:1.6}\
+.cd-dados{flex:1;padding:1.5mm 2.5mm;display:flex;flex-direction:column;justify-content:center}\
+.cdn{font-size:10px;font-weight:700;color:#1a1a2e;margin-bottom:3px;letter-spacing:.3px;display:block;word-break:break-word;line-height:1.3}\
+.cd-info-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 4px;font-size:8px;line-height:1.6}\
 .cd-info-grid b{color:#333;font-weight:600;white-space:nowrap}\
 .cd-info-grid span{color:#1a1a2e}\
 @media print{body{margin:0!important;padding:0!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.pg{padding:10mm 10mm 10mm 15mm!important}}\
@@ -249,38 +250,41 @@ h+='<tr><td style="height:18px">'+_fic_fmt(a.dt)+'</td><td style="height:18px">'
 for(var i=0;i<37;i++)h+='<tr><td style="height:18px"></td><td style="height:18px"></td><td style="height:18px"></td></tr>';
 return h+'</tbody></table></div>'}
 
-/* ═══ FICHA 4 — ETIQUETA CD (6×7cm A×L, canto inferior esquerdo) ═══ */
+/* ═══ FICHA 4 — ETIQUETA CD (7×6cm, layout referência) ═══ */
 function _fic4(a,dn){
 var id=_fic_idade(a.paciente_data_nascimento||''),nb=_fic_fmt(a.paciente_data_nascimento||''),db=_fic_fmt(a.dt);
 var seq=a.firebird_seq_atend||'';
 var fotoUrl=seq?(FICHAS_FOTO_BASE+'/'+Math.floor(parseInt(seq)/1000)+'/'+parseInt(seq)+'fs.jpg'):'';
-var h='<div class="pg">'+_fic_punch()+'<div class="cdp"><div class="cde">';
+var h='<div class="pg">'+_fic_punch()+'<div class="cdp"><div class="cd-crop">';
+h+='<div class="cde">';
 
-// Coluna esquerda: Logo (topo) + Foto (embaixo)
-h+='<div class="cd-left">';
-h+='<div class="cd-logo-box"><img src="https://cor-lab.github.io/cor-radiologia/logo_site.jpg" alt="COR"></div>';
-if(fotoUrl){
-h+='<div class="cd-foto-box"><img src="'+fotoUrl+'" onerror="this.parentNode.innerHTML=\'<div style=color:#bbb;font-size:8px;text-align:center;padding-top:10mm>Foto<br>indisponível</div>\'" alt="Foto"></div>';
-}else{
-h+='<div class="cd-foto-box"><div style="color:#bbb;font-size:8px;text-align:center;padding-top:10mm">Foto<br>Paciente</div></div>';
-}
+// TOPO: Logo COR (esquerda) + Data (direita)
+h+='<div class="cd-header">';
+h+='<div class="cd-header-logo"><img src="https://cor-lab.github.io/cor-radiologia/logo_site.jpg" alt="COR"></div>';
+h+='<div class="cd-header-info"><b>Data:</b> '+db+'<br><b>Fone:</b> '+_fic_e(a.tel||'')+'</div>';
 h+='</div>';
 
-// Coluna direita: Data/Fone → barra verde → Nome + Dr, Idade, Nasc
-h+='<div class="cd-dados">';
-h+='<div class="cd-top-right"><b>Data:</b> '+db+'<br><b>Fone:</b> '+_fic_e(a.tel||'')+'</div>';
+// BARRA VERDE
 h+='<div class="cd-sep"></div>';
-h+='<div class="cd-body">';
+
+// CORPO: Foto (esquerda) + Nome/Idade/Nasc/Dr (direita)
+h+='<div class="cd-content">';
+if(fotoUrl){
+h+='<div class="cd-foto-box"><img src="'+fotoUrl+'" onerror="this.parentNode.innerHTML=\'<div style=color:#bbb;font-size:8px;text-align:center;padding-top:12mm>Foto<br>indisponível</div>\'" alt="Foto"></div>';
+}else{
+h+='<div class="cd-foto-box"><div style="color:#bbb;font-size:8px;text-align:center;padding-top:12mm">Foto<br>Paciente</div></div>';
+}
+h+='<div class="cd-dados">';
 h+='<div class="cdn">'+_fic_e(a.pac||'SEM NOME').toUpperCase()+'</div>';
 h+='<div class="cd-info-grid">';
-h+='<b>Dr.(a):</b><span>'+_fic_e(dn)+'</span>';
 h+='<b>Idade:</b><span>'+id+'</span>';
 h+='<b>Nasc.:</b><span>'+nb+'</span>';
+h+='<b>Dr.(a):</b><span>'+_fic_e(dn)+'</span>';
 h+='</div>';
 h+='</div>';
 h+='</div>';
 
-h+='</div></div></div>';
+h+='</div></div></div></div>';
 return h}
 
 /* ══════════════════════════════════════════════════════════
