@@ -2652,8 +2652,8 @@ function renderHistorico() {
 
   // Busca
   h += "<div class='hist-search'>";
-  h += "<div class='field' style='flex:2'><label>Buscar Paciente (nome ou CPF)</label>";
-  h += "<input type='text' id='histBuscaInput' value='" + esc(histBusca) + "' placeholder='Nome ou CPF do paciente...' onkeydown=\"if(event.key==='Enter')buscarHistorico()\">";
+  h += "<div class='field' style='flex:2'><label>Buscar Paciente (nome, CPF ou código DigitalS)</label>";
+  h += "<input type='text' id='histBuscaInput' value='" + esc(histBusca) + "' placeholder='Nome, CPF ou código DigitalS...' onkeydown=\"if(event.key==='Enter')buscarHistorico()\">";
   h += "</div>";
   h += "<div class='field' style='flex:0'><label>&nbsp;</label>";
   h += "<button class='btn btng' onclick='buscarHistorico()' style='white-space:nowrap'>Buscar</button>";
@@ -2685,7 +2685,7 @@ function renderHistorico() {
   else {
     h += "<div class='hist-empty'>";
     h += "<div class='hist-empty-ico'>📋</div>";
-    h += "<div>Digite o nome ou CPF do paciente para consultar o histórico</div>";
+    h += "<div>Digite o nome, CPF ou código DigitalS para consultar o histórico</div>";
     h += "</div>";
   }
 
@@ -2708,10 +2708,15 @@ async function buscarHistorico() {
   try {
     var termoLimpo = termo.replace(/\D/g, "");
     var filtro = "";
+    var isNumero = termoLimpo.length >= 3 && /^\d+$/.test(termoLimpo);
 
-    // Se parece CPF (so numeros, 6+ digitos)
-    if (termoLimpo.length >= 6 && /^\d+$/.test(termoLimpo)) {
+    // Se parece CPF (so numeros, 8+ digitos)
+    if (isNumero && termoLimpo.length >= 8) {
       filtro = "paciente_cpf=ilike.*" + termoLimpo + "*";
+    }
+    // Se é número curto (3-7 dígitos), busca só por código DigitalS
+    else if (isNumero) {
+      filtro = "";
     }
     // Senao busca por nome
     else {
@@ -2719,11 +2724,33 @@ async function buscarHistorico() {
     }
 
     // Buscar pacientes distintos
-    var r = await fetch(
-      SUPA_URL + "/rest/v1/historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&" + filtro + "&limit=500",
-      { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
-    );
-    var dados = await r.json();
+    var promises = [];
+
+    // Busca principal (nome ou CPF)
+    if (filtro) {
+      promises.push(fetch(
+        SUPA_URL + "/rest/v1/historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&" + filtro + "&limit=500",
+        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+      ).then(function(r){return r.json()}).catch(function(){return []}));
+    } else {
+      promises.push(Promise.resolve([]));
+    }
+
+    // Se é número, busca também por código DigitalS no histórico e agendamentos
+    if (isNumero) {
+      promises.push(fetch(
+        SUPA_URL + "/rest/v1/historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&fb_seq_atend=eq." + termoLimpo + "&limit=10",
+        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+      ).then(function(r){return r.json()}).catch(function(){return []}));
+      promises.push(fetch(
+        SUPA_URL + "/rest/v1/agendamentos?select=paciente_id,paciente_nome,paciente_cpf&firebird_seq_atend=eq." + termoLimpo + "&limit=10",
+        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+      ).then(function(r){return r.json()}).catch(function(){return []}));
+    }
+
+    var resultados = await Promise.all(promises);
+    var dados = [];
+    resultados.forEach(function(r){ dados = dados.concat(r || []); });
 
     // Agrupar por paciente (deduplicar)
     var pacMap = {};
@@ -2813,6 +2840,46 @@ async function carregarHistPaciente() {
       { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
     );
     histAtendimentos = await r.json();
+
+    // Se não achou por ID, tenta por nome
+    if ((!histAtendimentos || histAtendimentos.length === 0) && histPaciente.nome) {
+      var r2 = await fetch(
+        SUPA_URL + "/rest/v1/historico_atendimentos?select=*&paciente_nome=eq." + encodeURIComponent(histPaciente.nome) + "&order=data_atendimento.desc&limit=1000",
+        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+      );
+      histAtendimentos = await r2.json();
+    }
+
+    // Também buscar em agendamentos recentes do mesmo paciente
+    try {
+      var filtroAg = histPaciente.nome ? "paciente_nome=eq." + encodeURIComponent(histPaciente.nome) : "";
+      if (histPaciente.id) filtroAg = "paciente_id=eq." + histPaciente.id + "&" + filtroAg;
+      if (filtroAg) {
+        var r3 = await fetch(
+          SUPA_URL + "/rest/v1/agendamentos?select=id,paciente_nome,paciente_cpf,data_exame,status,valor,firebird_seq_atend,dentista_id,convenio_id&" + filtroAg + "&order=data_exame.desc&limit=50",
+          { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+        );
+        var agsRecentes = await r3.json();
+        // Converter agendamentos pro formato do historico e adicionar se não duplicado
+        var seqsExist = {};
+        histAtendimentos.forEach(function(a){ if(a.fb_seq_atend) seqsExist[a.fb_seq_atend] = true; });
+        (agsRecentes||[]).forEach(function(ag){
+          if(ag.firebird_seq_atend && seqsExist[ag.firebird_seq_atend]) return;
+          var d = fdent(ag.dentista_id) || {n:''};
+          histAtendimentos.unshift({
+            fb_seq_atend: ag.firebird_seq_atend,
+            paciente_nome: ag.paciente_nome,
+            paciente_cpf: ag.paciente_cpf,
+            dentista_nome: d.n || '',
+            exame_nome: '',
+            exame_valor: ag.valor,
+            convenio_nome: '',
+            data_atendimento: ag.data_exame,
+            status: ag.status === 'realizado' ? 'E' : 'A'
+          });
+        });
+      }
+    } catch(e2){}
 
     histTotalAtend = 0;
     histTotalValor = 0;
@@ -2985,6 +3052,13 @@ function renderAtendimento() {
 
   var h = "";
 
+  // Busca rápida de paciente
+  h += "<div style='margin-bottom:12px;display:flex;gap:8px;align-items:center'>";
+  h += "<input type='text' id='atBuscaPac' placeholder='🔍 Buscar paciente (nome, CPF ou código DigitalS)' style='flex:1;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;font-size:.85rem' onkeydown=\"if(event.key==='Enter')buscarPacienteGlobal()\">";
+  h += "<button class='btn btng' onclick='buscarPacienteGlobal()' style='padding:8px 16px;white-space:nowrap'>Buscar</button>";
+  h += "</div>";
+  h += "<div id='atBuscaResultados'></div>";
+
   // Stats
   h += "<div class='at-stats'>";
   h += "<div class='at-stat s-ag' style='cursor:pointer' onclick=\"setAtFilter('agendado')\">";
@@ -3115,6 +3189,133 @@ function renderAtendimento() {
   h += "</div>";
 
   el.innerHTML = h;
+}
+
+async function buscarPacienteGlobal(){
+  var input = document.getElementById("atBuscaPac");
+  if(!input) return;
+  var termo = input.value.trim();
+  if(termo.length < 2){toast("!","Digite pelo menos 2 caracteres");return}
+  var box = document.getElementById("atBuscaResultados");
+  if(!box) return;
+  box.innerHTML = "<div style='padding:10px;color:var(--gr)'>Buscando...</div>";
+
+  try{
+    var termoLimpo = termo.replace(/\D/g,"");
+    var isNumero = termoLimpo.length >= 3 && /^\d+$/.test(termoLimpo);
+    var promises = [];
+
+    // Nome
+    if(!isNumero){
+      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&paciente_nome=ilike.*"+encodeURIComponent(termo.toUpperCase())+"*&order=data_exame.desc&limit=20",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
+    }
+    // CPF (8+ digitos)
+    if(isNumero && termoLimpo.length >= 8){
+      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&paciente_cpf=ilike.*"+termoLimpo+"*&order=data_exame.desc&limit=20",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
+    }
+    // DigitalS code
+    if(isNumero){
+      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&firebird_seq_atend=eq."+termoLimpo+"&limit=10",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
+      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&firebird_atend_id=eq."+termoLimpo+"&limit=10",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
+    }
+
+    if(!promises.length){promises.push(Promise.resolve([]))}
+    var results = await Promise.all(promises);
+    var todos = [];
+    results.forEach(function(r){todos = todos.concat(r||[])});
+
+    // Deduplicar por id
+    var seen = {};
+    var uniq = [];
+    todos.forEach(function(a){
+      if(!seen[a.id]){seen[a.id]=true;uniq.push(a)}
+    });
+
+    if(!uniq.length){
+      box.innerHTML = "<div style='padding:10px;color:var(--or)'>Nenhum agendamento encontrado para \""+esc(termo)+"\"</div>";
+      return;
+    }
+
+    // Mostrar resultados
+    var rh = "<div style='margin-bottom:12px;font-size:.8rem;color:var(--gr)'>"+uniq.length+" resultado"+(uniq.length>1?"s":"")+"</div>";
+    uniq.forEach(function(a){
+      var dt = a.data_exame ? iso2br(a.data_exame) : "—";
+      var hr = (a.hora_exame||"").substring(0,5);
+      var st = a.status_clinico || a.status || "agendado";
+      var sl = {agendado:"Agendado",realizado:"Realizado",cancelado:"Cancelado",aguardando:"Aguardando"};
+      var sc = {agendado:"bo",realizado:"bg",cancelado:"bgr",aguardando:"bgo"};
+      rh += "<div style='display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;cursor:pointer' onclick='abrirAgGlobal("+a.id+")'>";
+      rh += "<div style='flex:1'><strong>"+esc(a.paciente_nome||"?")+"</strong>";
+      rh += "<div style='font-size:.75rem;color:var(--gr)'>"+dt+" "+hr+" — "+(a.firebird_seq_atend?"#"+a.firebird_seq_atend:"")+"</div></div>";
+      rh += "<span class='badge "+(sc[st]||"bgr")+"' style='font-size:.6rem'>"+sl[st]+"</span>";
+      rh += "<span style='color:var(--tl);font-size:.8rem;cursor:pointer'>Abrir →</span>";
+      rh += "</div>";
+    });
+    rh += "<div style='margin-top:8px'><button class='btn btno bsm' onclick='document.getElementById(\"atBuscaResultados\").innerHTML=\"\";document.getElementById(\"atBuscaPac\").value=\"\"'>Limpar busca</button></div>";
+    box.innerHTML = rh;
+  }catch(e){
+    box.innerHTML = "<div style='padding:10px;color:var(--or)'>Erro: "+e.message+"</div>";
+  }
+}
+
+async function abrirAgGlobal(agId){
+  // Verificar se já está no array ags
+  var existe = ags.find(function(x){return x.id===agId});
+  if(existe){
+    agEV(agId);
+    return;
+  }
+  // Buscar completo do Supabase
+  try{
+    var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&id=eq."+agId,
+      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+    var data = await r.json();
+    if(!data||!data.length){toast("Erro","Agendamento não encontrado");return}
+    var a = data[0];
+    // Buscar itens
+    var itensR = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=eq."+agId,
+      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+    var itens = await itensR.json() || [];
+    // Montar objeto compatível
+    var ag = {
+      id:a.id, pac:a.paciente_nome||"", pId:a.paciente_id||null,
+      tel:a.paciente_telefone||"", cpf:a.paciente_cpf||"",
+      paciente_cep:a.paciente_cep||"",paciente_endereco:a.paciente_endereco||"",
+      paciente_bairro:a.paciente_bairro||"",paciente_municipio:a.paciente_municipio||"",
+      paciente_uf:a.paciente_uf||"",
+      ex:a.exame_id, exames:itens,
+      dt:iso2br(a.data_exame), hr:(a.hora_exame||"08:00").substring(0,5),
+      dur:a.duracao||30, dId:a.dentista_id, cv:a.convenio_id||"",
+      vl:parseFloat(a.valor||0),
+      valor_bruto:parseFloat(a.valor_bruto||a.valor||0),
+      desconto_percentual:Number(a.desconto_percentual||0),
+      desconto_valor:Number(a.desconto_valor||0),
+      valor_faturado:parseFloat(a.valor_faturado||a.valor||0),
+      forma_pagamento_prevista:a.forma_pagamento_prevista||"avista",
+      forma_pagamento_final:a.forma_pagamento_final||"",
+      cb:a.cashback_pts||0,
+      st:a.status||"agendado",status:a.status||"agendado",
+      status_clinico:a.status_clinico||a.status||"agendado",
+      status_fiscal:a.status_fiscal||"nao_emitida",
+      nfse_id:a.nfse_id||null,numero_nfse:a.numero_nfse||null,
+      focus_reference:a.focus_reference||null,
+      pode_pontuar:a.pode_pontuar===true,
+      firebird_sync:a.firebird_sync||null,
+      firebird_atend_id:a.firebird_atend_id||null,
+      firebird_seq_atend:a.firebird_seq_atend||null,
+      obs:a.observacoes||"",observacoes:a.observacoes||"",
+      forma_entrega:a.forma_entrega||null,
+      previsao_entrega:a.previsao_entrega||null,
+      paciente_data_nascimento:a.paciente_data_nascimento||"",
+      paciente_sexo:a.paciente_sexo||""
+    };
+    ags.push(ag);
+    agEV(agId);
+  }catch(e){toast("Erro","Falha ao carregar: "+e.message)}
 }
 
 function renderAtCalendario() {
