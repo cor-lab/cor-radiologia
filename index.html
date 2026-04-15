@@ -1578,6 +1578,7 @@ async function loadAllData(){
           status_fiscal: a.status_fiscal || "nao_emitida",
 
           nfse_id: a.nfse_id || null,
+          numero_nfse: a.numero_nfse || null,
           focus_reference: a.focus_reference || null,
           pode_pontuar: a.pode_pontuar === true
           ,firebird_sync: a.firebird_sync || null
@@ -2493,7 +2494,7 @@ function iniciarAutoRefresh(){
             st:a.status||"agendado", status:a.status||"agendado",
             status_clinico:a.status_clinico||a.status||"agendado",
             status_fiscal:a.status_fiscal||"nao_emitida",
-            nfse_id:a.nfse_id||null, focus_reference:a.focus_reference||null,
+            nfse_id:a.nfse_id||null, numero_nfse:a.numero_nfse||null, focus_reference:a.focus_reference||null,
             pode_pontuar:a.pode_pontuar===true,
             firebird_sync:a.firebird_sync||null,
             firebird_atend_id:a.firebird_atend_id||null,
@@ -3481,6 +3482,9 @@ function agEV(ev, id) {
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📲</span> Tel: <strong>" + (a.tel ? esc(a.tel) : "<span style='color:var(--or)'>Nao cadastrado</span>") + "</strong></div>";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🪙</span> <strong style=\"color:var(--g)\">+" + a.cb + " pts</strong></div>";
   if(a.firebird_seq_atend) b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🔗</span> Atend. <strong style=\"color:var(--tl)\">#" + a.firebird_seq_atend + "</strong></div>";
+  if(a.status_fiscal==="emitida") b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🧾</span> Nota <strong style=\"color:var(--g)\">#" + (a.numero_nfse||"emitida") + "</strong></div>";
+  else if(a.status_fiscal==="emitindo") b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">⏳</span> <span style=\"color:var(--or)\">Nota processando...</span></div>";
+  else if(a.status_fiscal==="cancelada") b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🚫</span> <span style=\"color:var(--or)\">Nota cancelada</span></div>";
   b += "</div>";
   b += "<span class=\"badge " + (sc[a.st] || "bgr") + "\" style=\"align-self:flex-start\">" + (sl[a.st] || a.st) + "</span></div>";
 
@@ -3539,7 +3543,7 @@ function agEV(ev, id) {
     })(a);
   }
 
-  if((a.status_clinico || a.st)=="realizado" && (a.status_fiscal || "nao_emitida")!="emitida"){
+  if((a.status_clinico || a.st)=="realizado" && !["emitida","emitindo"].includes(a.status_fiscal || "nao_emitida")){
     (function(ag){
       btns.push({
         lbl:"🧾 Emitir nota",
@@ -3560,6 +3564,24 @@ function agEV(ev, id) {
         fn:function(){
           closeM();
           cancelarNotaManual(ag.id);
+        }
+      });
+    })(a);
+    (function(ag){
+      btns.push({
+        lbl:"🖨️ Imprimir nota",
+        cls:"btno",
+        fn:async function(){
+          try{
+            var r = await supa.from("nfse_emitidas").select("url_pdf,pdf_url,numero_nfse,codigo_verificacao").eq("id",ag.nfse_id).single();
+            if(r.error || !r.data){toast("Erro","NFS-e não encontrada.");return;}
+            var url = r.data.url_pdf || r.data.pdf_url;
+            if(url){
+              window.open(url,"_blank");
+            }else{
+              toast("Atenção","PDF não disponível. Nota #"+(r.data.numero_nfse||"?")+" — Cód. verificação: "+(r.data.codigo_verificacao||"N/A"));
+            }
+          }catch(e){toast("Erro","Falha ao buscar nota: "+e.message);}
         }
       });
     })(a);
