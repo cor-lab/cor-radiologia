@@ -6260,7 +6260,8 @@ function remU(email) {
 }
 
 async function imprimirRelatorioDia() {
-  var ds = agBase ? (agBase.getFullYear() + "-" + pad(agBase.getMonth()+1) + "-" + pad(agBase.getDate())) : new Date().toISOString().substring(0,10);
+  var selDate = atDate || agBase || new Date();
+  var ds = selDate.getFullYear() + "-" + pad(selDate.getMonth()+1) + "-" + pad(selDate.getDate());
   var dsBR = ds.substring(8,10) + "/" + ds.substring(5,7) + "/" + ds.substring(0,4);
 
   var dayAgs = ags.filter(function(a){
@@ -6602,7 +6603,7 @@ async function abrirFechamentoCaixa() {
 
   var now = new Date();
   var hora = now.getHours().toString().padStart(2,"0") + ":" + now.getMinutes().toString().padStart(2,"0");
-  var dataStr = now.toLocaleDateString("pt-BR");
+  var dataStr = ds;
 
   function fmt(v) { return "R$ " + Number(v).toLocaleString("pt-BR", {minimumFractionDigits:2, maximumFractionDigits:2}); }
 
