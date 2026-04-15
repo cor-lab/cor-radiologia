@@ -3716,6 +3716,7 @@ function agEV(ev, id) {
     (function(ag){btns.push({lbl:"📋 Etiq. Protocolo", cls:"btno", fn:function(){ imprimirEtiqueta(ag.id, "protocolo"); }});})(a);
     (function(ag){btns.push({lbl:"💿 Etiq. CD", cls:"btno", fn:function(){ imprimirEtiqueta(ag.id, "cd"); }});})(a);
     (function(ag){btns.push({lbl:"📄 Fichas", cls:"btno", fn:function(){ closeM(); imprimirFichas(ag.id); }});})(a);
+    (function(ag){btns.push({lbl:"📷 Painel Fotos", cls:"btno", fn:function(){ closeM(); imprimirPainelFotos(ag.id); }});})(a);
     btns.push({lbl:"📲 WhatsApp", cls:"btnt", fn:function(){ closeM(); sWAi(ag.id); }});
   })(a);
 
