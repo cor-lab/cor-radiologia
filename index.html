@@ -3637,11 +3637,27 @@ function agEV(ev, id) {
         cls:"btno",
         fn:async function(){
           try{
-            var r = await supa.from("nfse_emitidas").select("url_pdf,pdf_url,numero_nfse,codigo_verificacao").eq("id",ag.nfse_id).single();
+            var r = await supa.from("nfse_emitidas").select("url_pdf,pdf_url,numero_nfse,codigo_verificacao,reference").eq("id",ag.nfse_id).single();
             if(r.error || !r.data){toast("Erro","NFS-e não encontrada.");return;}
             var url = r.data.url_pdf || r.data.pdf_url;
             if(url){
               window.open(url,"_blank");
+            }else if(r.data.reference){
+              // Consultar Focus pra obter URL do PDF
+              toast("⏳","Buscando PDF na Focus...");
+              var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
+              var cr = await fetch(API_BASE+"/consultar-nfse-focus",{
+                method:"POST",
+                headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+                body:JSON.stringify({reference:r.data.reference})
+              });
+              var cd = await cr.json().catch(function(){return {};});
+              var pdfUrl = cd.focus && (cd.focus.url_danfse || cd.focus.url_pdf || cd.focus.url);
+              if(pdfUrl){
+                window.open(pdfUrl,"_blank");
+              }else{
+                toast("Atenção","PDF não disponível na Focus. Nota #"+(r.data.numero_nfse||"?")+" — Cód. verificação: "+(r.data.codigo_verificacao||"N/A"));
+              }
             }else{
               toast("Atenção","PDF não disponível. Nota #"+(r.data.numero_nfse||"?")+" — Cód. verificação: "+(r.data.codigo_verificacao||"N/A"));
             }
