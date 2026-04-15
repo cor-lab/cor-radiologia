@@ -316,3 +316,92 @@ var encoded=btoa(unescape(encodeURIComponent(html)));
 var w=window.open(FICHAS_FOTO_BASE+'/print#'+encoded,'_blank','width=900,height=700');
 if(!w){toast("Erro","Popup bloqueado. Permita popups para imprimir.");return}
 }
+
+/* ══════════════════════════════════════════════════════════
+   PAINEL DE FOTOGRAFIAS — imprimirPainelFotos(agId)
+   ══════════════════════════════════════════════════════════ */
+function imprimirPainelFotos(agId){
+var a=ags.find(function(x){return x.id===agId});
+if(!a){toast("Erro","Agendamento não encontrado");return}
+var d=fdent(a.dId)||{n:'-'}, dn=d.n||'-';
+var seq=a.firebird_seq_atend||'';
+if(!seq){toast("Atenção","Sem número de atendimento (seq). Fotos indisponíveis.");return}
+var id=_fic_idade(a.paciente_data_nascimento||'');
+var base=FICHAS_FOTO_BASE+'/'+Math.floor(parseInt(seq)/1000)+'/'+parseInt(seq);
+
+// Sufixos das fotos
+var fotos={
+  ffr:base+'ffr.jpg', fs:base+'fs.jpg', fpd:base+'fpd.jpg',
+  fif:base+'fif.jpg', fid:base+'fid.jpg', fie:base+'fie.jpg',
+  fos:base+'fos.jpg', foi:base+'foi.jpg'
+};
+
+var css='\
+*{margin:0;padding:0;box-sizing:border-box}\
+body{font-family:Arial,Helvetica,sans-serif;background:#fff;color:#1a1a2e}\
+@page{size:A4 portrait;margin:2mm}\
+.pf-page{width:100%;max-width:210mm;margin:0 auto;padding:1mm}\
+.pf-header{display:flex;align-items:center;padding:0;gap:2mm}\
+.pf-header img{height:8mm;object-fit:contain}\
+.pf-header-info{flex:1;text-align:center;font-size:8px;line-height:1.3}\
+.pf-header-info b{font-weight:700}\
+.pf-header-age{text-align:right;font-size:8px;font-weight:700}\
+.pf-sep{height:2px;background:#3aaa35;margin:0.5mm 0;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
+.pf-nome{text-align:center;font-size:10px;font-weight:700;margin:0.5mm 0;letter-spacing:.5px}\
+.pf-row{display:flex;justify-content:center;gap:1mm;margin-bottom:1mm}\
+.pf-row img{border:1px solid #ccc;object-fit:cover;background:#f0f0f0}\
+.pf-row-3 img{width:28%;aspect-ratio:3/4}\
+.pf-row-1 img{width:42%;aspect-ratio:4/3}\
+.pf-row-2 img{width:42%;aspect-ratio:4/3}\
+@media print{body{margin:0!important}.pf-page{padding:1mm}}\
+';
+
+var err='onerror="this.style.background=\'#f0f0f0\';this.style.minHeight=\'30mm\';this.alt=\'Indisponível\'"';
+
+var html='<!DOCTYPE html><html><head><meta charset="UTF-8">';
+html+='<title>Painel Fotos - '+_fic_e(a.pac)+'</title>';
+html+='<style>'+css+'</style></head><body><div class="pf-page">';
+
+// Header
+html+='<div class="pf-header">';
+html+='<img src="https://cor-lab.github.io/cor-radiologia/logo_site.jpg" alt="COR">';
+html+='<div class="pf-header-info"><b>Indicação: Dr.(a): '+_fic_e(dn)+'</b></div>';
+html+='<div class="pf-header-age">Idade: '+id+'</div>';
+html+='</div>';
+html+='<div class="pf-sep"></div>';
+
+// Nome do paciente
+html+='<div class="pf-nome">'+_fic_e(a.pac||'').toUpperCase()+'</div>';
+
+// Row 1: 3 fotos faciais (frontal repouso, frontal sorrindo, perfil)
+html+='<div class="pf-row pf-row-3">';
+html+='<img src="'+fotos.ffr+'" '+err+' alt="Frontal">';
+html+='<img src="'+fotos.fs+'" '+err+' alt="Sorrindo">';
+html+='<img src="'+fotos.fpd+'" '+err+' alt="Perfil">';
+html+='</div>';
+
+// Row 2: 1 foto intraoral frontal (centralizada)
+html+='<div class="pf-row pf-row-1">';
+html+='<img src="'+fotos.fif+'" '+err+' alt="Intraoral Frontal">';
+html+='</div>';
+
+// Row 3: 2 fotos intraorais laterais (direita e esquerda)
+html+='<div class="pf-row pf-row-2">';
+html+='<img src="'+fotos.fid+'" '+err+' alt="Intraoral Direita">';
+html+='<img src="'+fotos.fie+'" '+err+' alt="Intraoral Esquerda">';
+html+='</div>';
+
+// Row 4: 2 fotos oclusais (superior e inferior)
+html+='<div class="pf-row pf-row-2">';
+html+='<img src="'+fotos.fos+'" '+err+' alt="Oclusal Superior">';
+html+='<img src="'+fotos.foi+'" '+err+' alt="Oclusal Inferior">';
+html+='</div>';
+
+html+='</div>';
+html+='<script>window.onload=function(){setTimeout(function(){window.print()},800)}<\/script>';
+html+='</body></html>';
+
+var encoded=btoa(unescape(encodeURIComponent(html)));
+var w=window.open(FICHAS_FOTO_BASE+'/print#'+encoded,'_blank','width=900,height=700');
+if(!w){toast("Erro","Popup bloqueado. Permita popups para imprimir.");return}
+}
