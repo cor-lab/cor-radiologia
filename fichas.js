@@ -77,8 +77,8 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .cdp{display:flex;justify-content:flex-start;align-items:flex-start;min-height:auto;padding-top:5mm}\
 .cde{display:flex;border:1.5px solid #333;width:70mm;height:60mm;position:relative;overflow:hidden}\
 .cd-left{width:24mm;flex-shrink:0;display:flex;flex-direction:column;border-right:1.5px solid #333}\
-.cd-logo-box{height:22mm;display:flex;align-items:center;justify-content:center;padding:1mm;background:#ffffff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
-.cd-logo-box img{max-height:20mm;max-width:20mm;object-fit:contain}\
+.cd-logo-box{height:15mm;display:flex;align-items:center;justify-content:center;padding:1mm;background:#ffffff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
+.cd-logo-box img{max-height:13mm;max-width:22mm;object-fit:contain}\
 .cd-foto-box{flex:1;overflow:hidden;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-top:1px solid #ccc}\
 .cd-foto-box img{width:100%;height:100%;object-fit:cover}\
 .cd-dados{flex:1;display:flex;flex-direction:column;padding:0;position:relative}\
