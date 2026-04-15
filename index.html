@@ -3013,7 +3013,7 @@ function renderAtendimento() {
         h += "<div class='at-mini-bottom'>";
         h += "<div class='at-mini-meta'>";
         h += "<span class='badge " + ({agendado:"bo",realizado:"bg",cancelado:"bgr",aguardando:"bgo"}[st] || "bgr") + "' style='font-size:.58rem;padding:1px 5px'>" + (sl[st] || st) + "</span>";
-        if(a.firebird_atend_id) h += "<span style='color:var(--tl);font-weight:700;font-size:.7rem'>#" + a.firebird_atend_id + "</span>";
+        if(a.firebird_seq_atend) h += "<span style='color:var(--tl);font-weight:700;font-size:.7rem'>#" + a.firebird_seq_atend + "</span>";
         h += "<span>🦷 " + esc(d.n) + "</span>";
         h += "<span>R$ " + Number(a.vl || 0).toFixed(2).replace(".", ",") + "</span>";
         h += "</div>";
