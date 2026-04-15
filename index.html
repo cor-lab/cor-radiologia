@@ -990,6 +990,8 @@ async function confirmarEmissaoNota() {
     }
 
     ag.status_fiscal = "emitindo";
+    if(data.nfse_id) ag.nfse_id = data.nfse_id;
+    if(data.reference) ag.focus_reference = data.reference;
 
     if (typeof fecharModalEmitirNota === "function") {
       fecharModalEmitirNota();
@@ -1003,10 +1005,59 @@ async function confirmarEmissaoNota() {
     }
 
     toast("Sucesso", "Nota enviada para processamento na Focus.");
+
+    // Iniciar polling para consultar status da nota
+    if(data.reference || data.nfse_id) iniciarPollingNfse(agendamentoId, data.nfse_id || ag.nfse_id, data.reference);
   } catch (e) {
     console.error("confirmarEmissaoNota:", e);
     toast("Erro", e?.message || "Falha ao enviar nota para emissão.");
   }
+}
+// Polling automático para consultar status NFS-e na Focus
+var _nfsePollings = {};
+function iniciarPollingNfse(agId, nfseId, reference) {
+  if(_nfsePollings[agId]) clearInterval(_nfsePollings[agId]);
+  var tentativas = 0, maxTentativas = 20;
+  console.log("Polling NFS-e iniciado: ag="+agId+" ref="+reference);
+  _nfsePollings[agId] = setInterval(async function(){
+    tentativas++;
+    if(tentativas > maxTentativas){
+      clearInterval(_nfsePollings[agId]);
+      delete _nfsePollings[agId];
+      console.log("Polling NFS-e encerrado (timeout): ag="+agId);
+      return;
+    }
+    try{
+      var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
+      var r = await fetch(API_BASE+"/consultar-nfse-focus",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+        body:JSON.stringify({reference:reference})
+      });
+      var d = await r.json().catch(function(){return {};});
+      console.log("Polling NFS-e ["+tentativas+"]: status_mapeado="+d.status_mapeado);
+      // Edge Function já atualiza o banco — só preciso atualizar local
+      if(d.status_mapeado==="emitida"){
+        clearInterval(_nfsePollings[agId]);
+        delete _nfsePollings[agId];
+        var numNota = (d.focus && (d.focus.numero || d.focus.numero_nfse)) || null;
+        var ag=(ags||[]).find(function(x){return x.id===agId;});
+        if(ag){
+          ag.status_fiscal="emitida";
+          ag.numero_nfse=numNota;
+        }
+        if(typeof rndAg==="function") rndAg();
+        if(typeof renderAtendimento==="function") renderAtendimento();
+        toast("🧾","Nota #"+(numNota||"?")+" autorizada!");
+      } else if(d.status_mapeado==="rejeitada"){
+        clearInterval(_nfsePollings[agId]);
+        delete _nfsePollings[agId];
+        var ag2=(ags||[]).find(function(x){return x.id===agId;});
+        if(ag2) ag2.status_fiscal="rejeitada";
+        toast("Erro","Nota rejeitada pela prefeitura.");
+      }
+    }catch(e){console.log("Polling NFS-e erro:",e);}
+  }, 15000);
 }
 async function marcarRealizadoEEmitir(agendamentoId){
   try{
@@ -1071,12 +1122,16 @@ async function marcarRealizadoEEmitir(agendamentoId){
     if(data.reference){
       ag.focus_reference = data.reference;
     }
+    if(data.nfse_id) ag.nfse_id = data.nfse_id;
 
     if(typeof renderAgendamentos === "function"){
       renderAgendamentos();
     }
 
     toast("Sucesso", "Realizado salvo e nota enviada para processamento.");
+
+    // Iniciar polling
+    if(data.reference || data.nfse_id) iniciarPollingNfse(agendamentoId, data.nfse_id || ag.nfse_id, data.reference);
     return true;
 
   }catch(e){
@@ -2519,6 +2574,15 @@ function iniciarAutoRefresh(){
       console.log("Auto-refresh erro:", e.message);
     }
   }, AUTO_REFRESH_INTERVALO);
+
+  // Verificar notas presas em "emitindo" e iniciar polling
+  setTimeout(function(){
+    (ags||[]).forEach(function(ag){
+      if(ag.status_fiscal==="emitindo" && ag.nfse_id && ag.focus_reference){
+        iniciarPollingNfse(ag.id, ag.nfse_id, ag.focus_reference);
+      }
+    });
+  }, 5000);
 }
 
 // Iniciar auto-refresh tambem apos login manual
