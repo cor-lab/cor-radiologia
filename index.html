@@ -3583,7 +3583,13 @@ function agEV(ev, id) {
       lbl:"↩️ Reverter p/ Agendado",
       cls:"btnr",
       fn:async function(){
-        if(!confirm("Tem certeza que deseja reverter para Agendado?\nIsso vai desfazer a realização no Firebird também.")) return;
+        var pw = prompt("Digite sua senha para confirmar a reversão:");
+        if(!pw) return;
+        try{
+          var authCheck = await supa.auth.signInWithPassword({email:CU.email, password:pw});
+          if(authCheck.error){toast("Erro","Senha incorreta.");return;}
+        }catch(e){toast("Erro","Falha na verificação.");return;}
+        if(!confirm("Confirma reverter para Agendado?\nIsso vai desfazer a realização no Firebird.")) return;
         try{
           var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?id=eq."+ag.id,{
             method:"PATCH",
