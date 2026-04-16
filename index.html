@@ -603,6 +603,142 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var CASHBACK_PCT = 5; // percentual padrão do cashback
 var AG_EMISSAO_ATUAL = null;
 
+// ══════════════════════════════════════════════════════
+// FOTONWEB COR — Acesso de paciente aos exames online
+// ══════════════════════════════════════════════════════
+// URL do FotonWeb COR. Lida de `configuracoes.fotonweb_url` no Supabase,
+// cacheada em memória. Fallback pro endereço interno se não achar.
+var FOTONWEB_URL = "http://192.168.0.200:8082";
+
+async function carregarFotonwebUrl() {
+  try {
+    var r = await supa.from("configuracoes").select("valor").eq("chave", "fotonweb_url").single();
+    if (!r.error && r.data && r.data.valor) {
+      // valor vem como string JSON (ex: "http://...")
+      var v = typeof r.data.valor === "string" ? r.data.valor : String(r.data.valor);
+      if (v && v.startsWith("http")) {
+        FOTONWEB_URL = v;
+        console.log("[FotonWeb] URL configurada:", FOTONWEB_URL);
+      }
+    }
+  } catch(e) {
+    console.warn("[FotonWeb] Usando URL default:", FOTONWEB_URL, e);
+  }
+}
+carregarFotonwebUrl();
+
+/**
+ * Gera ou reaproveita token numérico de 6 dígitos para acesso do paciente.
+ * Idempotente: se já existe token ativo para o SEQATEND, retorna o mesmo.
+ */
+async function gerarTokenAcessoPaciente(ag) {
+  if (!ag || !ag.firebird_seq_atend) {
+    throw new Error("Agendamento ainda não tem SEQATEND (sync Firebird pendente).");
+  }
+  // Reaproveita token ativo existente
+  var existentes = await supa
+    .from("acesso_paciente_tokens")
+    .select("token, ativo")
+    .eq("fb_seq_atend", ag.firebird_seq_atend)
+    .eq("ativo", true)
+    .limit(1);
+  if (existentes.error) throw existentes.error;
+  if (existentes.data && existentes.data.length > 0) {
+    return existentes.data[0].token;
+  }
+  // Gera token único (até 5 tentativas contra colisão)
+  var createdBy = (typeof CU !== "undefined" && CU && CU.id) ? CU.id : null;
+  for (var t = 0; t < 5; t++) {
+    var token = String(Math.floor(100000 + Math.random() * 900000));
+    var ins = await supa
+      .from("acesso_paciente_tokens")
+      .insert({
+        token: token,
+        fb_seq_atend: ag.firebird_seq_atend,
+        fb_atend_id: ag.firebird_atend_id || null,
+        paciente_id: ag.pId || null,
+        paciente_nome: ag.pac || null,
+        ativo: true,
+        created_by: createdBy
+      })
+      .select("token")
+      .single();
+    if (!ins.error) return ins.data.token;
+    if (ins.error.code !== "23505") throw ins.error; // 23505 = unique violation
+  }
+  throw new Error("Não foi possível gerar token único após 5 tentativas.");
+}
+
+/** Revoga todos os tokens ativos de um SEQATEND (ex: botão "Revogar acesso"). */
+async function revogarTokenPaciente(seqatend, motivo) {
+  var revokedBy = (typeof CU !== "undefined" && CU && CU.id) ? CU.id : null;
+  var r = await supa
+    .from("acesso_paciente_tokens")
+    .update({
+      ativo: false,
+      revoked_at: new Date().toISOString(),
+      revoked_by: revokedBy,
+      revoke_reason: motivo || null
+    })
+    .eq("fb_seq_atend", seqatend)
+    .eq("ativo", true);
+  if (r.error) throw r.error;
+  return true;
+}
+
+/** Busca o token ativo de um atendimento (pra exibir no modal). */
+async function buscarTokenPaciente(seqatend) {
+  var r = await supa
+    .from("acesso_paciente_tokens")
+    .select("token, ativo, created_at, ultimo_acesso_em, acessos_count")
+    .eq("fb_seq_atend", seqatend)
+    .eq("ativo", true)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (r.error) throw r.error;
+  return (r.data && r.data[0]) ? r.data[0] : null;
+}
+
+/**
+ * Envia mensagem WhatsApp com o link de acesso aos exames.
+ * Chamado após "Realizado" ou manualmente via botão.
+ */
+async function enviarWhatsAppExames(ag, opts) {
+  opts = opts || {};
+  if (!ag.tel) {
+    toast("Atenção", "Paciente sem telefone.");
+    return false;
+  }
+  var token;
+  try {
+    token = await gerarTokenAcessoPaciente(ag);
+  } catch (e) {
+    console.error("gerarTokenAcessoPaciente:", e);
+    toast("Erro", "Falha ao gerar token: " + (e.message || e));
+    return false;
+  }
+  var link = FOTONWEB_URL + "/p/" + token;
+  var msg = String(waT.ex || DEFAULT_WA_EX)
+    .replaceAll("{nome}", ag.pac || "")
+    .replaceAll("{codigo}", token)
+    .replaceAll("{link}", link)
+    .replaceAll("{clinica}", "COR — Centro Odontologico de Radiologia");
+  var tel = String(ag.tel || "").replace(/\D/g, "");
+  if (!tel) {
+    toast("Atenção", "Telefone inválido para WhatsApp.");
+    return false;
+  }
+  if (opts.silent) return { token: token, link: link, msg: msg };
+  window.open(
+    "https://wa.me/55" + tel + "?text=" + encodeURIComponent(msg),
+    "_blank"
+  );
+  return { token: token, link: link };
+}
+
+// Template padrão da mensagem de exames prontos (usuário pode editar em Config)
+var DEFAULT_WA_EX = "🦷 *COR — Exames disponíveis*\n\nOla, {nome}!\n\nSeus exames ja estao disponiveis online:\n{link}\n\n*Codigo de acesso:* {codigo}\n\nQualquer duvida, estamos a disposicao!\n{clinica}";
+
 // Helpers de data
 function iso2br(d){ if(!d)return""; var p=d.split("T")[0].split("-"); return p[2]+"/"+p[1]+"/"+p[0]; }
 function br2iso(d){ if(!d)return null; var p=d.split("/"); return p.length===3?p[2]+"-"+p[1]+"-"+p[0]:d; }
@@ -1090,6 +1226,18 @@ async function marcarRealizadoEEmitir(agendamentoId){
     }
 
     toast("Sucesso", "Agendamento marcado como realizado.");
+
+    // FotonWeb COR: gera token de acesso do paciente (silencioso, não bloqueia)
+    try {
+      if (ag.firebird_seq_atend) {
+        var tokenGerado = await gerarTokenAcessoPaciente(ag);
+        console.log("[FotonWeb] Token gerado:", tokenGerado, "SEQ:", ag.firebird_seq_atend);
+      } else {
+        console.log("[FotonWeb] Agendamento sem firebird_seq_atend ainda — token será gerado quando sync rodar.");
+      }
+    } catch(tokenErr) {
+      console.error("[FotonWeb] Falha ao gerar token (não bloqueante):", tokenErr);
+    }
 
     const functionUrl = API_BASE + "/emitir-nfse-focus";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
@@ -2612,7 +2760,8 @@ const API_BASE = "https://flpvzvtbhuyjjdqyrsza.supabase.co/functions/v1";
 var ags = [];
 var waT = {
   ag: "🦷 *COR — Centro Odontologico de Radiologia*\n\nOla, {nome}!\n\nAgendamento confirmado:\nExame: {exame}\nData: {data}\nHorario: {hora}\nLocal: {clinica}\n\nQualquer duvida é só chamar!",
-  lb: "🦷 *COR — Lembrete*\n\nOla, {nome}! Amanha voce tem:\nExame: {exame}\nHorario: {hora}\n\nNao esqueca seus documentos!"
+  lb: "🦷 *COR — Lembrete*\n\nOla, {nome}! Amanha voce tem:\nExame: {exame}\nHorario: {hora}\n\nNao esqueca seus documentos!",
+  ex: DEFAULT_WA_EX
 };
 
 loadWaTemplates();
@@ -3402,6 +3551,15 @@ async function atMarkRealizado(id) {
     if (a) {
       a.st = "realizado";
       a.status_clinico = "realizado";
+      // FotonWeb COR: gera token de acesso do paciente (silencioso)
+      try {
+        if (a.firebird_seq_atend) {
+          var tok = await gerarTokenAcessoPaciente(a);
+          console.log("[FotonWeb] Token gerado:", tok, "SEQ:", a.firebird_seq_atend);
+        }
+      } catch(e) {
+        console.error("[FotonWeb] Falha ao gerar token (não bloqueante):", e);
+      }
     }
     renderAtendimento();
     toast("✅", "Atendimento realizado!");
@@ -3876,6 +4034,47 @@ function agEV(ev, id) {
       fn:function(){
   abrirPreEmissaoNacional(ag.id);
 }
+    });
+  })(a);
+}
+
+  // FotonWeb COR — botão de enviar link de exames
+  if((a.status_clinico || a.st)=="realizado" && a.firebird_seq_atend){
+  (function(ag){
+    btns.push({
+      lbl:"📲 Exames Online",
+      cls:"btnt",
+      fn:async function(){
+        try{
+          var tok = await gerarTokenAcessoPaciente(ag);
+          var link = FOTONWEB_URL + "/p/" + tok;
+          var info = "Código de acesso: " + tok + "\nLink: " + link + "\n\nEnviar por WhatsApp agora?";
+          if(!confirm(info)){
+            // Só copia o link pra clipboard
+            try{
+              await navigator.clipboard.writeText(link);
+              toast("Copiado", "Link copiado para a área de transferência.");
+            }catch(e){
+              toast("Info", "Código: " + tok);
+            }
+            return;
+          }
+          if(!ag.tel){
+            toast("Atenção", "Paciente sem telefone cadastrado.");
+            return;
+          }
+          var msg = String(waT.ex || DEFAULT_WA_EX)
+            .replaceAll("{nome}", ag.pac || "")
+            .replaceAll("{codigo}", tok)
+            .replaceAll("{link}", link)
+            .replaceAll("{clinica}", "COR — Centro Odontologico de Radiologia");
+          var tel = String(ag.tel || "").replace(/\D/g, "");
+          window.open("https://wa.me/55" + tel + "?text=" + encodeURIComponent(msg), "_blank");
+        }catch(e){
+          console.error("Exames Online:", e);
+          toast("Erro", e.message || "Falha ao gerar link.");
+        }
+      }
     });
   })(a);
 }
@@ -5901,6 +6100,7 @@ function rcfg(){
   h+="<div style='display:grid;grid-template-columns:1fr;gap:16px'>";
   h+="<div><div style='font-size:.73rem;font-weight:700;color:var(--gr);text-transform:uppercase;margin-bottom:7px'>Confirmacao — {nome} {exame} {data} {hora} {clinica}</div><div class='field'><textarea id='waTa' style='min-height:100px' oninput='pvWA()'>"+esc(waT.ag)+"</textarea></div><div class='wapv' id='waPa'></div></div>";
   h+="<div><div style='font-size:.73rem;font-weight:700;color:var(--gr);text-transform:uppercase;margin-bottom:7px'>Lembrete — {nome} {exame} {data} {hora}</div><div class='field'><textarea id='waTl' style='min-height:100px' oninput='pvWA()'>"+esc(waT.lb)+"</textarea></div><div class='wapv' id='waPl'></div></div>";
+  h+="<div><div style='font-size:.73rem;font-weight:700;color:var(--gr);text-transform:uppercase;margin-bottom:7px'>Exames prontos (FotonWeb) — {nome} {codigo} {link} {clinica}</div><div class='field'><textarea id='waTx' style='min-height:100px' oninput='pvWA()'>"+esc(waT.ex||DEFAULT_WA_EX)+"</textarea></div><div class='wapv' id='waPx'></div></div>";
   h+="</div>";
   h+="<div style='margin-top:13px;padding:10px 14px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.15);border-radius:8px;font-size:.79rem;color:var(--tl)'>📌 <strong>Integracao Z-API/Evolution API:</strong> configure a URL e token para envio real. Os botoes 📲 abrem o WhatsApp com a mensagem preenchida.</div>";
   h+="</div>";
@@ -5950,15 +6150,29 @@ function filtrarExamesConfig(){
     it.style.display = ok ? "flex" : "none";
   });
 }
-function pvWA(){var a=document.getElementById("waTa");var l=document.getElementById("waTl");if(!a)return;var v={nome:"Maria Silva",exame:"Tomografia",data:"25/03/2026",hora:"08:00",clinica:"COR — Radiologia"};var pa=document.getElementById("waPa");var pl=document.getElementById("waPl");if(pa)pa.innerHTML="<div class='wabl'>"+waHtml(waFmt(a.value,v))+"</div>";if(pl)pl.innerHTML="<div class='wabl'>"+waHtml(waFmt(l.value,v))+"</div>";}
+function pvWA(){
+  var a=document.getElementById("waTa");
+  var l=document.getElementById("waTl");
+  var x=document.getElementById("waTx");
+  if(!a)return;
+  var v={nome:"Maria Silva",exame:"Tomografia",data:"25/03/2026",hora:"08:00",clinica:"COR — Radiologia",codigo:"382947",link:(FOTONWEB_URL||"")+"/p/382947"};
+  var pa=document.getElementById("waPa");
+  var pl=document.getElementById("waPl");
+  var px=document.getElementById("waPx");
+  if(pa)pa.innerHTML="<div class='wabl'>"+waHtml(waFmt(a.value,v))+"</div>";
+  if(pl)pl.innerHTML="<div class='wabl'>"+waHtml(waFmt(l.value,v))+"</div>";
+  if(px)px.innerHTML="<div class='wabl'>"+waHtml(waFmt(x.value,v))+"</div>";
+}
 function svWA(){
   var a = document.getElementById("waTa");
   var l = document.getElementById("waTl");
+  var x = document.getElementById("waTx");
 
   if(a) waT.ag = a.value;
   if(l) waT.lb = l.value;
+  if(x) waT.ex = x.value;
 
-  var payload = { ag: waT.ag, lb: waT.lb };
+  var payload = { ag: waT.ag, lb: waT.lb, ex: waT.ex };
 
   // Salvar no Supabase (persistente)
   supa.from("configuracoes").upsert({
@@ -5984,6 +6198,7 @@ function loadWaTemplates(){
       var saved = res.data.valor;
       if(saved.ag) waT.ag = saved.ag;
       if(saved.lb) waT.lb = saved.lb;
+      if(saved.ex) waT.ex = saved.ex;
       console.log("WA templates carregados do Supabase");
       return;
     }
@@ -6001,6 +6216,7 @@ function loadWaTemplatesLocal(){
     if(saved && typeof saved === "object"){
       if(saved.ag) waT.ag = saved.ag;
       if(saved.lb) waT.lb = saved.lb;
+      if(saved.ex) waT.ex = saved.ex;
     }
   }catch(e){
     console.error("Erro ao carregar templates WA local:", e);
