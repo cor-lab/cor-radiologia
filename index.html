@@ -6620,15 +6620,35 @@ async function imprimirRelatorioDia() {
     var formaPg = a.forma_pagamento_final || a.forma_pagamento_prevista || "-";
     var seq = a.firebird_seq_atend || "-";
 
-    linhas += "<tr>" +
+    // ===== Detectar se eh misto (Part + Conv) para destacar visualmente =====
+    var ehMisto = false;
+    var somaPartLinha = 0, somaConvLinha = 0;
+    if(itens.length){
+      var temPart = false, temConv = false;
+      itens.forEach(function(it){
+        var foraFat = (typeof itemEhConvenioForaDoFaturamento === "function") ? itemEhConvenioForaDoFaturamento(it) : !!it.convenio_id;
+        var preco = Number(it.preco || 0);
+        if (foraFat) { temConv = true; somaConvLinha += preco; }
+        else { temPart = true; somaPartLinha += preco; }
+      });
+      ehMisto = temPart && temConv;
+    }
+
+    var rowStyle = ehMisto ? "background:#fff8e8!important" : "";
+    var cvNomeDisplay = ehMisto ? "<b style='color:#854F0B'>"+esc(cvNome)+"</b>" : esc(cvNome);
+    var brutoDisplay = ehMisto
+      ? "R$ " + vb.toFixed(2).replace(".",",") + "<div style='font-size:9px;color:#854F0B;font-weight:normal'>Part R$" + somaPartLinha.toFixed(2).replace(".",",") + " + Conv R$" + somaConvLinha.toFixed(2).replace(".",",") + "</div>"
+      : "R$ " + vb.toFixed(2).replace(".",",");
+
+    linhas += "<tr style='" + rowStyle + "'>" +
       "<td style='text-align:center'>" + (idx+1) + "</td>" +
       "<td style='text-align:center;font-size:11px'>" + seq + "</td>" +
       "<td style='text-align:center'>" + (a.hr || "-") + "</td>" +
-      "<td>" + esc(a.pac || "-") + "</td>" +
+      "<td>" + esc(a.pac || "-") + (ehMisto ? " <span style='font-size:9px;background:#BA7517;color:#fff;padding:1px 4px;border-radius:3px'>MISTO</span>" : "") + "</td>" +
       "<td style='font-size:11px'>" + esc(nomes) + "</td>" +
       "<td style='font-size:11px'>" + esc(dentNome) + "</td>" +
-      "<td style='font-size:11px'>" + esc(cvNome) + "</td>" +
-      "<td style='text-align:right'>R$ " + vb.toFixed(2).replace(".",",") + "</td>" +
+      "<td style='font-size:11px'>" + cvNomeDisplay + "</td>" +
+      "<td style='text-align:right'>" + brutoDisplay + "</td>" +
       "<td style='text-align:right;color:#c00'>" + (vd > 0 ? "R$ " + vd.toFixed(2).replace(".",",") : "-") + "</td>" +
       "<td style='text-align:right;font-weight:bold'>R$ " + vf.toFixed(2).replace(".",",") + "</td>" +
       "<td style='text-align:center;font-size:11px'>" + formaPg + "</td>" +
@@ -6718,7 +6738,12 @@ async function imprimirRelatorioDia() {
     "</div>" +
     "</div>" +
 
-    "<div style='margin-top:20px;font-size:10px;color:#999;text-align:center'>Relatório gerado em " + new Date().toLocaleString("pt-BR") + " — COR Sistema</div>" +
+    "<div style='margin-top:20px;font-size:10px;color:#999;text-align:center'>" +
+    "<div style='background:#fff8e8;border:1px solid #e5d5b5;padding:8px;border-radius:4px;margin-bottom:10px;color:#854F0B;text-align:left'>" +
+    "<b>⚠️ Legenda MISTO:</b> Atendimentos com tag <span style='background:#BA7517;color:#fff;padding:1px 4px;border-radius:3px'>MISTO</span> tiveram parte Particular (pago no caixa) + parte Convênio (faturado separadamente). O valor \"Bruto\" mostra o total + breakdown." +
+    "</div>" +
+    "Relatório gerado em " + new Date().toLocaleString("pt-BR") + " — COR Sistema" +
+    "</div>" +
 
     "<script>window.onload=function(){window.print();}<\/script>" +
     "</body></html>";
@@ -6786,6 +6811,7 @@ async function abrirFechamentoCaixa() {
   var porConvenio = {};
   var porExame = {};
   var porDentista = {};
+  var atendMistos = [];  // atendimentos com Particular + Convenio
 
   ags.forEach(function(a) {
     var itens = a.exames || (a.ex ? [{exame_id: a.ex, convenio_id: a.cv, preco: a.valor_faturado || a.vl || 0}] : []);
@@ -6819,6 +6845,34 @@ async function abrirFechamentoCaixa() {
     // Contabilizar quantidade (cada agendamento conta 1 vez em cada categoria que ele tem)
     if (temParticular) qtdFat++;
     if (temNaoFat) qtdNaoFat++;
+
+    // ===== Capturar atendimentos MISTOS (Part + Convenio) =====
+    if (temParticular && temNaoFat) {
+      var mistoItensPart = [];
+      var mistoItensConv = [];
+      itens.forEach(function(it){
+        var foraFat = itemEhConvenioForaDoFaturamento(it);
+        var nmEx = it.nome_exame || (typeof fex==="function" && fex(it.exame_id) ? fex(it.exame_id).n : it.exame_id) || "Exame";
+        var cvNm = "Particular";
+        if(it.convenio_id){
+          var cvO = fconv(it.convenio_id);
+          cvNm = cvO && cvO.n ? cvO.n : it.convenio_id;
+        }
+        var info = {nome:nmEx, preco:Number(it.preco||0), conv:cvNm};
+        if (foraFat) mistoItensConv.push(info);
+        else mistoItensPart.push(info);
+      });
+      atendMistos.push({
+        id: a.id,
+        paciente: a.pac || a.paciente_nome || "-",
+        hora: a.hr || "-",
+        seq: a.firebird_seq_atend || a.firebird_seq || "-",
+        itensPart: mistoItensPart,
+        itensConv: mistoItensConv,
+        totalPart: mistoItensPart.reduce(function(s,it){return s+it.preco;},0),
+        totalConv: mistoItensConv.reduce(function(s,it){return s+it.preco;},0)
+      });
+    }
 
     // Para a parte particular, descontar proporcionalmente o desconto do agendamento
     // (desconto so se aplica a parte particular/faturavel)
@@ -6928,6 +6982,36 @@ async function abrirFechamentoCaixa() {
     h += "</div>";
   });
   h += "</div>";
+
+  // ===== SECAO ATENDIMENTOS MISTOS (Particular + Convenio) =====
+  if (atendMistos.length) {
+    h += "<div class='fc-section' style='background:#fff8e8;border-left:3px solid #BA7517;padding:10px;border-radius:6px'>";
+    h += "<div class='fc-section-title' style='color:#854F0B'>⚠️ Atendimentos mistos (Part + Conv.)</div>";
+    h += "<div style='font-size:11px;color:#854F0B;margin-bottom:8px'>Estes pacientes pagaram só a parte particular no caixa. A parte do convênio é faturada separadamente.</div>";
+    atendMistos.forEach(function(m) {
+      h += "<div style='background:#fff;border:1px solid #e5d5b5;border-radius:6px;padding:8px;margin-bottom:6px'>";
+      h += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:4px'>";
+      h += "<div style='font-weight:600;font-size:13px'>" + esc(m.paciente) + "</div>";
+      h += "<div style='font-size:11px;color:var(--muted)'>" + m.hora + " · Seq " + m.seq + "</div>";
+      h += "</div>";
+      // Particular
+      if (m.itensPart.length) {
+        h += "<div style='font-size:11px;color:#1D9E75;margin-bottom:2px'>💵 <b>Pago no caixa:</b> " + fmt(m.totalPart) + "</div>";
+        m.itensPart.forEach(function(it){
+          h += "<div style='font-size:11px;color:var(--muted);padding-left:16px'>• " + esc(it.nome) + " — " + fmt(it.preco) + "</div>";
+        });
+      }
+      // Convenio
+      if (m.itensConv.length) {
+        h += "<div style='font-size:11px;color:#BA7517;margin:4px 0 2px 0'>📋 <b>Faturar convênio:</b> " + fmt(m.totalConv) + "</div>";
+        m.itensConv.forEach(function(it){
+          h += "<div style='font-size:11px;color:var(--muted);padding-left:16px'>• " + esc(it.nome) + " (" + esc(it.conv) + ") — " + fmt(it.preco) + "</div>";
+        });
+      }
+      h += "</div>";
+    });
+    h += "</div>";
+  }
 
   h += "<div class='fc-admin-block" + (isAdmin ? "" : " show") + "' id='fcAdminBlocks'>";
 
