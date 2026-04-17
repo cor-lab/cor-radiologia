@@ -3,6 +3,7 @@
 // Gera e imprime etiquetas para envelopes, protocolo e CD
 // Tamanho: 10cm x 2,9cm (impressora termica)
 // <script src="etiqueta.js"></script>
+// v3: fontes aumentadas + negrito em todos os textos
 // ============================================================
 
 var LOGO_COR_ETQ = "logo.png";
@@ -137,7 +138,7 @@ function fecharSeletorEndereco() {
 }
 
 // ============================================================
-// ETIQUETA ENVELOPE (original)
+// ETIQUETA ENVELOPE (v3 - fontes aumentadas + tudo negrito)
 // ============================================================
 function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
     var cidade = "", enderecoStr = "", complementoStr = "";
@@ -152,20 +153,21 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
         "<style>" +
         "@page{size:100mm 29mm;margin:0}" +
         "*{margin:0;padding:0;box-sizing:border-box}" +
-        "body{font-family:Arial,sans-serif;width:100mm;height:29mm;overflow:hidden;color:#000}" +
+        "body{font-family:Arial,sans-serif;width:100mm;height:29mm;overflow:hidden;color:#000;font-weight:bold}" +
 
         ".etq{width:100mm;height:29mm;padding:0.8mm 2.5mm 0.5mm 2.5mm}" +
 
-        ".nome{font-size:12pt;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
-        "border-bottom:2pt solid #1a3a6e;padding-bottom:0.3mm;margin-bottom:0.3mm}" +
+        ".nome{font-size:14pt;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
+        "border-bottom:2pt solid #1a3a6e;padding-bottom:0.3mm;margin-bottom:0.4mm;letter-spacing:.2pt}" +
 
         ".info{display:flex;align-items:center;height:7.5mm;white-space:nowrap}" +
         ".info img{height:7mm;margin-right:2mm}" +
-        ".info b{font-size:8pt;font-style:italic}" +
-        ".info b+b{margin-left:4mm}" +
+        ".info b{font-size:9.5pt;font-weight:bold;font-style:italic}" +
+        ".info b+b{margin-left:3.5mm}" +
 
-        ".dbox{border:0.7pt solid #000;padding:0.2mm 1.5mm;font-size:7pt;line-height:1.25;overflow:hidden}" +
-        ".dbox .dr{font-style:italic;font-size:7.5pt}" +
+        ".dbox{border:0.7pt solid #000;padding:0.3mm 1.5mm;font-size:8.5pt;line-height:1.2;overflow:hidden;font-weight:bold}" +
+        ".dbox .dr{font-style:italic;font-size:9pt;font-weight:bold}" +
+        ".dbox td{font-weight:bold}" +
         ".dbox td.l{font-weight:bold;padding-right:2mm;white-space:nowrap}" +
 
         "@media print{body{-webkit-print-color-adjust:exact}}" +
@@ -181,7 +183,7 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
         "</div>" +
 
         "<div class='dbox'><table style='width:100%;border-collapse:collapse'>" +
-        "<tr><td colspan='2' class='dr'><i>DR(a):</i>" + esc(dentNome) + "</td></tr>";
+        "<tr><td colspan='2' class='dr'><i>DR(a):</i> " + esc(dentNome) + "</td></tr>";
 
     if (cidade)
         html += "<tr><td class='l'>CIDADE</td><td>" + esc(cidade) + "</td></tr>";
@@ -199,8 +201,8 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
 }
 
 // ============================================================
-// ETIQUETA PROTOCOLO (sem logo, sem data/hora/idade)
-// Layout: Nome paciente (bold) + DR(a) + Cidade + Endereco + Complemento
+// ETIQUETA PROTOCOLO (v3 - fontes aumentadas + tudo negrito)
+// Layout: DR(a) grande + Cidade + Endereco + Complemento + Paciente
 // ============================================================
 function gerarEtiquetaProtocolo(a, dentNome, endereco) {
     var cidade = "", enderecoStr = "", complementoStr = "";
@@ -215,17 +217,18 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
         "<style>" +
         "@page{size:100mm 29mm;margin:0}" +
         "*{margin:0;padding:0;box-sizing:border-box}" +
-        "body{font-family:Arial,sans-serif;width:100mm;height:29mm;overflow:hidden;color:#000}" +
+        "body{font-family:Arial,sans-serif;width:100mm;height:29mm;overflow:hidden;color:#000;font-weight:bold}" +
 
-        ".etq{width:100mm;height:29mm;padding:1.5mm 3mm 1.5mm 3mm;border:0.5pt solid #ccc}" +
+        ".etq{width:100mm;height:29mm;padding:1.2mm 3mm 1.2mm 3mm;border:0.5pt solid #ccc}" +
 
-        ".dentista{font-size:12pt;font-weight:bold;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
-        "margin-bottom:0.5mm}" +
+        ".dentista{font-size:13pt;font-weight:bold;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
+        "margin-bottom:0.8mm;letter-spacing:.2pt}" +
 
-        ".dados{font-size:8.5pt;line-height:1.4;padding-left:1mm}" +
+        ".dados{font-size:10pt;line-height:1.25;padding-left:1mm;font-weight:bold}" +
         ".dados .lbl{font-weight:bold;margin-right:2mm}" +
+        ".dados div{font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
 
-        ".paciente{font-size:8pt;color:#444;border-top:1pt solid #999;margin-top:0.8mm;padding-top:0.8mm}" +
+        ".paciente{font-size:9pt;font-weight:bold;color:#222;border-top:1pt solid #666;margin-top:0.8mm;padding-top:0.8mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
 
         "@media print{body{-webkit-print-color-adjust:exact}.etq{border:none}}" +
         "</style></head><body><div class='etq'>" +
@@ -254,8 +257,8 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
 }
 
 // ============================================================
-// ETIQUETA CD (logo + nome + data/hora + dentista, sem endereco)
-// Layout compacto: tudo no topo, resto em branco
+// ETIQUETA CD (v3 - fontes aumentadas + tudo negrito)
+// Layout compacto: logo + nome grande + data/hora + dentista
 // ============================================================
 function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
     var dataHora = dataAtend + " " + horaAtend;
@@ -265,15 +268,16 @@ function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
         "<style>" +
         "@page{size:100mm 29mm;margin:0}" +
         "*{margin:0;padding:0;box-sizing:border-box}" +
-        "body{font-family:Arial,sans-serif;width:100mm;height:29mm;overflow:hidden;color:#000}" +
+        "body{font-family:Arial,sans-serif;width:100mm;height:29mm;overflow:hidden;color:#000;font-weight:bold}" +
 
         ".etq{width:100mm;height:29mm;padding:1.5mm 2.5mm 1mm 2.5mm;border:0.5pt solid #ccc}" +
 
         ".topo{display:flex;align-items:flex-start}" +
-        ".topo img{height:9mm;margin-right:2.5mm;flex-shrink:0}" +
-        ".topo-txt{overflow:hidden}" +
-        ".topo-txt .nome{font-size:12pt;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-        ".topo-txt .sub{font-size:7.5pt;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.3mm}" +
+        ".topo img{height:10mm;margin-right:2.5mm;flex-shrink:0}" +
+        ".topo-txt{overflow:hidden;flex:1}" +
+        ".topo-txt .nome{font-size:14pt;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.2pt}" +
+        ".topo-txt .sub{font-size:9pt;font-weight:bold;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.5mm}" +
+        ".topo-txt .sub2{font-size:9pt;font-weight:bold;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.3mm}" +
 
         "@media print{body{-webkit-print-color-adjust:exact}.etq{border:none}}" +
         "</style></head><body><div class='etq'>" +
@@ -282,7 +286,8 @@ function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
         "<img src='" + LOGO_COR_ETQ + "'>" +
         "<div class='topo-txt'>" +
         "<div class='nome'>" + esc(a.pac || "SEM NOME").toUpperCase() + "</div>" +
-        "<div class='sub'>Data:&nbsp;&nbsp;" + esc(dataHora) + "&nbsp;&nbsp;&nbsp;DR(a):&nbsp;&nbsp;&nbsp;" + esc(dentNome) + "</div>" +
+        "<div class='sub'>Data: " + esc(dataHora) + "</div>" +
+        "<div class='sub2'>DR(a): " + esc(dentNome) + "</div>" +
         "</div></div>" +
 
         "</div>" +
@@ -293,4 +298,4 @@ function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
     win.document.close();
 }
 
-console.log("[COR] Modulo etiqueta v2 carregado (envelope, protocolo, CD)");
+console.log("[COR] Modulo etiqueta v3 carregado (fontes aumentadas + negrito)");
