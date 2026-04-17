@@ -1,6 +1,6 @@
 // ============================================================
 // MODULO ORDEM DE SERVICO (OS) - COR
-// v2.4 — rodapé com mais espaço para assinaturas
+// v2.5 — correção agendamentos mistos (Particular + Convênio)
 // ============================================================
 
 var LOGO_COR_B64 = "logo.png";
@@ -43,6 +43,8 @@ function imprimirOS(agId) {
     var idadeTexto = idade !== "" ? idade + " anos" : "-";
 
     var valorCobrado = Number(a.vl || 0);
+    var valorBruto = Number(a.valor_bruto || 0);
+    var descontoValor = Number(a.desconto_valor || 0);
 
     var formaEntrega = a.forma_entrega || "-";
     var previsaoEntrega = a.previsao_entrega || "";
@@ -55,13 +57,13 @@ function imprimirOS(agId) {
         "whatsapp": "Envio por WhatsApp",
         "correio": "Envio pelos Correios",
         "entrega_consultorio": "Entrega no Consultório",
+        "entrega_dentista": "Entrega no Consultório",
         "digital": "Digital (Portal)",
     };
     var entregaTexto = entregaLabels[formaEntrega] || formaEntrega;
     if (formaEntrega === "-") entregaTexto = "-";
 
-    // ── Montar lista de exames ──
-    var examesHtml = "";
+    // ── Montar lista de itens ──
     var itens = a.exames || [];
     if (!itens.length && a.ex) {
         itens = [{ exame_id: a.ex, convenio_id: a.cv || "", preco: valorCobrado, _nome: "" }];
@@ -70,34 +72,118 @@ function imprimirOS(agId) {
         itens = [{ exame_id: null, convenio_id: "", preco: valorCobrado, _nome: "Atendimento" }];
     }
 
-    var somaPrecos = 0;
-    itens.forEach(function(it) { somaPrecos += Number(it.preco || 0); });
-
-    itens.forEach(function(it, idx) {
+    // ── Classificar cada item: faturavel (particular) vs fora faturamento (convênio) ──
+    var itensInfo = itens.map(function(it) {
         var nomeExame = it._nome || it.nome_exame || "";
         if (!nomeExame && it.exame_id) {
             var ex = fex(it.exame_id);
             nomeExame = ex ? ex.n : (it.exame_id || "Exame");
         }
         if (!nomeExame) nomeExame = "Atendimento";
+
         var cv = fconv(it.convenio_id || "");
+        var foraFat = (typeof itemEhConvenioForaDoFaturamento === "function")
+            ? itemEhConvenioForaDoFaturamento(it)
+            : !!it.convenio_id;
 
-        var precoExibir = Number(it.preco || 0);
-        if (somaPrecos > 0 && valorCobrado > 0 && itens.length > 1) {
-            precoExibir = (precoExibir / somaPrecos) * valorCobrado;
-        } else if (itens.length === 1) {
-            precoExibir = valorCobrado;
+        return {
+            nome: nomeExame,
+            convNome: cv ? cv.n : "Particular",
+            preco: Number(it.preco || 0),
+            foraFat: foraFat
+        };
+    });
+
+    // ── Somar parte particular (faturável) vs parte convênio (não faturável) ──
+    var somaParticular = 0, somaConvenio = 0;
+    var temParticular = false, temConvenio = false;
+    itensInfo.forEach(function(info) {
+        if (info.foraFat) { somaConvenio += info.preco; temConvenio = true; }
+        else { somaParticular += info.preco; temParticular = true; }
+    });
+
+    var ehMisto = temParticular && temConvenio;
+
+    // ── Determinar preço a EXIBIR em cada item ──
+    // Lógica: preço sempre = preço real do item. Desconto só se aplica na parte particular.
+    // Se agendamento 100% particular E há desconto, aplicar desconto proporcional nos particulares.
+    itensInfo.forEach(function(info) {
+        info.precoExibir = info.preco;
+    });
+
+    // Se há desconto e é 100% particular, aplicar proporcionalmente
+    if (!ehMisto && !temConvenio && descontoValor > 0 && somaParticular > 0) {
+        var fatorDesc = (somaParticular - descontoValor) / somaParticular;
+        if (fatorDesc > 0) {
+            itensInfo.forEach(function(info) {
+                info.precoExibir = info.preco * fatorDesc;
+            });
         }
+    }
 
-        examesHtml += "<tr>" +
+    // ── Totais finais ──
+    var totalParticular = 0, totalConvenio = 0;
+    itensInfo.forEach(function(info) {
+        if (info.foraFat) totalConvenio += info.precoExibir;
+        else totalParticular += info.precoExibir;
+    });
+    var totalGeral = totalParticular + totalConvenio;
+
+    // ── Gerar HTML da tabela ──
+    var examesHtml = "";
+    itensInfo.forEach(function(info, idx) {
+        var corLinha = info.foraFat ? "background:#fff8e8" : "";
+        var badgeConv = info.foraFat
+            ? "<span style='font-size:9px;background:#BA7517;color:#fff;padding:1px 4px;border-radius:3px;margin-left:4px'>CONV.</span>"
+            : "";
+        examesHtml += "<tr style='" + corLinha + "'>" +
             "<td style='padding:6px 10px;border-bottom:1px solid #ddd;text-align:center'>" + (idx + 1) + "</td>" +
-            "<td style='padding:6px 10px;border-bottom:1px solid #ddd'>" + nomeExame + "</td>" +
-            "<td style='padding:6px 10px;border-bottom:1px solid #ddd'>" + (cv ? cv.n : "Particular") + "</td>" +
-            "<td style='padding:6px 10px;border-bottom:1px solid #ddd;text-align:right'>R$ " + precoExibir.toFixed(2).replace(".", ",") + "</td>" +
+            "<td style='padding:6px 10px;border-bottom:1px solid #ddd'>" + info.nome + badgeConv + "</td>" +
+            "<td style='padding:6px 10px;border-bottom:1px solid #ddd'>" + info.convNome + "</td>" +
+            "<td style='padding:6px 10px;border-bottom:1px solid #ddd;text-align:right'>R$ " + info.precoExibir.toFixed(2).replace(".", ",") + "</td>" +
             "</tr>";
     });
 
+    // ── Linha(s) de totais ──
+    var totalHtml = "";
+    if (ehMisto) {
+        // Agendamento misto: mostrar totais separados
+        totalHtml += "<tr style='background:#e8f5e9'>" +
+            "<td colspan='3' style='padding:6px 10px;text-align:right;font-weight:bold;color:#1D9E75'>💵 PAGO NO CAIXA (Particular)</td>" +
+            "<td style='padding:6px 10px;text-align:right;font-weight:bold;color:#1D9E75'>R$ " + totalParticular.toFixed(2).replace(".", ",") + "</td>" +
+            "</tr>";
+        totalHtml += "<tr style='background:#fff8e8'>" +
+            "<td colspan='3' style='padding:6px 10px;text-align:right;font-weight:bold;color:#BA7517'>📋 FATURAR CONVÊNIO</td>" +
+            "<td style='padding:6px 10px;text-align:right;font-weight:bold;color:#BA7517'>R$ " + totalConvenio.toFixed(2).replace(".", ",") + "</td>" +
+            "</tr>";
+        totalHtml += "<tr class='total-row'>" +
+            "<td colspan='3' style='padding:8px 10px;text-align:right'>TOTAL GERAL</td>" +
+            "<td style='padding:8px 10px;text-align:right'>R$ " + totalGeral.toFixed(2).replace(".", ",") + "</td>" +
+            "</tr>";
+    } else if (temConvenio) {
+        // 100% convênio
+        totalHtml += "<tr class='total-row' style='background:#fff8e8'>" +
+            "<td colspan='3' style='padding:8px 10px;text-align:right;color:#BA7517'>TOTAL (faturar convênio)</td>" +
+            "<td style='padding:8px 10px;text-align:right;color:#BA7517'>R$ " + totalConvenio.toFixed(2).replace(".", ",") + "</td>" +
+            "</tr>";
+    } else {
+        // 100% particular
+        totalHtml += "<tr class='total-row'>" +
+            "<td colspan='3' style='padding:8px 10px;text-align:right'>TOTAL</td>" +
+            "<td style='padding:8px 10px;text-align:right'>R$ " + totalParticular.toFixed(2).replace(".", ",") + "</td>" +
+            "</tr>";
+    }
+
     var barcodeSvg = gerarBarcodeSvg(String(seqAtend));
+
+    // ── Box de aviso se misto ──
+    var avisoMistoBox = "";
+    if (ehMisto) {
+        avisoMistoBox = "<div style='background:#fff8e8;border:2px solid #BA7517;border-radius:6px;padding:10px 14px;margin:10px 0;font-size:12px;color:#854F0B'>" +
+            "<b>⚠️ Atendimento Misto:</b> Este atendimento tem exames particulares (pagos no caixa) e exames de convênio (faturados separadamente pela clínica). " +
+            "O paciente paga apenas <b>R$ " + totalParticular.toFixed(2).replace(".", ",") + "</b> no caixa." +
+            "</div>";
+    }
 
     var html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>" +
         "<title>OS #" + seqAtend + " - COR</title>" +
@@ -155,6 +241,9 @@ function imprimirOS(agId) {
         "<div><div class='label'>Dentista</div><div class='valor'>" + esc(d.n) + "</div></div>" +
         "</div>" +
 
+        // ── Aviso misto se aplicavel ──
+        avisoMistoBox +
+
         // ── Tabela de exames ──
         "<table>" +
         "<thead><tr>" +
@@ -163,11 +252,7 @@ function imprimirOS(agId) {
         "<th>Convenio</th>" +
         "<th style='width:100px;text-align:right'>Valor</th>" +
         "</tr></thead>" +
-        "<tbody>" + examesHtml +
-        "<tr class='total-row'>" +
-        "<td colspan='3' style='padding:8px 10px;text-align:right'>TOTAL</td>" +
-        "<td style='padding:8px 10px;text-align:right'>R$ " + valorCobrado.toFixed(2).replace(".", ",") + "</td>" +
-        "</tr></tbody></table>" +
+        "<tbody>" + examesHtml + totalHtml + "</tbody></table>" +
 
         // ── Forma de entrega ──
         "<div class='entrega-box'>" +
@@ -190,7 +275,7 @@ function imprimirOS(agId) {
         "</div>" +
         "</div>" +
 
-        // ── Rodapé: assinaturas paciente/atendente (mais espaço) ──
+        // ── Rodapé: assinaturas paciente/atendente ──
         "<div class='rodape'>" +
         "<div class='rodape-info'>" +
         "<span><strong>Paciente:</strong> " + esc(nomePaciente) + "</span>" +
@@ -241,4 +326,4 @@ function gerarBarcodeSvg(texto) {
     return "<svg width='" + (x + 10) + "' height='" + (height + 5) + "' xmlns='http://www.w3.org/2000/svg'>" + bars + "</svg>";
 }
 
-console.log("[COR] Modulo ordem de servico v2.4 carregado");
+console.log("[COR] Modulo ordem de servico v2.5 carregado (mistos corrigidos)");
