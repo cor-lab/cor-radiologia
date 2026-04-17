@@ -3,7 +3,7 @@
 // Gera e imprime etiquetas para envelopes, protocolo e CD
 // Tamanho: 10cm x 2,9cm (impressora termica)
 // <script src="etiqueta.js"></script>
-// v3: fontes aumentadas + negrito em todos os textos
+// v4: protocolo reordenado (Paciente > Dentista > Cidade > Endereco > Complemento)
 // ============================================================
 
 var LOGO_COR_ETQ = "logo.png";
@@ -138,7 +138,7 @@ function fecharSeletorEndereco() {
 }
 
 // ============================================================
-// ETIQUETA ENVELOPE (v3 - fontes aumentadas + tudo negrito)
+// ETIQUETA ENVELOPE (fontes aumentadas + tudo negrito)
 // ============================================================
 function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
     var cidade = "", enderecoStr = "", complementoStr = "";
@@ -201,8 +201,8 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
 }
 
 // ============================================================
-// ETIQUETA PROTOCOLO (v3 - fontes aumentadas + tudo negrito)
-// Layout: DR(a) grande + Cidade + Endereco + Complemento + Paciente
+// ETIQUETA PROTOCOLO (v4 - REORDENADO)
+// Ordem: 1.PACIENTE  2.DENTISTA  3.CIDADE  4.ENDERECO  5.COMPLEMENTO
 // ============================================================
 function gerarEtiquetaProtocolo(a, dentNome, endereco) {
     var cidade = "", enderecoStr = "", complementoStr = "";
@@ -219,22 +219,28 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
         "*{margin:0;padding:0;box-sizing:border-box}" +
         "body{font-family:Arial,sans-serif;width:100mm;height:29mm;overflow:hidden;color:#000;font-weight:bold}" +
 
-        ".etq{width:100mm;height:29mm;padding:1.2mm 3mm 1.2mm 3mm;border:0.5pt solid #ccc}" +
+        ".etq{width:100mm;height:29mm;padding:1mm 3mm 1mm 3mm;border:0.5pt solid #ccc}" +
 
-        ".dentista{font-size:13pt;font-weight:bold;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
-        "margin-bottom:0.8mm;letter-spacing:.2pt}" +
+        ".paciente{font-size:13pt;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
+        "border-bottom:1.5pt solid #1a3a6e;padding-bottom:0.3mm;margin-bottom:0.6mm;letter-spacing:.2pt}" +
 
-        ".dados{font-size:10pt;line-height:1.25;padding-left:1mm;font-weight:bold}" +
+        ".dentista{font-size:10.5pt;font-weight:bold;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
+        "margin-bottom:0.6mm}" +
+
+        ".dados{font-size:9pt;line-height:1.25;font-weight:bold}" +
         ".dados .lbl{font-weight:bold;margin-right:2mm}" +
         ".dados div{font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-
-        ".paciente{font-size:9pt;font-weight:bold;color:#222;border-top:1pt solid #666;margin-top:0.8mm;padding-top:0.8mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
 
         "@media print{body{-webkit-print-color-adjust:exact}.etq{border:none}}" +
         "</style></head><body><div class='etq'>" +
 
+        // 1. PACIENTE (topo, destaque)
+        "<div class='paciente'>" + esc(a.pac || "SEM NOME").toUpperCase() + "</div>" +
+
+        // 2. DENTISTA
         "<div class='dentista'>DR(a): " + esc(dentNome).toUpperCase() + "</div>" +
 
+        // 3-5. CIDADE / ENDERECO / COMPLEMENTO
         "<div class='dados'>";
 
     if (cidade)
@@ -245,9 +251,6 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
         html += "<div><span class='lbl'>COMPLEMENTO</span>" + esc(complementoStr) + "</div>";
 
     html += "</div>" +
-
-        "<div class='paciente'>Pac: " + esc(a.pac || "-") + "</div>" +
-
         "</div>" +
         "<script>window.onload=function(){window.print();}<\/script></body></html>";
 
@@ -257,8 +260,7 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
 }
 
 // ============================================================
-// ETIQUETA CD (v3 - fontes aumentadas + tudo negrito)
-// Layout compacto: logo + nome grande + data/hora + dentista
+// ETIQUETA CD (fontes aumentadas + tudo negrito)
 // ============================================================
 function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
     var dataHora = dataAtend + " " + horaAtend;
@@ -298,4 +300,4 @@ function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
     win.document.close();
 }
 
-console.log("[COR] Modulo etiqueta v3 carregado (fontes aumentadas + negrito)");
+console.log("[COR] Modulo etiqueta v4 carregado (protocolo reordenado)");
