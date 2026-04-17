@@ -737,7 +737,7 @@ async function enviarWhatsAppExames(ag, opts) {
 }
 
 // Template padrão da mensagem de exames prontos (usuário pode editar em Config)
-var DEFAULT_WA_EX = "🦷 *COR — Exames disponíveis*\n\nOla, {nome}!\n\nSeus exames ja estao disponiveis online:\n{link}\n\n*Codigo de acesso:* {codigo}\n\nAo abrir o link, informe tambem sua data de nascimento por seguranca.\n\nQualquer duvida, estamos a disposicao!\n{clinica}";
+var DEFAULT_WA_EX = "🦷 *COR — Exames disponíveis*\n\nOla, {nome}!\n\nSeus exames ja estao disponiveis online:\n{link}\n\n*Codigo de acesso:* {codigo}\n\nQualquer duvida, estamos a disposicao!\n{clinica}";
 
 // Helpers de data
 function iso2br(d){ if(!d)return""; var p=d.split("T")[0].split("-"); return p[2]+"/"+p[1]+"/"+p[0]; }
@@ -6545,13 +6545,28 @@ async function imprimirRelatorioDia() {
     }).join(", ");
     if(!nomes) nomes = "-";
 
-    var cvNome = "Particular";
-    if(itens.length && itens[0].convenio_id){
-      var cv = fconv(itens[0].convenio_id);
-      cvNome = cv ? cv.n : itens[0].convenio_id;
-    } else if(a.cv){
-      var cv2 = fconv(a.cv);
-      cvNome = cv2 ? cv2.n : a.cv;
+    // ===== CORRECAO: label do convenio na linha mostra TODOS os convenios =====
+    // Se misto (Part + UNIMED), exibe "Particular + UNIMED"
+    var convSetAg = {};
+    (itens || []).forEach(function(it){
+      var cvId = it.convenio_id || "_part";
+      if(!convSetAg[cvId]) {
+        var nm = "Particular";
+        if(it.convenio_id){
+          var cvx = fconv(it.convenio_id);
+          nm = cvx ? cvx.n : it.convenio_id;
+        }
+        convSetAg[cvId] = nm;
+      }
+    });
+    var cvNome = Object.values(convSetAg).join(" + ");
+    if(!cvNome){
+      if(a.cv){
+        var cv2 = fconv(a.cv);
+        cvNome = cv2 ? cv2.n : a.cv;
+      } else {
+        cvNome = "Particular";
+      }
     }
 
     var vb = Number(a.valor_bruto || a.vl || 0);
@@ -6568,11 +6583,34 @@ async function imprimirRelatorioDia() {
     totalDesc += vd;
     totalFat += vf;
 
-    if(!porConvenio[cvNome]) porConvenio[cvNome] = {qtd:0, bruto:0, desc:0, fat:0};
-    porConvenio[cvNome].qtd++;
-    porConvenio[cvNome].bruto += vb;
-    porConvenio[cvNome].desc += vd;
-    porConvenio[cvNome].fat += vf;
+    // ===== CORRECAO: Resumo por convenio ITEM A ITEM =====
+    // Antes: agrupava agendamento inteiro por itens[0] (bug com mistos)
+    if(itens.length){
+      itens.forEach(function(it){
+        var itCvNome = "Particular";
+        if(it.convenio_id){
+          var cvObj = fconv(it.convenio_id);
+          itCvNome = cvObj ? cvObj.n : it.convenio_id;
+        }
+        var itPreco = Number(it.preco || 0);
+        if(!porConvenio[itCvNome]) porConvenio[itCvNome] = {qtd:0, bruto:0, desc:0, fat:0};
+        porConvenio[itCvNome].qtd++;
+        porConvenio[itCvNome].bruto += itPreco;
+        porConvenio[itCvNome].fat += itPreco;
+      });
+    } else {
+      // Fallback: agendamento sem itens (dados legados)
+      var cvLeg = "Particular";
+      if(a.cv){
+        var cvObjLeg = fconv(a.cv);
+        cvLeg = cvObjLeg ? cvObjLeg.n : a.cv;
+      }
+      if(!porConvenio[cvLeg]) porConvenio[cvLeg] = {qtd:0, bruto:0, desc:0, fat:0};
+      porConvenio[cvLeg].qtd++;
+      porConvenio[cvLeg].bruto += vb;
+      porConvenio[cvLeg].desc += vd;
+      porConvenio[cvLeg].fat += vf;
+    }
 
     if(!porDentista[dentNome]) porDentista[dentNome] = {qtd:0, bruto:0, fat:0};
     porDentista[dentNome].qtd++;
@@ -6666,7 +6704,7 @@ async function imprimirRelatorioDia() {
 
     "<div class='resumos'>" +
     "<div>" +
-    "<div class='resumo-titulo'>Resumo por Convênio</div>" +
+    "<div class='resumo-titulo'>Resumo por Convênio (por exame)</div>" +
     "<table><thead><tr><th>Convênio</th><th>Qtd</th><th style='text-align:right'>Bruto</th><th style='text-align:right'>Desc.</th><th style='text-align:right'>Faturado</th></tr></thead><tbody>" +
     resumoConv +
     "</tbody></table>" +
@@ -6753,55 +6791,84 @@ async function abrirFechamentoCaixa() {
     var itens = a.exames || (a.ex ? [{exame_id: a.ex, convenio_id: a.cv, preco: a.valor_faturado || a.vl || 0}] : []);
     if (!itens.length) itens = [{exame_id: a.exame_id || a.ex, convenio_id: a.convenio_id || a.cv, preco: a.valor_faturado || a.vl || 0}];
 
-    // Usar valor_faturado (liquido) como valor do atendimento
-    var valor = Number(a.valor_faturado || a.vl || 0);
     var valorBrutoAt = Number(a.valor_bruto || a.vl || 0);
-    // Se valor bruto zerado, somar precos dos exames (ex: UNIMED tem preco nos itens)
     if (!valorBrutoAt && itens.length) {
       itens.forEach(function(it){ valorBrutoAt += Number(it.preco || 0); });
     }
     totalDescontos += Number(a.desconto_valor || a.desc || 0);
 
-    var ehForaFat = false;
-    if (itens.length) {
-      ehForaFat = itemEhConvenioForaDoFaturamento(itens[0]);
-    } else {
-      var cvId0 = String(a.cv || a.convenio_id || "");
-      var cv0 = cvId0 ? fconv(cvId0) : null;
-      var nome0 = cv0 && cv0.n ? cv0.n.toLowerCase() : "";
-      ehForaFat = nome0.indexOf("unimed") >= 0 || nome0.indexOf("syns") >= 0;
+    // ===== CORRECAO: separar faturado vs nao-faturado POR ITEM =====
+    // Antes: usava itens[0] apenas (bug com agendamentos mistos Part+UNIMED)
+    var valorBrutoParticularItens = 0;   // soma dos itens particulares/faturaveis
+    var valorNaoFatItens = 0;            // soma dos itens UNIMED/fora do faturamento
+    var temParticular = false;
+    var temNaoFat = false;
+
+    itens.forEach(function(it){
+      var preco = Number(it.preco || 0);
+      var foraFat = itemEhConvenioForaDoFaturamento(it);
+      if (foraFat) {
+        valorNaoFatItens += preco;
+        temNaoFat = true;
+      } else {
+        valorBrutoParticularItens += preco;
+        temParticular = true;
+      }
+    });
+
+    // Contabilizar quantidade (cada agendamento conta 1 vez em cada categoria que ele tem)
+    if (temParticular) qtdFat++;
+    if (temNaoFat) qtdNaoFat++;
+
+    // Para a parte particular, descontar proporcionalmente o desconto do agendamento
+    // (desconto so se aplica a parte particular/faturavel)
+    var valorFatComDesconto = valorBrutoParticularItens;
+    if (valorBrutoParticularItens > 0 && Number(a.desconto_valor || 0) > 0) {
+      // Se tudo no agendamento eh particular, usa valor_faturado direto
+      if (!temNaoFat && a.valor_faturado) {
+        valorFatComDesconto = Number(a.valor_faturado);
+      } else {
+        valorFatComDesconto = valorBrutoParticularItens - Number(a.desconto_valor || 0);
+      }
+    } else if (!temNaoFat && a.valor_faturado) {
+      // Agendamento 100% particular, usa valor_faturado
+      valorFatComDesconto = Number(a.valor_faturado);
     }
 
-    if (ehForaFat) {
-      totalNaoFat += valorBrutoAt; qtdNaoFat++;  // Usar valor bruto para não faturáveis
-    } else {
-      totalFat += valor; qtdFat++;
-    }
+    totalFat += valorFatComDesconto;
+    totalNaoFat += valorNaoFatItens;
 
-    // Para agrupamento por convênio, usar bruto se fora do faturamento
-    var valorConv = ehForaFat ? valorBrutoAt : valor;
-
-    var cvId = String((itens[0] && itens[0].convenio_id) || a.convenio_id || a.cv || "");
-    var cvObj = cvId ? fconv(cvId) : null;
-    var cvNome = cvObj && cvObj.n ? cvObj.n : "Particular";
-    if (!porConvenio[cvNome]) porConvenio[cvNome] = {val:0, qtd:0, fora: ehForaFat};
-    porConvenio[cvNome].val += valorConv;
-    porConvenio[cvNome].qtd++;
+    // ===== Resumo por convenio: ITEM A ITEM =====
+    itens.forEach(function(it){
+      var foraFat = itemEhConvenioForaDoFaturamento(it);
+      var preco = Number(it.preco || 0);
+      var cvIdIt = String(it.convenio_id || "");
+      var cvObjIt = cvIdIt ? fconv(cvIdIt) : null;
+      var cvNomeIt = cvObjIt && cvObjIt.n ? cvObjIt.n : "Particular";
+      if (!porConvenio[cvNomeIt]) porConvenio[cvNomeIt] = {val:0, qtd:0, fora: foraFat};
+      porConvenio[cvNomeIt].val += preco;
+      porConvenio[cvNomeIt].qtd++;
+    });
 
     if (isAdmin) {
-      var exId = (itens[0] && itens[0].exame_id) || a.exame_id || a.ex || "";
-      var exObj = exId ? (typeof fex === "function" ? fex(exId) : null) : null;
-      var exNome = exObj && exObj.n ? exObj.n : (exId ? String(exId) : "Sem exame");
-      if (!porExame[exNome]) porExame[exNome] = {val:0, qtd:0};
-      porExame[exNome].val += valor;
-      porExame[exNome].qtd++;
+      // Por exame: item a item
+      itens.forEach(function(it){
+        var exId = it.exame_id || "";
+        var exObj = exId ? (typeof fex === "function" ? fex(exId) : null) : null;
+        var exNome = exObj && exObj.n ? exObj.n : (it.nome_exame || (exId ? String(exId) : "Sem exame"));
+        var preco = Number(it.preco || 0);
+        if (!porExame[exNome]) porExame[exNome] = {val:0, qtd:0};
+        porExame[exNome].val += preco;
+        porExame[exNome].qtd++;
+      });
 
+      // Por dentista: soma total do atendimento (bruto + nao-fat) para ver faturamento total gerado
       var dentId = a.dId || a.dentista_id;
       var dentObj = dentId ? fdent(dentId) : null;
       var dentNome = (dentObj && dentObj.n) ? dentObj.n : (a.dentista_nome || "");
       if (dentNome) {
         if (!porDentista[dentNome]) porDentista[dentNome] = {val:0, qtd:0};
-        porDentista[dentNome].val += valor;
+        porDentista[dentNome].val += (valorFatComDesconto + valorNaoFatItens);
         porDentista[dentNome].qtd++;
       }
     }
