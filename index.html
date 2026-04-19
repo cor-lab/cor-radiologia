@@ -604,6 +604,30 @@ var CASHBACK_PCT = 5; // percentual padrão do cashback
 var AG_EMISSAO_ATUAL = null;
 
 // ══════════════════════════════════════════════════════
+// supaFetch — Helper para chamadas REST autenticadas.
+// Pega o access_token do user logado (via supa.auth.getSession)
+// e injeta como Bearer. Assim as chamadas batem como
+// 'authenticated' no RLS, não como 'anon'.
+// Se o user não estiver logado, usa a publishable key (anon)
+// como fallback (mesmo comportamento anterior).
+// ══════════════════════════════════════════════════════
+async function supaFetch(path, options) {
+  var session = null;
+  try {
+    var sessResp = await supa.auth.getSession();
+    session = sessResp && sessResp.data ? sessResp.data.session : null;
+  } catch(e) { session = null; }
+  var token = (session && session.access_token) ? session.access_token : SUPA_KEY;
+  var opts = options || {};
+  opts.headers = Object.assign({}, opts.headers || {}, {
+    "apikey": SUPA_KEY,
+    "Authorization": "Bearer " + token
+  });
+  var url = path.indexOf("http") === 0 ? path : SUPA_URL + "/rest/v1/" + path.replace(/^\/+/, "");
+  return fetch(url, opts);
+}
+
+// ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
 // ══════════════════════════════════════════════════════
 // URL do FotonWeb COR. Lida de `configuracoes.fotonweb_url` no Supabase,
@@ -2877,9 +2901,8 @@ async function buscarHistorico() {
 
     // Busca principal (nome ou CPF)
     if (filtro) {
-      promises.push(fetch(
-        SUPA_URL + "/rest/v1/historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&" + filtro + "&limit=500",
-        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+      promises.push(supaFetch(
+        "historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&" + filtro + "&limit=500"
       ).then(function(r){return r.json()}).catch(function(){return []}));
     } else {
       promises.push(Promise.resolve([]));
@@ -2887,13 +2910,11 @@ async function buscarHistorico() {
 
     // Se é número, busca também por código DigitalS no histórico e agendamentos
     if (isNumero) {
-      promises.push(fetch(
-        SUPA_URL + "/rest/v1/historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&fb_seq_atend=eq." + termoLimpo + "&limit=10",
-        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+      promises.push(supaFetch(
+        "historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&fb_seq_atend=eq." + termoLimpo + "&limit=10"
       ).then(function(r){return r.json()}).catch(function(){return []}));
-      promises.push(fetch(
-        SUPA_URL + "/rest/v1/agendamentos?select=paciente_id,paciente_nome,paciente_cpf&firebird_seq_atend=eq." + termoLimpo + "&limit=10",
-        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+      promises.push(supaFetch(
+        "agendamentos?select=paciente_id,paciente_nome,paciente_cpf&firebird_seq_atend=eq." + termoLimpo + "&limit=10"
       ).then(function(r){return r.json()}).catch(function(){return []}));
     }
 
@@ -2984,17 +3005,15 @@ async function carregarHistPaciente() {
       filtro = "paciente_nome=eq." + encodeURIComponent(histPaciente.nome);
     }
 
-    var r = await fetch(
-      SUPA_URL + "/rest/v1/historico_atendimentos?select=*&" + filtro + "&order=data_atendimento.desc&limit=1000",
-      { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+    var r = await supaFetch(
+      "historico_atendimentos?select=*&" + filtro + "&order=data_atendimento.desc&limit=1000"
     );
     histAtendimentos = await r.json();
 
     // Se não achou por ID, tenta por nome
     if ((!histAtendimentos || histAtendimentos.length === 0) && histPaciente.nome) {
-      var r2 = await fetch(
-        SUPA_URL + "/rest/v1/historico_atendimentos?select=*&paciente_nome=eq." + encodeURIComponent(histPaciente.nome) + "&order=data_atendimento.desc&limit=1000",
-        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+      var r2 = await supaFetch(
+        "historico_atendimentos?select=*&paciente_nome=eq." + encodeURIComponent(histPaciente.nome) + "&order=data_atendimento.desc&limit=1000"
       );
       histAtendimentos = await r2.json();
     }
@@ -3004,9 +3023,8 @@ async function carregarHistPaciente() {
       var filtroAg = histPaciente.nome ? "paciente_nome=eq." + encodeURIComponent(histPaciente.nome) : "";
       if (histPaciente.id) filtroAg = "paciente_id=eq." + histPaciente.id + "&" + filtroAg;
       if (filtroAg) {
-        var r3 = await fetch(
-          SUPA_URL + "/rest/v1/agendamentos?select=id,paciente_nome,paciente_cpf,data_exame,status,valor,firebird_seq_atend,dentista_id,convenio_id&" + filtroAg + "&order=data_exame.desc&limit=50",
-          { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
+        var r3 = await supaFetch(
+          "agendamentos?select=id,paciente_nome,paciente_cpf,data_exame,status,valor,firebird_seq_atend,dentista_id,convenio_id&" + filtroAg + "&order=data_exame.desc&limit=50"
         );
         var agsRecentes = await r3.json();
         // Converter agendamentos pro formato do historico e adicionar se não duplicado
@@ -3356,20 +3374,20 @@ async function buscarPacienteGlobal(){
 
     // Nome
     if(!isNumero){
-      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&paciente_nome=ilike.*"+encodeURIComponent(termo.toUpperCase())+"*&order=data_exame.desc&limit=20",
-        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
+      promises.push(supaFetch("agendamentos?select=*&paciente_nome=ilike.*"+encodeURIComponent(termo.toUpperCase())+"*&order=data_exame.desc&limit=20"
+        ).then(function(r){return r.json()}).catch(function(){return []}));
     }
     // CPF (8+ digitos)
     if(isNumero && termoLimpo.length >= 8){
-      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&paciente_cpf=ilike.*"+termoLimpo+"*&order=data_exame.desc&limit=20",
-        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
+      promises.push(supaFetch("agendamentos?select=*&paciente_cpf=ilike.*"+termoLimpo+"*&order=data_exame.desc&limit=20"
+        ).then(function(r){return r.json()}).catch(function(){return []}));
     }
     // DigitalS code
     if(isNumero){
-      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&firebird_seq_atend=eq."+termoLimpo+"&limit=10",
-        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
-      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&firebird_atend_id=eq."+termoLimpo+"&limit=10",
-        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
+      promises.push(supaFetch("agendamentos?select=*&firebird_seq_atend=eq."+termoLimpo+"&limit=10"
+        ).then(function(r){return r.json()}).catch(function(){return []}));
+      promises.push(supaFetch("agendamentos?select=*&firebird_atend_id=eq."+termoLimpo+"&limit=10"
+        ).then(function(r){return r.json()}).catch(function(){return []}));
     }
 
     if(!promises.length){promises.push(Promise.resolve([]))}
@@ -3420,14 +3438,12 @@ async function abrirAgGlobal(agId){
   }
   // Buscar completo do Supabase
   try{
-    var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&id=eq."+agId,
-      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+    var r = await supaFetch("agendamentos?select=*&id=eq."+agId);
     var data = await r.json();
     if(!data||!data.length){toast("Erro","Agendamento não encontrado");return}
     var a = data[0];
     // Buscar itens
-    var itensR = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=eq."+agId,
-      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+    var itensR = await supaFetch("agendamento_exames?select=*&agendamento_id=eq."+agId);
     var itens = await itensR.json() || [];
     // Montar objeto compatível
     var ag = {
@@ -4093,9 +4109,9 @@ function agEV(ev, id) {
         }catch(e){toast("Erro","Falha na verificação.");return;}
         if(!confirm("Confirma reverter para Agendado?\nIsso vai desfazer a realização no Firebird.")) return;
         try{
-          var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?id=eq."+ag.id,{
+          var r = await supaFetch("agendamentos?id=eq."+ag.id,{
             method:"PATCH",
-            headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},
+            headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
             body:JSON.stringify({status:"agendado",status_clinico:"agendado",pending_revert:true,firebird_seq_atend:null})
           });
           if(r.ok){
@@ -5757,8 +5773,7 @@ async function dentEndLoad(dentId){
   window._dentEndCache = [];
   var el=document.getElementById("dentEndList"); if(!el) return;
   try {
-    var r=await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?dentista_id=eq."+dentId+"&order=id.asc",
-      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+    var r=await supaFetch("dentista_enderecos?dentista_id=eq."+dentId+"&order=id.asc");
     var ends=await r.json();
     if(!ends||!ends.length){
       el.innerHTML="<div style='color:#666;font-size:12px;padding:6px'>Nenhum endereco cadastrado</div>";
@@ -5843,14 +5858,14 @@ async function dentEndSaveAll(dentId){
     var payload={dentista_id:dentId,descricao:e.descricao,endereco:e.endereco,complemento:e.complemento,bairro:e.bairro,cep:e.cep,cidade:e.cidade};
     try {
       if(e._status==="deleted"&&e.id){
-        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?id=eq."+e.id,
-          {method:"DELETE",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+        await supaFetch("dentista_enderecos?id=eq."+e.id,
+          {method:"DELETE"});
       } else if(e._status==="new"){
-        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos",
-          {method:"POST",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
+        await supaFetch("dentista_enderecos",
+          {method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
       } else if(e.id){
-        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?id=eq."+e.id,
-          {method:"PATCH",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
+        await supaFetch("dentista_enderecos?id=eq."+e.id,
+          {method:"PATCH",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
       }
     } catch(err){ console.error("dentEndSave erro:",err); }
   }
@@ -6492,13 +6507,11 @@ async function imprimirRelatorioDia() {
   // Se não encontrou localmente, buscar do Supabase
   if(!dayAgs.length){
     try{
-      var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc",
-        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+      var r = await supaFetch("agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
       var dados = await r.json();
       if(dados && dados.length){
         var ids = dados.map(function(a){return a.id});
-        var rItens = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")",
-          {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+        var rItens = await supaFetch("agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")");
         var todosItens = await rItens.json() || [];
         dayAgs = dados.map(function(a){
           var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
@@ -6765,14 +6778,12 @@ async function abrirFechamentoCaixa() {
   // Se não encontrou localmente, buscar do Supabase
   if(!dayAgs.length){
     try{
-      var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+dsISO+"&status_clinico=eq.realizado&order=hora_exame.asc",
-        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+      var r = await supaFetch("agendamentos?select=*&data_exame=eq."+dsISO+"&status_clinico=eq.realizado&order=hora_exame.asc");
       var dados = await r.json();
       if(dados && dados.length){
         // Buscar itens de cada agendamento
         var ids = dados.map(function(a){return a.id});
-        var rItens = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")",
-          {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+        var rItens = await supaFetch("agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")");
         var todosItens = await rItens.json() || [];
         dayAgs = dados.map(function(a){
           var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
