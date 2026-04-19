@@ -1721,7 +1721,8 @@ async function loadAllData(){
           ind: d.indicacoes || 0,
           ini: d.ini || d.nome.substring(0,2).toUpperCase(),
           bg: d.bg || "linear-gradient(135deg,#4ab848,#7dcf6e)",
-          cor: d.cor || "#fff"
+          cor: d.cor || "#fff",
+          pvpf: !!d.pode_ver_pontos_fotonweb
         };
       });
 
@@ -1899,7 +1900,8 @@ async function dbDelCv(id){
 // ── DENTISTAS ──
 async function dbSaveDent(d,isNew){
   var data={nome:d.n,cro:d.cro,especialidade:d.esp,telefone:d.tel,
-    nivel:d.nv,pontos:d.pts,indicacoes:d.ind,ini:d.ini,bg:d.bg,cor:d.cor,ativo:true};
+    nivel:d.nv,pontos:d.pts,indicacoes:d.ind,ini:d.ini,bg:d.bg,cor:d.cor,ativo:true,
+    pode_ver_pontos_fotonweb: !!d.pvpf};
   var r=isNew?await supa.from("dentistas").insert(data).select().single():await supa.from("dentistas").update(data).eq("id",d.id);
   if(!r.error&&isNew&&r.data)d.id=r.data.id;
   return !r.error;
@@ -5730,6 +5732,15 @@ function openDtM(eid){
   });
   b+="</select></div><div class='field'><label>COR AVATAR</label><input type='color' id='dCl' value='"+(ed&&ed.bg?ed.bg.match(/#[0-9a-fA-F]{6}/)?ed.bg.match(/#[0-9a-fA-F]{6}/)[0]:"#4ab848":"#4ab848")+"'></div></div>";
 
+  // Toggle: pode ver pontos no FotonWeb (Fase 6D)
+  b+="<div style='border-top:1px solid #3a3a5e;margin-top:6px;padding-top:8px;padding-bottom:4px'>"+
+    "<label style='display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none'>"+
+    "<input type='checkbox' id='dPvpf' "+(ed&&ed.pvpf?"checked":"")+" style='width:18px;height:18px;cursor:pointer;accent-color:#4ab848'>"+
+    "<span style='font-size:13px'>🎯 Exibir pontos no FotonWeb COR</span>"+
+    "</label>"+
+    "<div style='font-size:11px;color:#888;margin-top:4px;margin-left:28px'>Quando marcado, o dentista verá seu saldo de pontos ao acessar o FotonWeb.</div>"+
+    "</div>";
+
   // Seção de endereços
   b+="<div style='border-top:1px solid #3a3a5e;margin-top:6px;padding-top:8px'>"+
     "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'>"+
@@ -5746,13 +5757,15 @@ function openDtM(eid){
       var cl=document.getElementById("dCl").value;
       var bg="linear-gradient(135deg,"+cl+","+cl+"cc)";
       var ini=document.getElementById("dIni").value.toUpperCase()||nm.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2).toUpperCase();
+      var pvpf=document.getElementById("dPvpf").checked;
       if(ed){
         ed.n=nm;ed.cro=document.getElementById("dCro").value;ed.esp=document.getElementById("dEsp").value;
         ed.tel=document.getElementById("dTel").value;ed.nv=document.getElementById("dNv").value;ed.ini=ini;
+        ed.pvpf=pvpf;
       } else {
         var nid=dents.length?Math.max.apply(null,dents.map(function(x){return x.id;}))+1:1;
         dents.push({id:nid,n:nm,cro:document.getElementById("dCro").value,esp:document.getElementById("dEsp").value,
-          tel:document.getElementById("dTel").value,nv:document.getElementById("dNv").value,ini:ini,ind:0,pts:0,bg:bg,cor:"#fff"});
+          tel:document.getElementById("dTel").value,nv:document.getElementById("dNv").value,ini:ini,ind:0,pts:0,bg:bg,cor:"#fff",pvpf:pvpf});
       }
       var isNew2=!ed;var dObj=ed||dents[dents.length-1];
       dbSaveDent(dObj,isNew2).then(function(){
