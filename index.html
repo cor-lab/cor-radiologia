@@ -606,9 +606,12 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 // USE ESTA FUNÇÃO. Evita bugs de mistos (particular + convênio) onde
 // agendamentos.valor_bruto só guarda a parte particular.
 //
-// Regra: se o agendamento tem itens/exames, soma TODOS os exames (item.preco).
-//        Se não tem itens, usa agendamentos.valor_bruto como fallback.
-//        Faturado = bruto * (1 - desconto_percentual/100) ou valor_faturado salvo.
+// Regras:
+//   BRUTO:    se tem itens, soma item.preco de todos. Senão, valor_bruto salvo.
+//   DESCONTO: fonte de verdade é desconto_valor SALVO.
+//             desconto_percentual é IGNORADO se desc_valor=0 (lixo de form default).
+//             Se desc_valor=0 mas valor_faturado > 0 E < bruto, usa diff.
+//   FATURADO: bruto - desconto.
 //
 // Retorna: { bruto, faturado, desconto, descontoPct }
 window.calcValoresAg = function(ag){
@@ -617,7 +620,7 @@ window.calcValoresAg = function(ag){
   var bruto = 0;
 
   if(itens.length > 0){
-    // SEMPRE soma pelos exames quando há itens (verdade absoluta)
+    // SEMPRE soma pelos exames quando há itens (verdade absoluta para mistos)
     itens.forEach(function(it){ bruto += Number(it.preco || 0); });
   } else {
     // Fallback: usa valor_bruto salvo no agendamento
@@ -626,19 +629,29 @@ window.calcValoresAg = function(ag){
 
   var descontoPct = Number(ag.desconto_percentual || 0);
   var desconto = Number(ag.desconto_valor || 0);
+  var vfSalvo = Number(ag.valor_faturado || 0);
   var faturado;
 
-  // Se tem desconto_valor salvo, usa ele (+ recalcula faturado)
   if(desconto > 0){
+    // Desconto real salvo - fonte de verdade
     faturado = bruto - desconto;
-  } else if(descontoPct > 0){
-    desconto = bruto * (descontoPct / 100);
-    faturado = bruto - desconto;
+  } else if(vfSalvo > 0 && vfSalvo < bruto - 0.01){
+    // Sem desc_valor mas vf salvo indica desconto
+    // (protege mistos: vf=só particular < bruto=particular+convênio, NÃO é desconto)
+    // Só considera desconto se diff for razoável (até 50% do bruto)
+    var diff = bruto - vfSalvo;
+    if(diff < bruto * 0.5){
+      desconto = diff;
+      faturado = vfSalvo;
+    } else {
+      // Diff grande: é caso misto (vf só tem particular), não desconto
+      desconto = 0;
+      faturado = bruto;
+    }
   } else {
-    // Sem desconto: faturado = bruto (ou valor salvo se existir)
-    faturado = Number(ag.valor_faturado || ag.vl || bruto);
-    desconto = bruto - faturado;
-    if(desconto < 0.01) desconto = 0; // zerar ruído de arredondamento
+    // Sem desconto: ignora desc_pct (lixo de form default em convênio puro)
+    desconto = 0;
+    faturado = bruto;
   }
 
   return {
