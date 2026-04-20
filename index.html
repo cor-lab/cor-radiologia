@@ -5873,20 +5873,39 @@ async function dentEndSaveAll(dentId){
 // ═══ ACESSO FOTONWEB COR (credenciais) ═══
 
 // Chama a Edge Function gerenciar-dentista-auth (requer JWT do admin)
-async function dentAuthCall(payload){
+async function dentAuthCall(payload, _isRetry){
   try {
-    // Obter JWT da sessão ativa
+    // Obter JWT da sessão ativa, refreshando proativamente se estiver perto de expirar
     var token = null;
     if(typeof supa !== "undefined" && supa.auth && supa.auth.getSession){
       var sess = await supa.auth.getSession();
       if(sess && sess.data && sess.data.session && sess.data.session.access_token){
-        token = sess.data.session.access_token;
+        var s = sess.data.session;
+        var expiresAt = s.expires_at; // unix timestamp em segundos
+        var now = Math.floor(Date.now() / 1000);
+        // Se falta menos de 2 min pro token expirar, dá refresh
+        if(expiresAt && (expiresAt - now) < 120){
+          console.log("[dentAuth] Token proximo de expirar, refreshando...");
+          try {
+            var refreshed = await supa.auth.refreshSession();
+            if(refreshed && refreshed.data && refreshed.data.session){
+              token = refreshed.data.session.access_token;
+            } else {
+              token = s.access_token; // fallback para o atual
+            }
+          } catch(re){
+            console.warn("[dentAuth] refresh falhou:", re);
+            token = s.access_token;
+          }
+        } else {
+          token = s.access_token;
+        }
       } else {
         console.warn("[dentAuth] Sem sessão ativa:", sess);
       }
     }
     if(!token){
-      return {ok:false, error:"Você precisa fazer login (sessão expirada ou inexistente). Faça logout/login e tente novamente."};
+      return {ok:false, error:"Você precisa fazer login (sessão expirada). Faça logout/login e tente novamente."};
     }
 
     console.log("[dentAuth] Chamando", payload.action, "firebird_id=" + payload.firebird_id);
@@ -5902,6 +5921,14 @@ async function dentAuthCall(payload){
     });
     var data = null;
     try { data = await r.json(); } catch(_){ data = {error:"Resposta invalida ("+r.status+")"}; }
+
+    // Retry 1x em caso de 401 (token pode ter expirado durante request)
+    if(r.status === 401 && !_isRetry){
+      console.warn("[dentAuth] 401 recebido, tentando refresh + retry...");
+      try { await supa.auth.refreshSession(); } catch(_){}
+      return await dentAuthCall(payload, true);
+    }
+
     if(!r.ok){
       console.error("[dentAuth] Erro "+r.status+":", data);
       return {ok:false, error: (data && data.error) ? data.error : ("Erro HTTP "+r.status)};
