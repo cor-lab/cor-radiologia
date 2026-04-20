@@ -229,6 +229,8 @@ function imprimirOS(agId) {
         "*{box-sizing:border-box}" +
         "html,body{margin:0;padding:0}" +
         "body{font-family:Arial,sans-serif;color:#1a1a2e;font-size:11px;line-height:1.3;padding:0}" +
+        ".page{display:flex;flex-direction:column;min-height:calc(297mm - 16mm)}" +
+        ".content{flex:0 0 auto}" +
         "table{width:100%;border-collapse:collapse}" +
         "th{background:#2d3a6e;color:#fff;padding:4px 6px;text-align:left;font-size:10px}" +
         ".header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #2d3a6e;padding-bottom:6px;margin-bottom:8px}" +
@@ -251,14 +253,18 @@ function imprimirOS(agId) {
         ".setor-bloco{border:1px solid #ccc;border-radius:4px;padding:4px 6px;background:#fafbfc}" +
         ".setor-nome{font-size:9px;font-weight:bold;color:#2d3a6e;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px}" +
         ".setor-linha{border-top:1px solid #999;margin-top:20px;padding-top:2px;font-size:8px;color:#888;text-align:center}" +
-        ".rodape{margin-top:10px;font-size:10px;color:#555}" +
+        ".rodape{margin-top:auto;padding-top:10px;font-size:10px;color:#555;page-break-inside:avoid}" +
         ".rodape-info{display:flex;justify-content:space-between;margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid #ddd;font-size:10px;color:#777}" +
         ".rodape-assinaturas{display:grid;grid-template-columns:1fr 1fr;gap:30px}" +
         ".rodape-assinaturas .bloco{text-align:center}" +
         ".rodape-assinaturas .linha-ass{border-top:1px solid #999;padding-top:3px;margin-top:32px;font-size:10px;color:#666}" +
         ".rodape-assinaturas .nome-ass{font-size:9px;color:#999;margin-top:1px}" +
-        "@media print{body{padding:0}}" +
+        "@media print{body{padding:0}.page{min-height:calc(297mm - 16mm)}}" +
         "</style></head><body>" +
+
+        "<div class='page'>" +
+
+        "<div class='content'>" +
 
         // Cabeçalho
         "<div class='header'>" +
@@ -316,7 +322,9 @@ function imprimirOS(agId) {
         "</div>" +
         "</div>" +
 
-        // Rodapé assinaturas
+        "</div>" +  // fim .content
+
+        // Rodapé fixo no fundo da página (via margin-top:auto)
         "<div class='rodape'>" +
         "<div class='rodape-info'>" +
         "<span><strong>Paciente:</strong> " + esc(nomePaciente) + "</span>" +
@@ -334,6 +342,8 @@ function imprimirOS(agId) {
         "</div>" +
         "</div>" +
         "</div>" +
+
+        "</div>" +  // fim .page
 
         "<script>window.onload=function(){window.print();}<\/script>" +
         "</body></html>";
