@@ -604,30 +604,6 @@ var CASHBACK_PCT = 5; // percentual padrão do cashback
 var AG_EMISSAO_ATUAL = null;
 
 // ══════════════════════════════════════════════════════
-// supaFetch — Helper para chamadas REST autenticadas.
-// Pega o access_token do user logado (via supa.auth.getSession)
-// e injeta como Bearer. Assim as chamadas batem como
-// 'authenticated' no RLS, não como 'anon'.
-// Se o user não estiver logado, usa a publishable key (anon)
-// como fallback (mesmo comportamento anterior).
-// ══════════════════════════════════════════════════════
-async function supaFetch(path, options) {
-  var session = null;
-  try {
-    var sessResp = await supa.auth.getSession();
-    session = sessResp && sessResp.data ? sessResp.data.session : null;
-  } catch(e) { session = null; }
-  var token = (session && session.access_token) ? session.access_token : SUPA_KEY;
-  var opts = options || {};
-  opts.headers = Object.assign({}, opts.headers || {}, {
-    "apikey": SUPA_KEY,
-    "Authorization": "Bearer " + token
-  });
-  var url = path.indexOf("http") === 0 ? path : SUPA_URL + "/rest/v1/" + path.replace(/^\/+/, "");
-  return fetch(url, opts);
-}
-
-// ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
 // ══════════════════════════════════════════════════════
 // URL do FotonWeb COR. Lida de `configuracoes.fotonweb_url` no Supabase,
@@ -1712,6 +1688,7 @@ async function loadAllData(){
       dents = dR.data.map(function(d){
         return {
           id: d.id,
+          fid: d.firebird_id || null,
           n: d.nome,
           cro: d.cro || "",
           esp: d.especialidade || "",
@@ -1721,8 +1698,7 @@ async function loadAllData(){
           ind: d.indicacoes || 0,
           ini: d.ini || d.nome.substring(0,2).toUpperCase(),
           bg: d.bg || "linear-gradient(135deg,#4ab848,#7dcf6e)",
-          cor: d.cor || "#fff",
-          pvpf: !!d.pode_ver_pontos_fotonweb
+          cor: d.cor || "#fff"
         };
       });
 
@@ -1900,8 +1876,7 @@ async function dbDelCv(id){
 // ── DENTISTAS ──
 async function dbSaveDent(d,isNew){
   var data={nome:d.n,cro:d.cro,especialidade:d.esp,telefone:d.tel,
-    nivel:d.nv,pontos:d.pts,indicacoes:d.ind,ini:d.ini,bg:d.bg,cor:d.cor,ativo:true,
-    pode_ver_pontos_fotonweb: !!d.pvpf};
+    nivel:d.nv,pontos:d.pts,indicacoes:d.ind,ini:d.ini,bg:d.bg,cor:d.cor,ativo:true};
   var r=isNew?await supa.from("dentistas").insert(data).select().single():await supa.from("dentistas").update(data).eq("id",d.id);
   if(!r.error&&isNew&&r.data)d.id=r.data.id;
   return !r.error;
@@ -2903,8 +2878,9 @@ async function buscarHistorico() {
 
     // Busca principal (nome ou CPF)
     if (filtro) {
-      promises.push(supaFetch(
-        "historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&" + filtro + "&limit=500"
+      promises.push(fetch(
+        SUPA_URL + "/rest/v1/historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&" + filtro + "&limit=500",
+        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
       ).then(function(r){return r.json()}).catch(function(){return []}));
     } else {
       promises.push(Promise.resolve([]));
@@ -2912,11 +2888,13 @@ async function buscarHistorico() {
 
     // Se é número, busca também por código DigitalS no histórico e agendamentos
     if (isNumero) {
-      promises.push(supaFetch(
-        "historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&fb_seq_atend=eq." + termoLimpo + "&limit=10"
+      promises.push(fetch(
+        SUPA_URL + "/rest/v1/historico_atendimentos?select=paciente_id,paciente_nome,paciente_cpf&fb_seq_atend=eq." + termoLimpo + "&limit=10",
+        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
       ).then(function(r){return r.json()}).catch(function(){return []}));
-      promises.push(supaFetch(
-        "agendamentos?select=paciente_id,paciente_nome,paciente_cpf&firebird_seq_atend=eq." + termoLimpo + "&limit=10"
+      promises.push(fetch(
+        SUPA_URL + "/rest/v1/agendamentos?select=paciente_id,paciente_nome,paciente_cpf&firebird_seq_atend=eq." + termoLimpo + "&limit=10",
+        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
       ).then(function(r){return r.json()}).catch(function(){return []}));
     }
 
@@ -3007,15 +2985,17 @@ async function carregarHistPaciente() {
       filtro = "paciente_nome=eq." + encodeURIComponent(histPaciente.nome);
     }
 
-    var r = await supaFetch(
-      "historico_atendimentos?select=*&" + filtro + "&order=data_atendimento.desc&limit=1000"
+    var r = await fetch(
+      SUPA_URL + "/rest/v1/historico_atendimentos?select=*&" + filtro + "&order=data_atendimento.desc&limit=1000",
+      { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
     );
     histAtendimentos = await r.json();
 
     // Se não achou por ID, tenta por nome
     if ((!histAtendimentos || histAtendimentos.length === 0) && histPaciente.nome) {
-      var r2 = await supaFetch(
-        "historico_atendimentos?select=*&paciente_nome=eq." + encodeURIComponent(histPaciente.nome) + "&order=data_atendimento.desc&limit=1000"
+      var r2 = await fetch(
+        SUPA_URL + "/rest/v1/historico_atendimentos?select=*&paciente_nome=eq." + encodeURIComponent(histPaciente.nome) + "&order=data_atendimento.desc&limit=1000",
+        { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
       );
       histAtendimentos = await r2.json();
     }
@@ -3025,8 +3005,9 @@ async function carregarHistPaciente() {
       var filtroAg = histPaciente.nome ? "paciente_nome=eq." + encodeURIComponent(histPaciente.nome) : "";
       if (histPaciente.id) filtroAg = "paciente_id=eq." + histPaciente.id + "&" + filtroAg;
       if (filtroAg) {
-        var r3 = await supaFetch(
-          "agendamentos?select=id,paciente_nome,paciente_cpf,data_exame,status,valor,firebird_seq_atend,dentista_id,convenio_id&" + filtroAg + "&order=data_exame.desc&limit=50"
+        var r3 = await fetch(
+          SUPA_URL + "/rest/v1/agendamentos?select=id,paciente_nome,paciente_cpf,data_exame,status,valor,firebird_seq_atend,dentista_id,convenio_id&" + filtroAg + "&order=data_exame.desc&limit=50",
+          { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
         );
         var agsRecentes = await r3.json();
         // Converter agendamentos pro formato do historico e adicionar se não duplicado
@@ -3376,20 +3357,20 @@ async function buscarPacienteGlobal(){
 
     // Nome
     if(!isNumero){
-      promises.push(supaFetch("agendamentos?select=*&paciente_nome=ilike.*"+encodeURIComponent(termo.toUpperCase())+"*&order=data_exame.desc&limit=20"
-        ).then(function(r){return r.json()}).catch(function(){return []}));
+      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&paciente_nome=ilike.*"+encodeURIComponent(termo.toUpperCase())+"*&order=data_exame.desc&limit=20",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
     }
     // CPF (8+ digitos)
     if(isNumero && termoLimpo.length >= 8){
-      promises.push(supaFetch("agendamentos?select=*&paciente_cpf=ilike.*"+termoLimpo+"*&order=data_exame.desc&limit=20"
-        ).then(function(r){return r.json()}).catch(function(){return []}));
+      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&paciente_cpf=ilike.*"+termoLimpo+"*&order=data_exame.desc&limit=20",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
     }
     // DigitalS code
     if(isNumero){
-      promises.push(supaFetch("agendamentos?select=*&firebird_seq_atend=eq."+termoLimpo+"&limit=10"
-        ).then(function(r){return r.json()}).catch(function(){return []}));
-      promises.push(supaFetch("agendamentos?select=*&firebird_atend_id=eq."+termoLimpo+"&limit=10"
-        ).then(function(r){return r.json()}).catch(function(){return []}));
+      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&firebird_seq_atend=eq."+termoLimpo+"&limit=10",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
+      promises.push(fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&firebird_atend_id=eq."+termoLimpo+"&limit=10",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}}).then(function(r){return r.json()}).catch(function(){return []}));
     }
 
     if(!promises.length){promises.push(Promise.resolve([]))}
@@ -3440,12 +3421,14 @@ async function abrirAgGlobal(agId){
   }
   // Buscar completo do Supabase
   try{
-    var r = await supaFetch("agendamentos?select=*&id=eq."+agId);
+    var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&id=eq."+agId,
+      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
     var data = await r.json();
     if(!data||!data.length){toast("Erro","Agendamento não encontrado");return}
     var a = data[0];
     // Buscar itens
-    var itensR = await supaFetch("agendamento_exames?select=*&agendamento_id=eq."+agId);
+    var itensR = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=eq."+agId,
+      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
     var itens = await itensR.json() || [];
     // Montar objeto compatível
     var ag = {
@@ -4111,9 +4094,9 @@ function agEV(ev, id) {
         }catch(e){toast("Erro","Falha na verificação.");return;}
         if(!confirm("Confirma reverter para Agendado?\nIsso vai desfazer a realização no Firebird.")) return;
         try{
-          var r = await supaFetch("agendamentos?id=eq."+ag.id,{
+          var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?id=eq."+ag.id,{
             method:"PATCH",
-            headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
+            headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},
             body:JSON.stringify({status:"agendado",status_clinico:"agendado",pending_revert:true,firebird_seq_atend:null})
           });
           if(r.ok){
@@ -5732,21 +5715,19 @@ function openDtM(eid){
   });
   b+="</select></div><div class='field'><label>COR AVATAR</label><input type='color' id='dCl' value='"+(ed&&ed.bg?ed.bg.match(/#[0-9a-fA-F]{6}/)?ed.bg.match(/#[0-9a-fA-F]{6}/)[0]:"#4ab848":"#4ab848")+"'></div></div>";
 
-  // Toggle: pode ver pontos no FotonWeb (Fase 6D)
-  b+="<div style='border-top:1px solid #3a3a5e;margin-top:6px;padding-top:8px;padding-bottom:4px'>"+
-    "<label style='display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none'>"+
-    "<input type='checkbox' id='dPvpf' "+(ed&&ed.pvpf?"checked":"")+" style='width:18px;height:18px;cursor:pointer;accent-color:#4ab848'>"+
-    "<span style='font-size:13px'>🎯 Exibir pontos no FotonWeb COR</span>"+
-    "</label>"+
-    "<div style='font-size:11px;color:#888;margin-top:4px;margin-left:28px'>Quando marcado, o dentista verá seu saldo de pontos ao acessar o FotonWeb.</div>"+
-    "</div>";
-
   // Seção de endereços
   b+="<div style='border-top:1px solid #3a3a5e;margin-top:6px;padding-top:8px'>"+
     "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'>"+
     "<label style='font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:1px'>Enderecos de Entrega</label>"+
     "<button class='btn btng bsm' onclick='dentEndAddRow()' style='font-size:11px;padding:3px 10px'>+ Novo</button></div>"+
     "<div id='dentEndList'>"+(ed?"<div style='color:#666;font-size:12px;padding:6px'>Carregando...</div>":"<div style='color:#666;font-size:12px;padding:6px'>Salve o dentista primeiro para adicionar enderecos</div>")+"</div>"+
+    "</div>";
+
+  // ═══ Seção Acesso FotonWeb COR ═══
+  b+="<div id='dentAuthBox' style='border-top:1px solid #3a3a5e;margin-top:6px;padding-top:8px'>"+
+    "<label style='font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px'>🦷 Acesso FotonWeb COR</label>"+
+    (ed ? "<div id='dentAuthContent' style='color:#666;font-size:12px;padding:6px'>Carregando...</div>"
+        : "<div style='color:#666;font-size:12px;padding:6px'>Salve o dentista primeiro para gerenciar o acesso ao FotonWeb</div>")+
     "</div></div>";
 
   openM(ed?"Editar Dentista":"Cadastrar Dentista",b,[
@@ -5757,15 +5738,13 @@ function openDtM(eid){
       var cl=document.getElementById("dCl").value;
       var bg="linear-gradient(135deg,"+cl+","+cl+"cc)";
       var ini=document.getElementById("dIni").value.toUpperCase()||nm.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2).toUpperCase();
-      var pvpf=document.getElementById("dPvpf").checked;
       if(ed){
         ed.n=nm;ed.cro=document.getElementById("dCro").value;ed.esp=document.getElementById("dEsp").value;
         ed.tel=document.getElementById("dTel").value;ed.nv=document.getElementById("dNv").value;ed.ini=ini;
-        ed.pvpf=pvpf;
       } else {
         var nid=dents.length?Math.max.apply(null,dents.map(function(x){return x.id;}))+1:1;
         dents.push({id:nid,n:nm,cro:document.getElementById("dCro").value,esp:document.getElementById("dEsp").value,
-          tel:document.getElementById("dTel").value,nv:document.getElementById("dNv").value,ini:ini,ind:0,pts:0,bg:bg,cor:"#fff",pvpf:pvpf});
+          tel:document.getElementById("dTel").value,nv:document.getElementById("dNv").value,ini:ini,ind:0,pts:0,bg:bg,cor:"#fff"});
       }
       var isNew2=!ed;var dObj=ed||dents[dents.length-1];
       dbSaveDent(dObj,isNew2).then(function(){
@@ -5777,6 +5756,12 @@ function openDtM(eid){
 
   // Carregar endereços se editando
   if(ed) dentEndLoad(ed.id);
+  // Carregar status credencial FotonWeb se editando
+  if(ed && ed.fid) dentAuthLoad(ed.fid, ed.n);
+  else if(ed && !ed.fid) {
+    var elAuth = document.getElementById("dentAuthContent");
+    if(elAuth) elAuth.innerHTML = "<div style='color:#f59e0b;font-size:12px;padding:6px'>⚠️ Dentista sem firebird_id. Sync pendente.</div>";
+  }
 }
 
 // ── ENDERECOS DE DENTISTAS ──
@@ -5786,7 +5771,8 @@ async function dentEndLoad(dentId){
   window._dentEndCache = [];
   var el=document.getElementById("dentEndList"); if(!el) return;
   try {
-    var r=await supaFetch("dentista_enderecos?dentista_id=eq."+dentId+"&order=id.asc");
+    var r=await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?dentista_id=eq."+dentId+"&order=id.asc",
+      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
     var ends=await r.json();
     if(!ends||!ends.length){
       el.innerHTML="<div style='color:#666;font-size:12px;padding:6px'>Nenhum endereco cadastrado</div>";
@@ -5871,18 +5857,329 @@ async function dentEndSaveAll(dentId){
     var payload={dentista_id:dentId,descricao:e.descricao,endereco:e.endereco,complemento:e.complemento,bairro:e.bairro,cep:e.cep,cidade:e.cidade};
     try {
       if(e._status==="deleted"&&e.id){
-        await supaFetch("dentista_enderecos?id=eq."+e.id,
-          {method:"DELETE"});
+        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?id=eq."+e.id,
+          {method:"DELETE",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
       } else if(e._status==="new"){
-        await supaFetch("dentista_enderecos",
-          {method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
+        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos",
+          {method:"POST",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
       } else if(e.id){
-        await supaFetch("dentista_enderecos?id=eq."+e.id,
-          {method:"PATCH",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
+        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?id=eq."+e.id,
+          {method:"PATCH",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
       }
     } catch(err){ console.error("dentEndSave erro:",err); }
   }
 }
+
+// ═══ ACESSO FOTONWEB COR (credenciais) ═══
+
+// Chama a Edge Function gerenciar-dentista-auth (requer JWT do admin)
+async function dentAuthCall(payload){
+  try {
+    // Obter JWT da sessão ativa
+    var token = null;
+    if(typeof supa !== "undefined" && supa.auth && supa.auth.getSession){
+      var sess = await supa.auth.getSession();
+      if(sess && sess.data && sess.data.session && sess.data.session.access_token){
+        token = sess.data.session.access_token;
+      } else {
+        console.warn("[dentAuth] Sem sessão ativa:", sess);
+      }
+    }
+    if(!token){
+      return {ok:false, error:"Você precisa fazer login (sessão expirada ou inexistente). Faça logout/login e tente novamente."};
+    }
+
+    console.log("[dentAuth] Chamando", payload.action, "firebird_id=" + payload.firebird_id);
+
+    var r = await fetch(SUPA_URL+"/functions/v1/gerenciar-dentista-auth", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer "+token,
+        "Content-Type": "application/json",
+        "apikey": SUPA_KEY
+      },
+      body: JSON.stringify(payload)
+    });
+    var data = null;
+    try { data = await r.json(); } catch(_){ data = {error:"Resposta invalida ("+r.status+")"}; }
+    if(!r.ok){
+      console.error("[dentAuth] Erro "+r.status+":", data);
+      return {ok:false, error: (data && data.error) ? data.error : ("Erro HTTP "+r.status)};
+    }
+    return {ok:true, data: data};
+  } catch(e){
+    console.error("[dentAuth] Exception:", e);
+    return {ok:false, error: String(e)};
+  }
+}
+
+// Gera senha aleatória razoavelmente forte e memorizável: 8 chars [a-z0-9]
+function dentAuthGenerarSenha(){
+  var chars = "abcdefghjkmnpqrstuvwxyz23456789"; // sem caracteres confusos (0/o/1/l/i)
+  var s = "";
+  for(var i=0;i<8;i++) s += chars.charAt(Math.floor(Math.random()*chars.length));
+  return s;
+}
+
+// Carrega status da credencial e renderiza UI
+async function dentAuthLoad(firebirdId, dentNome){
+  var el = document.getElementById("dentAuthContent");
+  if(!el) return;
+  el.innerHTML = "<div style='color:#666;font-size:12px;padding:6px'>Carregando credencial...</div>";
+
+  var r = await dentAuthCall({action:"get", firebird_id: firebirdId});
+  if(!r.ok){
+    el.innerHTML = "<div style='color:#f66;font-size:12px;padding:6px'>Erro: "+esc(r.error)+"</div>";
+    return;
+  }
+  dentAuthRender(firebirdId, dentNome, r.data.data);
+}
+
+// Renderiza a seção com base no status atual
+function dentAuthRender(firebirdId, dentNome, cred){
+  var el = document.getElementById("dentAuthContent");
+  if(!el) return;
+
+  var h = "";
+  if(!cred){
+    // Sem credencial -> form de criação
+    h += "<div style='background:#0d1117;border:1px solid #3a3a5e;border-radius:8px;padding:10px'>"+
+      "<div style='color:#888;font-size:12px;margin-bottom:8px'>❌ Sem credencial FotonWeb COR. Crie abaixo:</div>"+
+      "<div class='field' style='margin-bottom:6px'>"+
+        "<label style='font-size:10px'>LOGON <span style='color:#f59e0b'>*</span></label>"+
+        "<input id='daLogon' placeholder='Ex: joao.silva (min 3)' style='font-size:12px;padding:5px 8px'>"+
+      "</div>"+
+      "<div class='fg2' style='gap:6px;margin-bottom:6px'>"+
+        "<div class='field' style='flex:2'>"+
+          "<label style='font-size:10px'>SENHA INICIAL <span style='color:#f59e0b'>*</span> (min 6)</label>"+
+          "<input id='daSenha' type='text' placeholder='Clique em Gerar ou digite' style='font-size:12px;padding:5px 8px;font-family:DM Mono,monospace'>"+
+        "</div>"+
+        "<div class='field' style='max-width:110px'>"+
+          "<label style='font-size:10px'>&nbsp;</label>"+
+          "<button type='button' class='btn btno bsm' onclick='dentAuthGerarSenhaBtn()' style='font-size:11px;padding:5px 8px;width:100%'>🎲 Gerar</button>"+
+        "</div>"+
+      "</div>"+
+      "<div class='field' style='margin-bottom:8px'>"+
+        "<label style='display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer'>"+
+          "<input type='checkbox' id='daIsAdmin' style='margin:0'>"+
+          "<span>Administrador FotonWeb (acesso a todos os dentistas)</span>"+
+        "</label>"+
+      "</div>"+
+      "<div style='display:flex;gap:6px'>"+
+        "<button type='button' class='btn btng bsm' onclick='dentAuthCreateBtn("+firebirdId+",\""+esc(dentNome||"")+"\")' style='font-size:11px;padding:6px 12px'>✓ Criar credencial</button>"+
+      "</div>"+
+      "</div>";
+  } else {
+    // Com credencial -> mostra status + opções
+    var statusBadge = "";
+    if(cred.bloqueado) statusBadge = "<span style='background:#dc2626;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px'>🔒 BLOQUEADO</span>";
+    else if(cred.senha_personalizada) statusBadge = "<span style='background:#059669;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px'>✓ ATIVO</span>";
+    else statusBadge = "<span style='background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px'>⚠ SENHA PADRÃO</span>";
+
+    var adminBadge = cred.is_admin ? "<span style='background:#7c3aed;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px'>👑 ADMIN</span>" : "";
+
+    var ultLogin = cred.ultimo_login_em ? (new Date(cred.ultimo_login_em).toLocaleString("pt-BR")) : "Nunca logou";
+    var ultIp = cred.ultimo_login_ip || "-";
+    var criado = cred.created_at ? (new Date(cred.created_at).toLocaleDateString("pt-BR")) : "-";
+    var motivoBloq = cred.bloqueio_motivo ? "<div style='color:#f87171;font-size:11px;margin-top:4px'>Motivo: "+esc(cred.bloqueio_motivo)+"</div>" : "";
+
+    h += "<div style='background:#0d1117;border:1px solid #3a3a5e;border-radius:8px;padding:10px'>"+
+      // Status
+      "<div style='display:flex;align-items:center;flex-wrap:wrap;margin-bottom:8px'>"+
+        "<strong style='color:#4ade80;font-size:13px'>"+esc(cred.logon)+"</strong>"+
+        statusBadge + adminBadge +
+      "</div>"+
+      motivoBloq +
+      "<div style='font-size:11px;color:#888;margin-bottom:10px;padding:6px;background:#1a1a2e;border-radius:4px'>"+
+        "📅 Criado em: <strong style='color:#ccc'>"+criado+"</strong><br>"+
+        "🔓 Último login: <strong style='color:#ccc'>"+ultLogin+"</strong><br>"+
+        "🌐 Último IP: <strong style='color:#ccc'>"+ultIp+"</strong>"+
+      "</div>"+
+
+      // Form de edição
+      "<div class='field' style='margin-bottom:6px'>"+
+        "<label style='font-size:10px'>LOGON</label>"+
+        "<input id='daLogon' value='"+esc(cred.logon)+"' style='font-size:12px;padding:5px 8px'>"+
+      "</div>"+
+      "<div class='field' style='margin-bottom:6px'>"+
+        "<label style='display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer'>"+
+          "<input type='checkbox' id='daIsAdmin' "+(cred.is_admin?"checked":"")+" style='margin:0'>"+
+          "<span>Administrador FotonWeb</span>"+
+        "</label>"+
+      "</div>"+
+      "<div class='field' style='margin-bottom:10px'>"+
+        "<label style='display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer'>"+
+          "<input type='checkbox' id='daBloqueado' "+(cred.bloqueado?"checked":"")+" style='margin:0'>"+
+          "<span>Bloqueado (impede login)</span>"+
+        "</label>"+
+      "</div>"+
+      "<div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px'>"+
+        "<button type='button' class='btn btng bsm' onclick='dentAuthUpdateBtn("+firebirdId+")' style='font-size:11px;padding:6px 10px'>💾 Salvar alterações</button>"+
+      "</div>"+
+
+      // Reset senha
+      "<div style='border-top:1px dashed #3a3a5e;margin-top:8px;padding-top:8px'>"+
+        "<label style='font-size:10px;color:#aaa;display:block;margin-bottom:4px'>RESETAR SENHA</label>"+
+        "<div class='fg2' style='gap:6px;margin-bottom:6px'>"+
+          "<div class='field' style='flex:2'>"+
+            "<input id='daSenhaNova' type='text' placeholder='Nova senha (min 6)' style='font-size:12px;padding:5px 8px;font-family:DM Mono,monospace'>"+
+          "</div>"+
+          "<div class='field' style='max-width:110px'>"+
+            "<button type='button' class='btn btno bsm' onclick='dentAuthGerarSenhaBtn(true)' style='font-size:11px;padding:5px 8px;width:100%'>🎲 Gerar</button>"+
+          "</div>"+
+        "</div>"+
+        "<div style='display:flex;gap:6px'>"+
+          "<button type='button' class='btn btnt bsm' onclick='dentAuthResetBtn("+firebirdId+",\""+esc(dentNome||"")+"\")' style='font-size:11px;padding:6px 10px'>🔑 Resetar senha</button>"+
+          "<button type='button' class='btn btnr bsm' onclick='dentAuthDeleteBtn("+firebirdId+",\""+esc(cred.logon)+"\",\""+esc(dentNome||"")+"\")' style='font-size:11px;padding:6px 10px;margin-left:auto'>🗑 Remover acesso</button>"+
+        "</div>"+
+      "</div>"+
+      "</div>";
+  }
+
+  el.innerHTML = h;
+}
+
+// Gera senha aleatória e coloca no campo
+function dentAuthGerarSenhaBtn(reset){
+  var s = dentAuthGenerarSenha();
+  var el = document.getElementById(reset ? "daSenhaNova" : "daSenha");
+  if(el) el.value = s;
+}
+
+// Criar credencial
+async function dentAuthCreateBtn(firebirdId, dentNome){
+  var logon = (document.getElementById("daLogon").value || "").trim();
+  var senha = (document.getElementById("daSenha").value || "").trim();
+  var isAdmin = document.getElementById("daIsAdmin").checked;
+
+  if(!logon || logon.length < 3){ toast("⚠️","Informe um logon com pelo menos 3 caracteres"); return; }
+  if(!senha || senha.length < 6){ toast("⚠️","Informe uma senha com pelo menos 6 caracteres"); return; }
+
+  var r = await dentAuthCall({
+    action: "create",
+    firebird_id: firebirdId,
+    logon: logon,
+    nova_senha: senha,
+    is_admin: isAdmin
+  });
+
+  if(!r.ok){ toast("❌", r.error); return; }
+
+  // Mostrar senha em modal (única chance!)
+  dentAuthShowSenhaModal(senha, logon, dentNome, "criada");
+  // Recarregar
+  dentAuthLoad(firebirdId, dentNome);
+}
+
+// Resetar senha
+async function dentAuthResetBtn(firebirdId, dentNome){
+  var senha = (document.getElementById("daSenhaNova").value || "").trim();
+  if(!senha || senha.length < 6){ toast("⚠️","Informe uma senha com pelo menos 6 caracteres"); return; }
+
+  var logon = (document.getElementById("daLogon").value || "").trim();
+
+  var r = await dentAuthCall({
+    action: "reset_password",
+    firebird_id: firebirdId,
+    nova_senha: senha
+  });
+
+  if(!r.ok){ toast("❌", r.error); return; }
+
+  dentAuthShowSenhaModal(senha, logon, dentNome, "resetada");
+  dentAuthLoad(firebirdId, dentNome);
+}
+
+// Atualizar logon / is_admin / bloqueado
+async function dentAuthUpdateBtn(firebirdId){
+  var logon = (document.getElementById("daLogon").value || "").trim();
+  var isAdmin = document.getElementById("daIsAdmin").checked;
+  var bloqueado = document.getElementById("daBloqueado").checked;
+
+  var payload = {
+    action: "update_permissions",
+    firebird_id: firebirdId,
+    logon: logon,
+    is_admin: isAdmin,
+    bloqueado: bloqueado
+  };
+  if(bloqueado){
+    var motivo = prompt("Motivo do bloqueio (opcional):", "");
+    if(motivo) payload.bloqueio_motivo = motivo;
+  }
+
+  var r = await dentAuthCall(payload);
+  if(!r.ok){ toast("❌", r.error); return; }
+  toast("✅","Credencial atualizada");
+  var dent = fdent(fdentByFid(firebirdId));
+  dentAuthLoad(firebirdId, dent ? dent.n : "");
+}
+
+// Remover credencial
+function dentAuthDeleteBtn(firebirdId, logon, dentNome){
+  openM("Remover acesso FotonWeb COR",
+    "<p style='color:var(--gr)'>Remover o acesso de <strong>"+esc(dentNome)+"</strong> (logon: <strong>"+esc(logon)+"</strong>)?<br><br>"+
+    "O dentista não poderá mais acessar o FotonWeb COR. Esta ação pode ser desfeita criando uma nova credencial.</p>",
+    [
+      {lbl:"Cancelar",cls:"btno",fn:closeM},
+      {lbl:"Remover acesso",cls:"btnr",fn:async function(){
+        closeM();
+        var r = await dentAuthCall({action:"delete", firebird_id: firebirdId});
+        if(!r.ok){ toast("❌", r.error); return; }
+        toast("🗑️","Acesso removido");
+        // Reabrir modal de edição do dentista pra recarregar
+        var dent = fdent(fdentByFid(firebirdId));
+        if(dent) openDtM(dent.id);
+      }}
+    ]
+  );
+}
+
+// Helper: busca dentista pelo firebird_id
+function fdentByFid(fid){
+  for(var i=0;i<dents.length;i++){ if(dents[i].fid === fid) return dents[i].id; }
+  return null;
+}
+
+// Modal mostrando senha UMA VEZ com botão copiar
+function dentAuthShowSenhaModal(senha, logon, dentNome, acao){
+  var b = "<div style='background:#064e3b;border:2px solid #10b981;border-radius:10px;padding:14px;margin-bottom:10px'>"+
+    "<div style='color:#a7f3d0;font-size:11px;margin-bottom:8px'>✓ Credencial "+acao+" com sucesso para <strong>"+esc(dentNome)+"</strong></div>"+
+    "<div style='background:#022c22;padding:10px;border-radius:6px;font-family:DM Mono,monospace;font-size:13px;color:#d1fae5;margin-bottom:8px'>"+
+      "<div style='margin-bottom:4px'><span style='color:#6ee7b7;font-size:10px'>LOGON:</span> <strong>"+esc(logon)+"</strong></div>"+
+      "<div><span style='color:#6ee7b7;font-size:10px'>SENHA:</span> <strong id='daSenhaShow'>"+esc(senha)+"</strong></div>"+
+    "</div>"+
+    "<button class='btn btng bsm' onclick='dentAuthCopiarSenha(\""+esc(logon)+"\",\""+esc(senha)+"\")' style='font-size:12px;padding:6px 12px'>📋 Copiar logon + senha</button>"+
+    "</div>"+
+    "<div style='background:#78350f;border:1px solid #f59e0b;border-radius:8px;padding:10px;color:#fde68a;font-size:11px'>"+
+    "<strong>⚠️ IMPORTANTE:</strong> Esta é a <strong>única vez</strong> que esta senha será exibida. Copie e envie ao dentista via WhatsApp/email. Depois de fechar, só será possível resetar para uma nova senha.<br><br>"+
+    "O dentista deverá trocar esta senha no primeiro login (a flag senha_personalizada está false)."+
+    "</div>";
+
+  openM("🔐 Senha do FotonWeb COR", b, [
+    {lbl:"Copiar e fechar",cls:"btng",fn:function(){ dentAuthCopiarSenha(logon, senha); closeM(); }},
+    {lbl:"Fechar",cls:"btno",fn:closeM}
+  ]);
+}
+
+function dentAuthCopiarSenha(logon, senha){
+  var texto = "🦷 FotonWeb COR - Acesso ao portal\n\nLogon: "+logon+"\nSenha: "+senha+"\n\nAcesse: https://exames.corsm.com.br\n\nVocê deverá trocar esta senha no primeiro login.";
+  try {
+    navigator.clipboard.writeText(texto).then(function(){
+      toast("📋","Credencial copiada! Cole no WhatsApp/email do dentista.");
+    });
+  } catch(e){
+    // fallback
+    var ta = document.createElement("textarea");
+    ta.value = texto;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    toast("📋","Credencial copiada!");
+  }
+}
+
 function delDt(id){var d=fdent(id);openM("Remover","<p style='color:var(--gr)'>Remover <strong>"+esc(d?d.n:"")+"</strong>?</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Remover",cls:"btnr",fn:function(){dents=dents.filter(function(x){return x.id!==id;});dbDelDent(id);closeM();rdent();toast("🗑️","Removido");}}]);}
 
 // ══ USUARIOS ══
@@ -6520,11 +6817,13 @@ async function imprimirRelatorioDia() {
   // Se não encontrou localmente, buscar do Supabase
   if(!dayAgs.length){
     try{
-      var r = await supaFetch("agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
+      var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
       var dados = await r.json();
       if(dados && dados.length){
         var ids = dados.map(function(a){return a.id});
-        var rItens = await supaFetch("agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")");
+        var rItens = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")",
+          {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
         var todosItens = await rItens.json() || [];
         dayAgs = dados.map(function(a){
           var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
@@ -6791,12 +7090,14 @@ async function abrirFechamentoCaixa() {
   // Se não encontrou localmente, buscar do Supabase
   if(!dayAgs.length){
     try{
-      var r = await supaFetch("agendamentos?select=*&data_exame=eq."+dsISO+"&status_clinico=eq.realizado&order=hora_exame.asc");
+      var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+dsISO+"&status_clinico=eq.realizado&order=hora_exame.asc",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
       var dados = await r.json();
       if(dados && dados.length){
         // Buscar itens de cada agendamento
         var ids = dados.map(function(a){return a.id});
-        var rItens = await supaFetch("agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")");
+        var rItens = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")",
+          {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
         var todosItens = await rItens.json() || [];
         dayAgs = dados.map(function(a){
           var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
