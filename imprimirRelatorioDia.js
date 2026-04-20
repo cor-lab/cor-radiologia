@@ -15,11 +15,13 @@ async function imprimirRelatorioDia() {
   // Se não encontrou localmente, buscar do Supabase
   if(!dayAgs.length){
     try{
-      var r = await supaFetch("/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
+      var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc",
+        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
       var dados = await r.json();
       if(dados && dados.length){
         var ids = dados.map(function(a){return a.id});
-        var rItens = await supaFetch("/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")");
+        var rItens = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")",
+          {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
         var todosItens = await rItens.json() || [];
         dayAgs = dados.map(function(a){
           var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
@@ -75,14 +77,21 @@ async function imprimirRelatorioDia() {
       cvNome = cv2 ? cv2.n : a.cv;
     }
 
-    var vb = Number(a.valor_bruto || a.vl || 0);
-    var vd = Number(a.desconto_valor || 0);
-    var vf = Number(a.valor_faturado || a.vl || 0);
-    // UNIMED/fora fat: se valor_bruto=0, somar preco dos exames
-    if(vb === 0 && itens.length){
-      var soma = 0;
-      itens.forEach(function(it){ soma += Number(it.preco || 0); });
-      if(soma > 0){ vb = soma; vf = soma; }
+    // ═══ FONTE ÚNICA DE VERDADE: calcValoresAg (definida no index.html) ═══
+    var _vals = (typeof calcValoresAg === 'function') ? calcValoresAg(a) : null;
+    var vb, vd, vf;
+    if(_vals){
+      vb = _vals.bruto; vd = _vals.desconto; vf = _vals.faturado;
+    } else {
+      // Fallback (caso o script carregue antes do index)
+      vb = Number(a.valor_bruto || a.vl || 0);
+      vd = Number(a.desconto_valor || 0);
+      vf = Number(a.valor_faturado || a.vl || 0);
+      if(vb === 0 && itens.length){
+        var soma = 0;
+        itens.forEach(function(it){ soma += Number(it.preco || 0); });
+        if(soma > 0){ vb = soma; vf = soma; }
+      }
     }
 
     totalBruto += vb;

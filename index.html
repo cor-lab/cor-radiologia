@@ -601,6 +601,54 @@ var SUPA_URL = "https://flpvzvtbhuyjjdqyrsza.supabase.co";
 var SUPA_KEY = "sb_publishable_EWmUEcw77PcCJDyZ6i2xMg_d5Ode_SM";
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
+// ═══ FONTE ÚNICA DE VERDADE PARA CÁLCULO DE VALORES DE AGENDAMENTO ═══
+// Sempre que precisar calcular bruto/faturado/desconto de um agendamento,
+// USE ESTA FUNÇÃO. Evita bugs de mistos (particular + convênio) onde
+// agendamentos.valor_bruto só guarda a parte particular.
+//
+// Regra: se o agendamento tem itens/exames, soma TODOS os exames (item.preco).
+//        Se não tem itens, usa agendamentos.valor_bruto como fallback.
+//        Faturado = bruto * (1 - desconto_percentual/100) ou valor_faturado salvo.
+//
+// Retorna: { bruto, faturado, desconto, descontoPct }
+window.calcValoresAg = function(ag){
+  if(!ag) return { bruto:0, faturado:0, desconto:0, descontoPct:0 };
+  var itens = ag.exames || ag.itens || [];
+  var bruto = 0;
+
+  if(itens.length > 0){
+    // SEMPRE soma pelos exames quando há itens (verdade absoluta)
+    itens.forEach(function(it){ bruto += Number(it.preco || 0); });
+  } else {
+    // Fallback: usa valor_bruto salvo no agendamento
+    bruto = Number(ag.valor_bruto || ag.vl || ag.valor || 0);
+  }
+
+  var descontoPct = Number(ag.desconto_percentual || 0);
+  var desconto = Number(ag.desconto_valor || 0);
+  var faturado;
+
+  // Se tem desconto_valor salvo, usa ele (+ recalcula faturado)
+  if(desconto > 0){
+    faturado = bruto - desconto;
+  } else if(descontoPct > 0){
+    desconto = bruto * (descontoPct / 100);
+    faturado = bruto - desconto;
+  } else {
+    // Sem desconto: faturado = bruto (ou valor salvo se existir)
+    faturado = Number(ag.valor_faturado || ag.vl || bruto);
+    desconto = bruto - faturado;
+    if(desconto < 0.01) desconto = 0; // zerar ruído de arredondamento
+  }
+
+  return {
+    bruto: Number(bruto.toFixed(2)),
+    faturado: Number(faturado.toFixed(2)),
+    desconto: Number(desconto.toFixed(2)),
+    descontoPct: descontoPct
+  };
+};
+
 // ═══ HELPER GLOBAL: fetch autenticado ao Supabase REST API ═══
 // Usa JWT do usuário logado (authenticated) ao invés da publishable key (anon)
 // Essencial pois as RLS exigem role authenticated pra SELECT/INSERT/UPDATE/DELETE
@@ -5619,7 +5667,11 @@ async function aplicarAjusteCashback(){
   openM(
     "Confirmar ajuste de cashback",
     ""
-    + "<div style='margin-top:4px;font-size:.84rem;color:var(--gr)'>"
+    + "<div class='field'>"
+    +   "<label>Senha de autorização</label>"
+    +   "<input id='cbAjSenha' type='password' placeholder='Digite a senha'>"
+    + "</div>"
+    + "<div style='margin-top:12px;font-size:.84rem;color:var(--gr)'>"
     +   "Dentista: <strong>" + esc(d.n) + "</strong><br>"
     +   "Tipo: <strong>" + (tipo === "credito" ? "Adicionar" : "Remover") + "</strong><br>"
     +   "Pontos: <strong>" + fmtN(pontos) + "</strong><br>"
@@ -5635,9 +5687,11 @@ async function aplicarAjusteCashback(){
         lbl: "Confirmar ajuste",
         cls: "btng",
         fn: async function(){
-          // v2: proteção por role (era senha hardcoded "1234" antes)
-          if(!CU || CU.role !== "admin"){
-            toast("Acesso negado", "Apenas administradores podem ajustar cashback.");
+          var senha = (document.getElementById("cbAjSenha").value || "").trim();
+
+          // TROQUE A SENHA AQUI
+          if(senha !== "1234"){
+            toast("Atenção", "Senha incorreta.");
             return;
           }
 
@@ -6848,7 +6902,7 @@ async function imprimirRelatorioDia() {
   // Se não encontrou localmente, buscar do Supabase
   if(!dayAgs.length){
     try{
-      var r = await supaFetch("/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
+      var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
       var dados = await r.json();
       if(dados && dados.length){
         var ids = dados.map(function(a){return a.id});
@@ -6923,15 +6977,12 @@ async function imprimirRelatorioDia() {
       }
     }
 
-    var vb = Number(a.valor_bruto || a.vl || 0);
-    var vd = Number(a.desconto_valor || 0);
-    var vf = Number(a.valor_faturado || a.vl || 0);
-    // UNIMED/fora fat: se valor_bruto=0, somar preco dos exames
-    if(vb === 0 && itens.length){
-      var soma = 0;
-      itens.forEach(function(it){ soma += Number(it.preco || 0); });
-      if(soma > 0){ vb = soma; vf = soma; }
-    }
+    // ═══ FONTE ÚNICA DE VERDADE: calcValoresAg ═══
+    // Fix bug de mistos (particular + convênio): soma SEMPRE pelos exames
+    var _vals = calcValoresAg(a);
+    var vb = _vals.bruto;
+    var vd = _vals.desconto;
+    var vf = _vals.faturado;
 
     totalBruto += vb;
     totalDesc += vd;
@@ -7458,8 +7509,8 @@ function fcImprimir() {
   win.print();
 }
 </script>
-<script src="pacientes_busca.js?v=3"></script>
-<script src="ordem_servico.js?v=2.7"></script>
+<script src="pacientes_busca.js"></script>
+<script src="ordem_servico.js"></script>
 <script>
 // Dropdown menu para etiquetas no card compacto
 function toggleEtqMenu(btn, agId) {
@@ -7492,7 +7543,7 @@ function toggleEtqMenu(btn, agId) {
   }, 10);
 }
 </script>
-<script src="etiqueta.js?v=5"></script>
-<script src="fichas.js?v=2.1"></script>
+<script src="etiqueta.js"></script>
+<script src="fichas.js"></script>
 </body>
 </html>
