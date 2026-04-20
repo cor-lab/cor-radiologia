@@ -5619,11 +5619,7 @@ async function aplicarAjusteCashback(){
   openM(
     "Confirmar ajuste de cashback",
     ""
-    + "<div class='field'>"
-    +   "<label>Senha de autorização</label>"
-    +   "<input id='cbAjSenha' type='password' placeholder='Digite a senha'>"
-    + "</div>"
-    + "<div style='margin-top:12px;font-size:.84rem;color:var(--gr)'>"
+    + "<div style='margin-top:4px;font-size:.84rem;color:var(--gr)'>"
     +   "Dentista: <strong>" + esc(d.n) + "</strong><br>"
     +   "Tipo: <strong>" + (tipo === "credito" ? "Adicionar" : "Remover") + "</strong><br>"
     +   "Pontos: <strong>" + fmtN(pontos) + "</strong><br>"
@@ -5639,11 +5635,9 @@ async function aplicarAjusteCashback(){
         lbl: "Confirmar ajuste",
         cls: "btng",
         fn: async function(){
-          var senha = (document.getElementById("cbAjSenha").value || "").trim();
-
-          // TROQUE A SENHA AQUI
-          if(senha !== "1234"){
-            toast("Atenção", "Senha incorreta.");
+          // v2: proteção por role (era senha hardcoded "1234" antes)
+          if(!CU || CU.role !== "admin"){
+            toast("Acesso negado", "Apenas administradores podem ajustar cashback.");
             return;
           }
 
@@ -6854,7 +6848,7 @@ async function imprimirRelatorioDia() {
   // Se não encontrou localmente, buscar do Supabase
   if(!dayAgs.length){
     try{
-      var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
+      var r = await supaFetch("/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
       var dados = await r.json();
       if(dados && dados.length){
         var ids = dados.map(function(a){return a.id});
