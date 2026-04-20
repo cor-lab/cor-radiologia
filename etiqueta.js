@@ -4,6 +4,7 @@
 // Tamanho: 10cm x 2,9cm (impressora termica)
 // <script src="etiqueta.js"></script>
 // v4: protocolo reordenado (Paciente > Dentista > Cidade > Endereco > Complemento)
+// v5: usa cliente `supa` em vez de fetch direto (corrige RLS authenticated)
 // ============================================================
 
 var LOGO_COR_ETQ = "logo.png";
@@ -51,12 +52,15 @@ async function imprimirEtiqueta(agId, tipo) {
     }
 
     try {
-        var resp = await fetch(
-            SUPA_URL + "/rest/v1/dentista_enderecos?dentista_id=eq." + a.dId + "&order=id.asc",
-            { headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY } }
-        );
-        var enderecos = await resp.json();
-        if (!enderecos || !enderecos.length) {
+        // v5: usa cliente supa (JWT authenticated) em vez de fetch manual
+        var r = await supa.from("dentista_enderecos")
+            .select("*")
+            .eq("dentista_id", a.dId)
+            .order("id", { ascending: true });
+        if (r.error) console.error("imprimirEtiqueta/enderecos:", r.error);
+        var enderecos = r.data || [];
+
+        if (!enderecos.length) {
             if (tipo === "protocolo") {
                 gerarEtiquetaProtocolo(a, dentNome, null);
             } else {
@@ -300,4 +304,4 @@ function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
     win.document.close();
 }
 
-console.log("[COR] Modulo etiqueta v4 carregado (protocolo reordenado)");
+console.log("[COR] Modulo etiqueta v5 carregado (RLS authenticated fix)");
