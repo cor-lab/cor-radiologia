@@ -1,5 +1,5 @@
 // ============================================================
-// MODULO BUSCA DE PACIENTES - COR v2
+// MODULO BUSCA DE PACIENTES - COR v3 (RLS authenticated fix)
 // Busca inteligente com vinculação por Nome + Data Nascimento
 // CPF diferente com mesmo nome+datanasc = mesmo paciente (atualiza CPF)
 // Incluir no index.html antes do </body>
@@ -24,14 +24,8 @@ async function buscarPacientes(termo) {
     }
 
     try {
-        var r = await fetch(
-            SUPA_URL + "/rest/v1/pacientes?select=*&" + filtro + "&ativo=eq.true&limit=8&order=nome.asc",
-            {
-                headers: {
-                    "apikey": SUPA_KEY,
-                    "Authorization": "Bearer " + SUPA_KEY
-                }
-            }
+        var r = await supaFetch(
+            "/rest/v1/pacientes?select=*&" + filtro + "&ativo=eq.true&limit=8&order=nome.asc"
         );
         return await r.json();
     } catch (e) {
@@ -59,11 +53,9 @@ async function criarPacienteSupa(dados) {
             uf: dados.uf || null
         };
 
-        var r = await fetch(SUPA_URL + "/rest/v1/pacientes", {
+        var r = await supaFetch("/rest/v1/pacientes", {
             method: "POST",
             headers: {
-                "apikey": SUPA_KEY,
-                "Authorization": "Bearer " + SUPA_KEY,
                 "Content-Type": "application/json",
                 "Prefer": "return=representation"
             },
@@ -89,13 +81,11 @@ async function atualizarCpfPaciente(pacienteId, novoCpf) {
         var cpfLimpo = (novoCpf || "").replace(/\D/g, "");
         if (!cpfLimpo || !pacienteId) return false;
 
-        var r = await fetch(
-            SUPA_URL + "/rest/v1/pacientes?id=eq." + pacienteId,
+        var r = await supaFetch(
+            "/rest/v1/pacientes?id=eq." + pacienteId,
             {
                 method: "PATCH",
                 headers: {
-                    "apikey": SUPA_KEY,
-                    "Authorization": "Bearer " + SUPA_KEY,
                     "Content-Type": "application/json",
                     "Prefer": "return=representation"
                 },
@@ -329,7 +319,7 @@ function initBuscaCpf(inputId) {
 var _confAgOriginal = typeof confAg === "function" ? confAg : null;
 
 // Sobrescrever confAg para incluir paciente_id e logica de vinculação
-async function confAgComPaciente(isAtendimento) {
+async function confAgComPaciente() {
     var prefix = "p";
     var nm = (document.getElementById(prefix + "Nome")?.value || "").trim().toUpperCase();
     var cpfForm = (document.getElementById(prefix + "Cpf")?.value || "").replace(/\D/g, "");
@@ -350,14 +340,8 @@ async function confAgComPaciente(isAtendimento) {
         // Tentar encontrar paciente por nome exato
         var candidatos = [];
         try {
-            var rNome = await fetch(
-                SUPA_URL + "/rest/v1/pacientes?select=*&nome=ilike." + encodeURIComponent(nm) + "&ativo=eq.true&limit=10",
-                {
-                    headers: {
-                        "apikey": SUPA_KEY,
-                        "Authorization": "Bearer " + SUPA_KEY
-                    }
-                }
+            var rNome = await supaFetch(
+                "/rest/v1/pacientes?select=*&nome=ilike." + encodeURIComponent(nm) + "&ativo=eq.true&limit=10"
             );
             candidatos = await rNome.json();
             if (!Array.isArray(candidatos)) candidatos = [];
@@ -381,14 +365,8 @@ async function confAgComPaciente(isAtendimento) {
         // Se ainda não vinculou, buscar por CPF
         if (!_pacSelecionado && cpfForm && cpfForm.length >= 6) {
             try {
-                var rCpf = await fetch(
-                    SUPA_URL + "/rest/v1/pacientes?select=*&cpf=eq." + cpfForm + "&ativo=eq.true&limit=5",
-                    {
-                        headers: {
-                            "apikey": SUPA_KEY,
-                            "Authorization": "Bearer " + SUPA_KEY
-                        }
-                    }
+                var rCpf = await supaFetch(
+                    "/rest/v1/pacientes?select=*&cpf=eq." + cpfForm + "&ativo=eq.true&limit=5"
                 );
                 var porCpf = await rCpf.json();
                 if (Array.isArray(porCpf) && porCpf.length > 0) {
@@ -434,9 +412,9 @@ async function confAgComPaciente(isAtendimento) {
         }
     }
 
-    // Chamar funcao original (confAg do index.html) repassando o parametro isAtendimento
+    // Chamar funcao original (confAg do index.html)
     if (_confAgOriginal) {
-        await _confAgOriginal(isAtendimento);
+        await _confAgOriginal();
     }
 
     // Depois de salvar, vincular paciente_id no agendamento
@@ -444,13 +422,11 @@ async function confAgComPaciente(isAtendimento) {
         var ultimoAg = ags[ags.length - 1];
         if (ultimoAg && ultimoAg.id) {
             try {
-                await fetch(
-                    SUPA_URL + "/rest/v1/agendamentos?id=eq." + ultimoAg.id,
+                await supaFetch(
+                    "/rest/v1/agendamentos?id=eq." + ultimoAg.id,
                     {
                         method: "PATCH",
                         headers: {
-                            "apikey": SUPA_KEY,
-                            "Authorization": "Bearer " + SUPA_KEY,
                             "Content-Type": "application/json"
                         },
                         body: JSON.stringify({ paciente_id: _pacSelecionado.id })
