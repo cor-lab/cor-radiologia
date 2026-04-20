@@ -5771,16 +5771,16 @@ async function dentEndLoad(dentId){
   window._dentEndCache = [];
   var el=document.getElementById("dentEndList"); if(!el) return;
   try {
-    var r=await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?dentista_id=eq."+dentId+"&order=id.asc",
-      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
-    var ends=await r.json();
-    if(!ends||!ends.length){
+    var r = await supa.from("dentista_enderecos").select("*").eq("dentista_id", dentId).order("id", {ascending:true});
+    if(r.error){ console.error("dentEndLoad:", r.error); el.innerHTML="<div style='color:#f66;font-size:12px'>Erro: "+esc(r.error.message)+"</div>"; return; }
+    var ends = r.data || [];
+    if(!ends.length){
       el.innerHTML="<div style='color:#666;font-size:12px;padding:6px'>Nenhum endereco cadastrado</div>";
       return;
     }
     window._dentEndCache=ends.map(function(e){return{id:e.id,dentista_id:dentId,descricao:e.descricao||"",endereco:e.endereco||"",complemento:e.complemento||"",bairro:e.bairro||"",cep:e.cep||"",cidade:e.cidade||"",_status:"existing"};});
     dentEndRender();
-  } catch(e){ el.innerHTML="<div style='color:#f66;font-size:12px'>Erro ao carregar enderecos</div>"; }
+  } catch(e){ console.error("dentEndLoad exc:",e); el.innerHTML="<div style='color:#f66;font-size:12px'>Erro ao carregar enderecos</div>"; }
 }
 
 function dentEndRender(){
@@ -5857,14 +5857,14 @@ async function dentEndSaveAll(dentId){
     var payload={dentista_id:dentId,descricao:e.descricao,endereco:e.endereco,complemento:e.complemento,bairro:e.bairro,cep:e.cep,cidade:e.cidade};
     try {
       if(e._status==="deleted"&&e.id){
-        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?id=eq."+e.id,
-          {method:"DELETE",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+        var rDel = await supa.from("dentista_enderecos").delete().eq("id", e.id);
+        if(rDel.error) console.error("dentEnd delete:", rDel.error);
       } else if(e._status==="new"){
-        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos",
-          {method:"POST",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
+        var rIns = await supa.from("dentista_enderecos").insert(payload);
+        if(rIns.error) console.error("dentEnd insert:", rIns.error);
       } else if(e.id){
-        await fetch(SUPA_URL+"/rest/v1/dentista_enderecos?id=eq."+e.id,
-          {method:"PATCH",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
+        var rUpd = await supa.from("dentista_enderecos").update(payload).eq("id", e.id);
+        if(rUpd.error) console.error("dentEnd update:", rUpd.error);
       }
     } catch(err){ console.error("dentEndSave erro:",err); }
   }
