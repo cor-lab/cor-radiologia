@@ -4,6 +4,7 @@
 // v2.0 — 12/04/2026
 // Ficha 4 refeita conforme layout original (6×7cm — A×L)
 // Ficha 3 margens revisadas (28 linhas sem quebra)
+// v2.1 — 20/04/2026 — Nome do dentista em negrito
 //
 // 4 fichas impressas simultaneamente (cada uma em página A4):
 //   1. Ficha do Paciente (dados + ortodônticas + história médica)
@@ -15,7 +16,7 @@
 // Depende de: ags[], fdent(), fex(), fconv(), SUPA_URL, SUPA_KEY
 // ============================================================
 
-var FICHAS_VERSION = '2.0';
+var FICHAS_VERSION = '2.1';
 
 // Fotos servidas via HTTP pelo servidor_fotos.py (porta 8080)
 // URL: http://192.168.0.200:8080/{SEQ/1000}/{SEQ}fs.jpg
@@ -53,6 +54,7 @@ body{font-family:"Open Sans",Arial,sans-serif;color:#1a1a2e;font-size:11px;margi
 .hd-nome{font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3aaa35,#2d8a2e);padding:5px 14px;border-radius:4px;margin-bottom:6px;letter-spacing:.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
 .hd-g{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;font-size:11px;line-height:1.6}\
 .hd-l{font-weight:700;color:#555}\
+.hd-d{font-weight:700;color:#1a1a2e;font-size:12px}\
 .hd-logo{width:90px;flex-shrink:0;text-align:right}\
 .hd-logo img{width:80px}\
 .st{font-size:12px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3aaa35,#2d8a2e);padding:4px 12px;border-radius:3px;text-align:center;text-transform:uppercase;letter-spacing:1px;margin:8px 0 6px;-webkit-print-color-adjust:exact;print-color-adjust:exact}\
@@ -133,7 +135,7 @@ return'<div class="hd">'+
 '<div class="hd-info">'+
 '<div class="hd-nome">'+_fic_e(a.pac||'SEM NOME').toUpperCase()+'</div>'+
 '<div class="hd-g">'+
-'<span class="hd-l">Dr.(a):</span><span>'+_fic_e(dn)+'</span>'+
+'<span class="hd-l">Dr.(a):</span><span class="hd-d">'+_fic_e(dn)+'</span>'+
 '<span class="hd-l">Telefone:</span><span>'+_fic_e(a.tel||'')+'</span>'+
 '<span class="hd-l">Data:</span><span>'+db+'</span>'+
 '<span class="hd-l">Nascimento:</span><span>'+nb+'</span>'+
@@ -279,7 +281,7 @@ h+='<div class="cdn">'+_fic_e(a.pac||'SEM NOME').toUpperCase()+'</div>';
 h+='<div class="cd-info-grid">';
 h+='<b>Idade:</b><span>'+id+'</span>';
 h+='<b>Nasc.:</b><span>'+nb+'</span>';
-h+='<b>Dr.(a):</b><span>'+_fic_e(dn)+'</span>';
+h+='<b>Dr.(a):</b><span style="font-weight:700;color:#1a1a2e">'+_fic_e(dn)+'</span>';
 h+='</div>';
 h+='</div>';
 h+='</div>';
