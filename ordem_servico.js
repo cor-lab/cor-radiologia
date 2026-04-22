@@ -1,6 +1,7 @@
 // ============================================================
 // MODULO ORDEM DE SERVICO (OS) - COR
-// v2.6 — correção desconto em mistos + compactação página única A4
+// v2.7 — grid de dados do paciente com align-items:start e
+//        overflow-wrap pra evitar colisão nome×nascimento
 // ============================================================
 
 var LOGO_COR_B64 = "logo.png";
@@ -238,9 +239,12 @@ function imprimirOS(agId) {
         ".seq-box{text-align:center;background:#f0f4ff;border:2px solid #2d3a6e;border-radius:6px;padding:4px 14px}" +
         ".seq-box .label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.8px}" +
         ".seq-box .numero{font-size:24px;font-weight:bold;color:#2d3a6e;line-height:1.1}" +
-        ".info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px 14px;margin-bottom:8px;font-size:13px}" +
+        ".info-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px 14px;margin-bottom:8px;font-size:13px;align-items:start}" +
+        ".info-grid > div{min-width:0}" +
         ".info-grid .label{font-weight:bold;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:.3px}" +
-        ".info-grid .valor{font-size:14px;line-height:1.2}" +
+        ".info-grid .valor{font-size:14px;line-height:1.2;word-break:break-word;overflow-wrap:anywhere;hyphens:auto}" +
+        ".info-grid .cell-nome{grid-column:span 2}" +
+        ".info-grid .cell-full{grid-column:span 2}" +
         ".total-row{background:#f0f4ff;font-weight:bold;font-size:15px}" +
         ".barcode{text-align:center;margin:6px 0}" +
         ".barcode svg{height:32px}" +
@@ -277,15 +281,15 @@ function imprimirOS(agId) {
 
         // Dados paciente
         "<div class='info-grid'>" +
-        "<div><div class='label'>Paciente</div><div class='valor'>" + esc(nomePaciente) + "</div></div>" +
-        "<div><div class='label'>CPF</div><div class='valor'>" + (a.paciente_cpf ? formatarCPF(a.paciente_cpf) : "-") + "</div></div>" +
-        "<div><div class='label'>Telefone</div><div class='valor'>" + (a.tel || "-") + "</div></div>" +
-        "<div><div class='label'>Nascimento</div><div class='valor'>" + dataNascBR + "</div></div>" +
-        "<div><div class='label'>Idade</div><div class='valor'>" + idadeTexto + "</div></div>" +
-        "<div><div class='label'>Sexo</div><div class='valor'>" + (a.paciente_sexo || "-") + "</div></div>" +
-        "<div><div class='label'>Data do Exame</div><div class='valor'>" + dataAtend + "</div></div>" +
-        "<div><div class='label'>Hora</div><div class='valor'>" + horaAtend + "</div></div>" +
-        "<div><div class='label'>Dentista</div><div class='valor'>" + esc(d.n) + "</div></div>" +
+        "<div class='cell-full'><div class='label'>Paciente</div><div class='valor'>" + esc(nomePaciente) + "</div></div>" +
+        "<div class='cell-full'><div class='label'>CPF</div><div class='valor'>" + (a.paciente_cpf ? formatarCPF(a.paciente_cpf) : "-") + "</div></div>" +
+        "<div class='cell-full'><div class='label'>Telefone</div><div class='valor'>" + (a.tel || "-") + "</div></div>" +
+        "<div class='cell-full'><div class='label'>Nascimento</div><div class='valor'>" + dataNascBR + "</div></div>" +
+        "<div class='cell-full'><div class='label'>Idade</div><div class='valor'>" + idadeTexto + "</div></div>" +
+        "<div class='cell-full'><div class='label'>Sexo</div><div class='valor'>" + (a.paciente_sexo || "-") + "</div></div>" +
+        "<div class='cell-full'><div class='label'>Data do Exame</div><div class='valor'>" + dataAtend + "</div></div>" +
+        "<div class='cell-full'><div class='label'>Hora</div><div class='valor'>" + horaAtend + "</div></div>" +
+        "<div class='cell-full'><div class='label'>Dentista</div><div class='valor'>" + esc(d.n) + "</div></div>" +
         "</div>" +
 
         // Aviso misto se aplicavel
