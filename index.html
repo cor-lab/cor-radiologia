@@ -1298,6 +1298,15 @@ async function marcarRealizadoEEmitir(agendamentoId){
       return false;
     }
 
+    // VALIDAÇÃO: bloqueia realizado se faltar data de nascimento ou telefone
+    var validacao = validarDadosParaRealizado(ag);
+    if (!validacao.ok) {
+      toast("⚠️ Dados incompletos", "Faltam: " + validacao.faltam.join(", ") + ". Complete no modal de edição antes de emitir a nota.");
+      openEditAg(agendamentoId);
+      highlightCamposFaltantes(validacao.ids);
+      return false;
+    }
+
     const upd = await supa
       .from("agendamentos")
       .update({
@@ -3616,22 +3625,98 @@ function setAtFilter(f) {
   renderAtendimento();
 }
 
+// Valida dados obrigatórios antes de marcar como realizado.
+// Retorna { ok: true } se tudo preenchido, ou
+// { ok: false, faltam: [...], ids: [...] } se faltar algo.
+// CPF é OPCIONAL (SUS/crianças/sem documento), mas se preenchido é validado.
+function validarDadosParaRealizado(a) {
+  var faltam = [];
+  var ids = []; // IDs dos campos no modal openEditAg
+
+  var dataNasc = (a.paciente_data_nascimento || "").trim();
+  if (!dataNasc) {
+    faltam.push("Data de Nascimento");
+    ids.push("eDataNasc");
+  }
+
+  var tel = String(a.tel || a.paciente_tel || "").replace(/\D/g, "");
+  if (!tel || tel.length < 10) {
+    faltam.push("Telefone");
+    ids.push("eTel2");
+  }
+
+  // CPF: OPCIONAL. Só valida se estiver preenchido.
+  var cpf = (a.paciente_cpf || "").trim();
+  if (cpf && !validarCPF(cpf)) {
+    faltam.push("CPF (inválido)");
+    ids.push("eCpf");
+  }
+
+  return { ok: faltam.length === 0, faltam: faltam, ids: ids };
+}
+
+// Destaca visualmente campos do modal que estão faltando.
+// Pinta a borda de vermelho e adiciona asterisco no label.
+function highlightCamposFaltantes(ids) {
+  setTimeout(function() {
+    ids.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.style.borderColor = "#d9534f";
+      el.style.borderWidth = "2px";
+      el.style.backgroundColor = "#fff5f5";
+      // Adiciona asterisco no label se ainda não tem
+      var lbl = el.previousElementSibling;
+      if (lbl && lbl.tagName === "LABEL" && lbl.textContent.indexOf("⚠️") === -1) {
+        lbl.innerHTML = "⚠️ " + lbl.innerHTML + " <span style='color:#d9534f;font-weight:bold'>*</span>";
+      }
+      // Remove o destaque assim que o usuário editar
+      var clearHighlight = function() {
+        el.style.borderColor = "";
+        el.style.borderWidth = "";
+        el.style.backgroundColor = "";
+        el.removeEventListener("input", clearHighlight);
+        el.removeEventListener("change", clearHighlight);
+      };
+      el.addEventListener("input", clearHighlight);
+      el.addEventListener("change", clearHighlight);
+    });
+    // Foca no primeiro campo faltante
+    if (ids.length > 0) {
+      var first = document.getElementById(ids[0]);
+      if (first) first.focus();
+    }
+  }, 100); // pequeno delay pra garantir que o modal renderizou
+}
+
 async function atMarkRealizado(id) {
+  var a = ags.find(function(x) { return x.id === id; });
+  if (!a) {
+    toast("Erro", "Agendamento não encontrado.");
+    return;
+  }
+
+  // VALIDAÇÃO: bloqueia realizado se faltar data de nascimento ou telefone
+  var validacao = validarDadosParaRealizado(a);
+  if (!validacao.ok) {
+    toast("⚠️ Dados incompletos", "Faltam: " + validacao.faltam.join(", ") + ". Complete no modal de edição.");
+    openEditAg(id);
+    highlightCamposFaltantes(validacao.ids);
+    return;
+  }
+
   var ok = await dbUpdAgSt(id, "realizado");
   if (ok) {
-    var a = ags.find(function(x) { return x.id === id; });
-    if (a) {
-      a.st = "realizado";
-      a.status_clinico = "realizado";
-      // FotonWeb COR: gera token de acesso do paciente (silencioso)
-      try {
-        if (a.firebird_seq_atend) {
-          var tok = await gerarTokenAcessoPaciente(a);
-          console.log("[FotonWeb] Token gerado:", tok, "SEQ:", a.firebird_seq_atend);
-        }
-      } catch(e) {
-        console.error("[FotonWeb] Falha ao gerar token (não bloqueante):", e);
+    a.st = "realizado";
+    a.status_clinico = "realizado";
+    // FotonWeb COR: gera token de acesso do paciente (silencioso)
+    try {
+      if (a.firebird_seq_atend) {
+        var tok = await gerarTokenAcessoPaciente(a);
+        console.log("[FotonWeb] Token gerado:", tok, "SEQ:", a.firebird_seq_atend);
       }
+    } catch(e) {
+      console.error("[FotonWeb] Falha ao gerar token (não bloqueante):", e);
     }
     renderAtendimento();
     toast("✅", "Atendimento realizado!");
@@ -4004,6 +4089,15 @@ function agEV(ev, id) {
         lbl:"✅ Realizado",
         cls:"btng",
         fn:async function(){
+          // VALIDAÇÃO: bloqueia realizado se faltar data de nascimento ou telefone
+          var validacao = validarDadosParaRealizado(ag);
+          if (!validacao.ok) {
+            toast("⚠️ Dados incompletos", "Faltam: " + validacao.faltam.join(", ") + ". Complete no modal de edição.");
+            closeM();
+            openEditAg(ag.id);
+            highlightCamposFaltantes(validacao.ids);
+            return;
+          }
           var ok = await dbUpdAgSt(ag.id,"realizado");
           if(ok){
             ag.st = "realizado";
