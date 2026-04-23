@@ -1,4 +1,39 @@
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// MODULO ORDEM DE SERVICO (OS) — COR
+// ═══════════════════════════════════════════════════════════════════════════
+//
+//   MANIFESTO DE FEATURES — NÃO REMOVER ESTE BLOCO
+//
+//   Claude (IA): antes de editar, leia esta lista. Features abaixo JÁ
+//   EXISTEM. Ao reescrever imprimirOS(), preserve a funcionalidade ou
+//   avise explicitamente.
+//
+//   [✓] Impressão A4 em página única (flex compactado)
+//       Marcadores: ".page", "min-height:calc(297mm - 16mm)"
+//   [✓] Grid de dados do paciente com align-items:start (v2.7)
+//       Marcadores: ".info-grid", ".cell-full", "word-break:break-word"
+//       Previne colisão visual nome × nascimento quando nome quebra linha
+//   [✓] Cálculo de idade a partir de data_nascimento
+//       Marcadores: "_calcularIdade", "paciente_data_nascimento"
+//   [✓] Tabela de exames com desconto por item
+//       Marcadores: "itens", "valorBruto", "descontoValor"
+//   [✓] Aviso "misto" (particular + convênio no mesmo atendimento)
+//       Marcadores: "avisoMistoBox", "totalParticularComDesc"
+//   [✓] Setores técnicos (Raios X / Tomografia / Fotos/Escan / Periapicais)
+//       Marcadores: ".setores-grid", ".setor-bloco"
+//   [✓] Rodapé com 2 assinaturas (paciente + clínica)
+//       Marcadores: ".rodape-assinaturas", ".linha-ass"
+//   [✓] Código de barras do SEQATEND
+//       Marcadores: ".barcode", "seqAtend"
+//   [✓] Dados de entrega (balcão / email / whatsapp / correio / consultório)
+//       Marcadores: "entregaLabels", ".entrega-box"
+//
+//   HISTÓRICO
+//   v2.7 (2026-04-23): Grid corrigida (align-items:start + overflow-wrap)
+//   v2.6 (2026-04-19): Correção desconto em mistos + página única A4
+//   v2.5 (anterior)  : Base com setores técnicos
+//
+// ═══════════════════════════════════════════════════════════════════════════
 // MODULO ORDEM DE SERVICO (OS) - COR
 // v2.7 — grid de dados do paciente com align-items:start e
 //        overflow-wrap pra evitar colisão nome×nascimento

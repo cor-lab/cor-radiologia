@@ -1,4 +1,59 @@
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// MÓDULO BUSCA DE PACIENTES — COR
+// Autocompletar inteligente + vinculação por Nome+DataNasc no agendamento
+// ═══════════════════════════════════════════════════════════════════════════
+//
+//   MANIFESTO DE FEATURES — NÃO REMOVER ESTE BLOCO
+//
+//   Claude (IA): antes de editar, leia a lista. Features abaixo JÁ EXISTEM.
+//   Ao reescrever qualquer parte deste módulo, preserve a funcionalidade
+//   ou avise explicitamente.
+//
+//   [✓] Busca no Supabase por nome ou CPF (≥2 chars)
+//       Marcadores: "buscarPacientes", "ilike"
+//
+//   [✓] Dropdown de autocomplete com debounce
+//       Marcadores: "renderDropdownPac", "_pacBuscaTimer"
+//
+//   [✓] VINCULAÇÃO INTELIGENTE (regra crítica de negócio):
+//       Paciente = mesmo Nome + mesma Data de Nascimento
+//       Se CPF diferir → atualiza o CPF no cadastro existente
+//       NÃO cria duplicata de paciente por mudança de CPF
+//       Marcadores: "confAgComPaciente", "atualizarCpfPaciente"
+//
+//   [✓] Criação de paciente novo com CPF normalizado
+//       Marcadores: "criarPacienteSupa", "upsert"
+//
+//   [✓] Seleção (preenche campos do form) e desvinculação
+//       Marcadores: "selecionarPaciente", "mostrarPacienteSelecionado",
+//                   "desvincularPaciente", "_pacSelecionado"
+//
+//   [✓] Inicialização automática via MutationObserver
+//       Marcadores: "_pacObserver", "initBuscaPaciente", "initBuscaCpf"
+//       Vincula aos campos: pNome, pCpf (agendamento), eNm2, eCpf (edição)
+//
+//   [✓] Sobrescreve confAg() global com confAgComPaciente()
+//       Marcadores: "_confAgOriginal", "_pacWrapped"
+//       IMPORTANTE: a função original é guardada; não deletar nem
+//       reinventar — é o "wrapper" que injeta paciente_id no payload
+//
+//   [✓] Usa cliente `supa` (RLS authenticated) — NÃO usar fetch direto
+//       Marcadores: "supa.from(\"pacientes\")"
+//
+//   ───────── DEPENDÊNCIAS EXTERNAS ─────────
+//
+//   - supa (cliente Supabase autenticado) — do index.html
+//   - confAg() — função original de confirmar agendamento (é sobrescrita)
+//   - toast(), esc() — helpers do index.html
+//   - Elementos DOM: pNome, pCpf, eNm2, eCpf (criados dinamicamente)
+//
+//   ───────── HISTÓRICO ─────────
+//
+//   v3 — RLS authenticated fix (migração fetch → supa.from)
+//   v2 — Vinculação Nome+DataNasc com atualização de CPF divergente
+//   v1 — Busca simples por nome/CPF
+//
+// ═══════════════════════════════════════════════════════════════════════════
 // MODULO BUSCA DE PACIENTES - COR v3 (RLS authenticated fix)
 // Busca inteligente com vinculação por Nome + Data Nascimento
 // CPF diferente com mesmo nome+datanasc = mesmo paciente (atualiza CPF)

@@ -1,11 +1,48 @@
-// ============================================================
-// MODULO ETIQUETA - COR
+// ═══════════════════════════════════════════════════════════════════════════
+// MODULO ETIQUETA — COR
 // Gera e imprime etiquetas para envelopes, protocolo e CD
-// Tamanho: 10cm x 2,9cm (impressora termica)
-// <script src="etiqueta.js"></script>
-// v4: protocolo reordenado (Paciente > Dentista > Cidade > Endereco > Complemento)
-// v5: usa cliente `supa` em vez de fetch direto (corrige RLS authenticated)
-// ============================================================
+// Tamanho fixo: 10cm × 2,9cm (impressora térmica)
+// Uso: <script src="etiqueta.js"></script>
+// ═══════════════════════════════════════════════════════════════════════════
+//
+//   MANIFESTO DE FEATURES — NÃO REMOVER ESTE BLOCO
+//
+//   Claude (IA): antes de editar, leia a lista. Features abaixo JÁ EXISTEM.
+//   Ao reescrever imprimirEtiqueta() ou os 3 geradores, preserve a
+//   funcionalidade ou avise explicitamente.
+//
+//   [✓] Entrada única: imprimirEtiqueta(agId, tipo)
+//       Tipos: "envelope" (default), "protocolo", "cd"
+//       Marcadores: "imprimirEtiqueta", "tipo ==="
+//
+//   [✓] 3 geradores de etiqueta:
+//       - gerarEtiquetaHtml     → Envelope (paciente + logo + data/hora/idade + dr + end)
+//       - gerarEtiquetaProtocolo → Protocolo (ordem: paciente > dr > cidade > end > compl)
+//       - gerarEtiquetaCD        → CD (logo + paciente + data/hora + dr)
+//
+//   [✓] Seletor de endereço (mostrarSeletorEndereco)
+//       Dentista com múltiplos endereços → abre modal pra escolher
+//       Marcadores: "mSeletorEndereco", "selecionarEndereco", "_etqDados"
+//
+//   [✓] Integração com dentista_enderecos (tabela Supabase)
+//       Usa cliente supa (RLS authenticated) — NÃO usar fetch direto
+//       Marcadores: "supa.from(\"dentista_enderecos\")"
+//
+//   [✓] CSS inline @page 100mm×29mm — calibrado pra impressora térmica
+//       NÃO alterar tamanhos sem validar na impressora física
+//
+//   ───────── DEPENDÊNCIAS EXTERNAS ─────────
+//
+//   - ags[], fdent(), esc(), toast() — do index.html (App COR)
+//   - supa (cliente Supabase autenticado)
+//   - LOGO_COR_ETQ = "logo.png"
+//
+//   ───────── HISTÓRICO ─────────
+//
+//   v5 — usa cliente supa em vez de fetch direto (corrige RLS authenticated)
+//   v4 — protocolo reordenado: Paciente > Dentista > Cidade > End > Complemento
+//
+// ═══════════════════════════════════════════════════════════════════════════
 
 var LOGO_COR_ETQ = "logo.png";
 

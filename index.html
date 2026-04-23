@@ -1,5 +1,91 @@
 <!DOCTYPE html>
+<!--
+═══════════════════════════════════════════════════════════════════════════
+  ATENÇÃO CLAUDE (ou qualquer assistente): LEIA ANTES DE EDITAR
+═══════════════════════════════════════════════════════════════════════════
+  Este arquivo (index.html do App COR) tem features críticas que NÃO PODEM
+  ser removidas acidentalmente em refatorações. Antes de reescrever qualquer
+  bloco grande deste arquivo, peça ao Vine o arquivo MANIFESTO_COR.md que
+  lista todas as features que devem continuar funcionando.
+
+  Features sensíveis neste arquivo (resumo — ver manifesto completo):
+    - Modal de dentista (openDtM) com subseções:
+        • Endereços múltiplos (dentEndLoad)
+        • Acesso FotonWeb COR (dentAuthLoad)
+        • 💰 Visibilidade Pontos FotonWeb (dPvpf/pvpf) 🔒
+    - Programa de cashback/pontos
+    - Agendamentos com exames mistos e regras de desconto
+    - NFS-e (fila nfse_fila, série 20) 🔒
+    - Fechamento de Caixa com roles (agenda/admin)
+
+  Se um desses marcadores não aparecer no código atual, AVISE antes de editar:
+  pode ter sumido em alguma sessão anterior e precisar ser restaurado.
+
+  Changelog resumido no MANIFESTO_COR.md
+═══════════════════════════════════════════════════════════════════════════
+-->
 <html lang="pt-BR">
+<!--
+═══════════════════════════════════════════════════════════════════════════
+  APP COR — CENTRO ODONTOLÓGICO DE RADIOLOGIA (Santa Maria/RS)
+  Frontend principal da clínica, hospedado em cor-lab.github.io/cor-radiologia
+  Backend: Supabase (projeto flpvzvtbhuyjjdqyrsza)
+═══════════════════════════════════════════════════════════════════════════
+
+  MANIFESTO DE FEATURES CRÍTICAS — NÃO REMOVER ESTE BLOCO
+  
+  Claude (IA): antes de editar qualquer parte deste arquivo, leia esta
+  lista. As features abaixo JÁ EXISTEM e não devem ser removidas numa
+  refatoração. Se for reescrever um bloco que contém uma delas, preserve
+  a funcionalidade ou avise explicitamente antes.
+  
+  ───────── FEATURES ─────────
+  
+  [✓] Fechamento de Caixa — visão agenda (simplificada) vs admin (expandida)
+      Marcadores: "fechamento", "caixa", "calcValoresAg"
+      
+  [✓] Toggle "pode_ver_pontos_fotonweb" no modal de dentista (Fase 6D)
+      Marcadores: "dPvpf", "pvpf", "pode_ver_pontos_fotonweb"
+      Ligado = dentista vê aba Meus Pontos ao logar no FotonWeb COR
+      
+  [✓] Seção "Acesso FotonWeb COR" no modal de dentista
+      Marcadores: "dentAuthLoad", "dentAuthRender", "dentAuthCall"
+      Integra Edge Function gerenciar-dentista-auth (cria/reseta credencial)
+      
+  [✓] Endereços múltiplos por dentista (tabela dentista_enderecos)
+      Marcadores: "dentEndLoad", "dentEndCache", "dentEndSaveAll"
+      
+  [✓] NFS-e: fila nfse_fila + emissão via Focus NFe (Edge Function v26)
+      Marcadores: "nfse_fila", "emitir-nfse-focus"
+      Série 20, 50 RPS, CNPJ 06948603000104
+      
+  [✓] Cashback / Pontos / Níveis (Bronze, Prata, Ouro, Diamante)
+      Marcadores: "cashback_lancamentos", "cashback_ajustes", "rsgtr"
+      Lançamentos + ajustes manuais + resgates de prêmios
+      
+  [✓] Agendamento com múltiplos exames (tabela agendamento_exames)
+      Marcadores: "agendamento_exames", "_nome", "itens"
+      
+  [✓] Indicação de dentista em agendamento (dentista que solicitou)
+      Marcadores: "dId", "INDICACAO", "fdent"
+  
+  ───────── ARQUIVOS SEPARADOS (incluir junto em backups) ─────────
+  
+  - ordem_servico.js — Impressão de Ordem de Serviço A4 (v2.7+)
+  - etiqueta.js — Etiquetas (Envelope, Protocolo, CD), 3 tipos
+  - fichas.js — Fichas A4 (Ficha 1, 2, 3, 4 pendente)
+  - pacientes_busca.js — Busca avançada de pacientes
+  - logo.png — Logo COR usada nas impressões
+  
+  ───────── HISTÓRICO ─────────
+  
+  2026-04-23: Restaurado toggle pode_ver_pontos_fotonweb (havia sumido)
+  2026-04-21: Compartilhamento LGPD de exames (via FotonWeb)
+  2026-04-19: Acesso FotonWeb COR integrado no modal de dentista
+  2026-04-18: Soberania app COR estabelecida (fonte de verdade)
+  
+═══════════════════════════════════════════════════════════════════════════
+-->
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">

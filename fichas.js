@@ -1,4 +1,49 @@
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// FICHAS.JS — Módulo de Fichas para Impressão
+// COR - Centro Odontológico de Radiologia
+// ═══════════════════════════════════════════════════════════════════════════
+//
+//   MANIFESTO DE FEATURES — NÃO REMOVER ESTE BLOCO
+//
+//   Claude (IA): antes de editar, leia a lista. Features abaixo JÁ EXISTEM.
+//   Ao reescrever imprimirFichas() ou qualquer _ficN, preserve a
+//   funcionalidade ou avise explicitamente.
+//
+//   [✓] Ficha 1 — Dados do paciente + anamnese/histórico médico
+//       Marcadores: "_fic1", checkboxes médicos
+//
+//   [✓] Ficha 2 — Exame clínico (ATM, Face, intraoral)
+//       Marcadores: "_fic2", "ATM", "Face"
+//
+//   [✓] Ficha 3 — Intervenções (28-38 linhas, preenche até rodapé)
+//       Marcadores: "_fic3", tabela de intervenções
+//
+//   [✓] Ficha 4 — Etiqueta CD 6×7cm (refeita conforme layout original)
+//       Marcadores: "_fic4", logo COR + foto paciente + dados
+//       NÃO é etiqueta térmica — é quadrada impressa em folha A4
+//
+//   [✓] Helpers compartilhados:
+//       _fic_fotoPath / _fic_fotoTag — foto paciente via servidor_fotos.py
+//       _fic_fmt — formata data ISO pra DD/MM/YYYY
+//       _fic_idade — calcula idade em anos+meses
+//       _fic_e — escape HTML
+//       _fic_visor — cabeçalho com visor azul COR
+//       _fic_hd — header compartilhado
+//       _fic_punch — furos de encadernação
+//
+//   ───────── DEPENDÊNCIAS EXTERNAS ─────────
+//
+//   - ags[], fdent(), fex(), fconv() — do index.html (App COR)
+//   - SUPA_URL, SUPA_KEY — constantes globais
+//   - Fotos: http://192.168.0.200:8080/{SEQ/1000}/{SEQ}fs.jpg
+//     (servidas por servidor_fotos.py porta 8080 no servidor local)
+//
+//   ───────── HISTÓRICO ─────────
+//
+//   v2.0 (12/04/2026) — Ficha 4 refeita (6×7cm layout original)
+//                       Ficha 3 margens revisadas (28 linhas sem quebra)
+//
+// ═══════════════════════════════════════════════════════════════════════════
 // FICHAS.JS — Módulo de Fichas para Impressão
 // COR - Centro Odontológico de Radiologia
 // v2.0 — 12/04/2026

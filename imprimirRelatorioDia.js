@@ -1,3 +1,52 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// IMPRIMIR RELATÓRIO DIÁRIO — COR
+// Consolidado de atendimentos realizados numa data + resumos e totais
+// ═══════════════════════════════════════════════════════════════════════════
+//
+//   MANIFESTO DE FEATURES — NÃO REMOVER ESTE BLOCO
+//
+//   Claude (IA): antes de editar, leia a lista. Features abaixo JÁ EXISTEM.
+//   Ao reescrever imprimirRelatorioDia(), preserve a funcionalidade ou
+//   avise explicitamente.
+//
+//   [✓] Filtro por data (atDate || agBase || hoje)
+//       Filtra ags locais OU busca no Supabase se cache vazio
+//       Marcadores: "atDate", "agBase", "status_clinico=eq.realizado"
+//
+//   [✓] Fallback ao Supabase quando cache local está vazio
+//       Usa fetch direto (SUPA_URL + SUPA_KEY) + /rest/v1/agendamentos
+//       Inclui JOIN com agendamento_exames via IN(ids)
+//       Marcadores: "todosItens", "rItens"
+//
+//   [✓] Tabela principal — uma linha por atendimento
+//       Colunas: #, SEQ, Hora, Paciente, Exame(s), Dentista, Convênio,
+//                Bruto, Desc, Faturado, Forma pgto
+//
+//   [✓] FONTE ÚNICA DE VERDADE — calcValoresAg (do index.html)
+//       NÃO reimplementar cálculo de desconto aqui.
+//       Marcadores: "calcValoresAg", "_vals"
+//       Fallback apenas se a função não estiver carregada
+//
+//   [✓] Resumo por convênio — qtd, bruto, desc, faturado
+//       Marcadores: "porConvenio", "resumoConv"
+//
+//   [✓] Top 10 dentistas — ordenado por faturamento descendente
+//       Marcadores: "porDentista", "dentArr", "slice(0,10)"
+//
+//   [✓] Totais finais (bruto/desc/faturado)
+//       Marcadores: "totalBruto", "totalDesc", "totalFat", ".total-row"
+//
+//   [✓] Auto-impressão ao abrir (window.onload = window.print)
+//
+//   ───────── DEPENDÊNCIAS EXTERNAS ─────────
+//
+//   - ags[], fdent(), fex(), fconv() — do index.html (App COR)
+//   - calcValoresAg(a) — CRÍTICO: fonte única de verdade pra cálculo
+//   - pad(), esc(), iso2br() — helpers do index.html
+//   - SUPA_URL, SUPA_KEY — constantes globais
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
 async function imprimirRelatorioDia() {
   var selDate = atDate || agBase || new Date();
   var ds = selDate.getFullYear() + "-" + pad(selDate.getMonth()+1) + "-" + pad(selDate.getDate());
