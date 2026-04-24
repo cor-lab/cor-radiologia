@@ -15,6 +15,13 @@
 //       Tipos: "envelope" (default), "protocolo", "cd"
 //       Marcadores: "imprimirEtiqueta", "tipo ==="
 //
+//   [✓] Entrada PARA LEGADO: imprimirEtiquetaHist(histItem, tipo, paciente_id)
+//       Aceita registro de historico_atendimentos (sem agId no Supabase).
+//       Busca DOB em pacientes se paciente_id informado. Mapeia dentista_id
+//       por nome usando array global `dents`. Monta objeto `a` compativel e
+//       reusa os 3 geradores (gerarEtiquetaCD/Protocolo/Html).
+//       Marcadores: "imprimirEtiquetaHist", "histItem"
+//
 //   [✓] 3 geradores de etiqueta:
 //       - gerarEtiquetaHtml     → Envelope (paciente + logo + data/hora/idade + dr + end)
 //       - gerarEtiquetaProtocolo → Protocolo (ordem: paciente > dr > cidade > end > compl)
@@ -39,6 +46,8 @@
 //
 //   ───────── HISTÓRICO ─────────
 //
+//   v6 — adiciona imprimirEtiquetaHist() para pacientes do legado
+//        (seleção via tela de histórico do paciente no App COR)
 //   v5 — usa cliente supa em vez de fetch direto (corrige RLS authenticated)
 //   v4 — protocolo reordenado: Paciente > Dentista > Cidade > End > Complemento
 //
@@ -341,4 +350,140 @@ function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
     win.document.close();
 }
 
-console.log("[COR] Modulo etiqueta v5 carregado (RLS authenticated fix)");
+// ============================================================
+// ETIQUETA PARA HISTORICO/LEGADO (v6)
+// ============================================================
+// Wrapper que aceita registro de historico_atendimentos em vez de agId.
+// Pacientes do legado nao tem agendamento no Supabase (so fb_seq_atend),
+// entao montamos um objeto `a` compativel com o formato esperado pelos
+// geradores e reaproveitamos 100% do fluxo existente (CD, protocolo, envelope,
+// seletor de endereco).
+//
+// Parametros:
+//   histItem    - registro de historico_atendimentos: {paciente_nome, data_atendimento,
+//                 dentista_nome, fb_seq_atend, ...}
+//   tipo        - "envelope" (default) | "protocolo" | "cd"
+//   paciente_id - opcional. Se informado, busca DOB em pacientes (pra calcular idade).
+//                 Normalmente eh o histPaciente.id da tela de historico do App COR.
+// ============================================================
+async function imprimirEtiquetaHist(histItem, tipo, paciente_id) {
+    tipo = tipo || "envelope";
+    if (!histItem) { toast && toast("Erro", "Dados do atendimento ausentes"); return; }
+
+    // 1. Busca DOB do paciente (se tiver paciente_id) pra calcular idade
+    var dob = null;
+    var pid = paciente_id || histItem.paciente_id;
+    if (pid) {
+        try {
+            var rp = await supa.from("pacientes")
+                .select("data_nascimento")
+                .eq("id", pid)
+                .maybeSingle();
+            if (rp && rp.data) dob = rp.data.data_nascimento;
+        } catch(e) { console.warn("imprimirEtiquetaHist/pacientes:", e); }
+    }
+
+    // 2. Tenta achar dentista_id por nome no array global `dents`
+    //    (se nao achar, dId fica null -> fluxo sem endereco)
+    var dentId = null;
+    var dentNome = histItem.dentista_nome || "-";
+    if (histItem.dentista_nome && typeof dents !== "undefined" && Array.isArray(dents)) {
+        var nomeUpper = histItem.dentista_nome.toUpperCase().trim();
+        // Tira prefixos comuns de titulo (match mais tolerante)
+        ["DRA. ", "DRA ", "DR. ", "DR "].forEach(function(p){
+            if (nomeUpper.indexOf(p) === 0) nomeUpper = nomeUpper.slice(p.length).trim();
+        });
+        for (var i = 0; i < dents.length; i++) {
+            var dNome = (dents[i].n || dents[i].nome || "").toUpperCase().trim();
+            ["DRA. ", "DRA ", "DR. ", "DR "].forEach(function(p){
+                if (dNome.indexOf(p) === 0) dNome = dNome.slice(p.length).trim();
+            });
+            if (dNome === nomeUpper) {
+                dentId = dents[i].id;
+                break;
+            }
+        }
+    }
+
+    // 3. Formata data do atendimento pra BR (dd/mm/yyyy)
+    var dataBr = "-";
+    if (histItem.data_atendimento) {
+        var ds = String(histItem.data_atendimento);
+        var parts = ds.split("T")[0].split("-");
+        if (parts.length === 3) dataBr = parts[2] + "/" + parts[1] + "/" + parts[0];
+    }
+
+    // 4. Calcula idade (se tem DOB)
+    var idade = "-";
+    if (dob) {
+        try {
+            var dn = new Date(dob);
+            var hoje = new Date();
+            var anos = hoje.getFullYear() - dn.getFullYear();
+            var meses = hoje.getMonth() - dn.getMonth();
+            if (meses < 0 || (meses === 0 && hoje.getDate() < dn.getDate())) { anos--; meses += 12; }
+            idade = anos > 0 ? anos + "anos" : meses + "m";
+        } catch(e) {}
+    }
+
+    // 5. Monta objeto `a` compativel com os geradores
+    var a = {
+        id: "hist_" + (histItem.fb_seq_atend || "x"),
+        pac: histItem.paciente_nome || "SEM NOME",
+        paciente_data_nascimento: dob,
+        dataNasc: dob,
+        dt: dataBr,
+        hr: "-",   // historico_atendimentos nao tem hora (so data)
+        dId: dentId
+    };
+
+    // 6. Fluxo identico ao imprimirEtiqueta original a partir daqui
+    //    (CD nao precisa endereco; demais: busca enderecos do dentista)
+    if (tipo === "cd") {
+        gerarEtiquetaCD(a, dentNome, a.dt, a.hr);
+        return;
+    }
+
+    if (!dentId) {
+        if (tipo === "protocolo") {
+            gerarEtiquetaProtocolo(a, dentNome, null);
+        } else {
+            gerarEtiquetaHtml(a, dentNome, a.dt, a.hr, idade, null);
+        }
+        return;
+    }
+
+    try {
+        var r = await supa.from("dentista_enderecos")
+            .select("*")
+            .eq("dentista_id", dentId)
+            .order("id", { ascending: true });
+        if (r.error) console.error("imprimirEtiquetaHist/enderecos:", r.error);
+        var enderecos = r.data || [];
+
+        if (!enderecos.length) {
+            if (tipo === "protocolo") {
+                gerarEtiquetaProtocolo(a, dentNome, null);
+            } else {
+                gerarEtiquetaHtml(a, dentNome, a.dt, a.hr, idade, null);
+            }
+        } else if (enderecos.length === 1) {
+            if (tipo === "protocolo") {
+                gerarEtiquetaProtocolo(a, dentNome, enderecos[0]);
+            } else {
+                gerarEtiquetaHtml(a, dentNome, a.dt, a.hr, idade, enderecos[0]);
+            }
+        } else {
+            mostrarSeletorEndereco(a, dentNome, a.dt, a.hr, idade, enderecos, tipo);
+        }
+    } catch(e) {
+        console.error("imprimirEtiquetaHist:", e);
+        if (tipo === "protocolo") {
+            gerarEtiquetaProtocolo(a, dentNome, null);
+        } else {
+            gerarEtiquetaHtml(a, dentNome, a.dt, a.hr, idade, null);
+        }
+    }
+}
+
+console.log("[COR] Modulo etiqueta v6 carregado (legado via historico_atendimentos)");

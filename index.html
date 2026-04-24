@@ -3263,8 +3263,12 @@ function renderHistPaciente() {
 
   h += "<div class='tw'><table class='hist-table'>";
   h += "<thead><tr>";
-  h += "<th>Atend.</th><th>Data</th><th>Exame</th><th>Convênio</th><th>Valor</th><th>Dentista</th>";
+  h += "<th>Atend.</th><th>Data</th><th>Exame</th><th>Convênio</th><th>Valor</th><th>Dentista</th><th style='width:44px'></th>";
   h += "</tr></thead><tbody>";
+
+  // Dedup do botao de etiqueta: mostra so na primeira linha de cada SEQATEND.
+  // Atendimento com N exames aparece em N linhas, mas a etiqueta e uma so.
+  var seqJaRenderizado = {};
 
   pagina.forEach(function(a) {
     var data = a.data_atendimento ? iso2br(a.data_atendimento) : '—';
@@ -3275,6 +3279,15 @@ function renderHistPaciente() {
     h += "<td style='color:var(--gr)'>" + esc(a.convenio_nome || 'Particular') + "</td>";
     h += "<td style='font-weight:600'>" + (a.exame_valor ? "R$ " + Number(a.exame_valor).toFixed(2).replace(".", ",") : "—") + "</td>";
     h += "<td style='color:var(--gr);font-size:.8rem'>" + esc(a.dentista_nome || '—') + "</td>";
+
+    // Coluna de etiqueta: so renderiza botao na primeira linha de cada SEQATEND
+    if (a.fb_seq_atend && !seqJaRenderizado[a.fb_seq_atend]) {
+      seqJaRenderizado[a.fb_seq_atend] = true;
+      h += "<td style='text-align:center;padding:2px'><button class='btn btno bsm bico' onclick='event.stopPropagation();toggleEtqMenuHist(this," + a.fb_seq_atend + ")' title='Etiquetas' style='font-size:.6rem;padding:3px 5px'>🏷️</button></td>";
+    } else {
+      h += "<td></td>";
+    }
+
     h += "</tr>";
   });
 
@@ -7655,6 +7668,51 @@ function toggleEtqMenu(btn, agId) {
     b.onmouseover = function(){ this.style.background="#2a2a4e"; };
     b.onmouseout = function(){ this.style.background="none"; };
     b.onclick = function(e){ e.stopPropagation(); menu.remove(); imprimirEtiqueta(agId, it.tipo); };
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  setTimeout(function(){
+    function fechar(e){ if(!menu.contains(e.target)&&e.target!==btn){ menu.remove(); document.removeEventListener("click",fechar,true); }}
+    document.addEventListener("click", fechar, true);
+  }, 10);
+}
+
+// Dropdown menu para etiquetas de atendimentos do HISTORICO/LEGADO.
+// Chamado da tabela em renderHistAtendimentos, com fbSeqAtend. Procura o
+// item em histAtendimentos (array global) e chama imprimirEtiquetaHist.
+function toggleEtqMenuHist(btn, fbSeqAtend) {
+  var old = document.getElementById("etqMenuDrop");
+  if (old) { old.remove(); return; }
+  // Encontra o item no array global (pode ter N exames com mesmo SEQATEND,
+  // pega o primeiro - todos compartilham paciente/data/dentista)
+  var histItem = null;
+  if (typeof histAtendimentos !== "undefined" && Array.isArray(histAtendimentos)) {
+    for (var i = 0; i < histAtendimentos.length; i++) {
+      if (histAtendimentos[i].fb_seq_atend == fbSeqAtend) { histItem = histAtendimentos[i]; break; }
+    }
+  }
+  if (!histItem) { toast("Erro", "Atendimento nao encontrado"); return; }
+
+  var pid = (typeof histPaciente !== "undefined" && histPaciente) ? histPaciente.id : null;
+
+  var rect = btn.getBoundingClientRect();
+  var menu = document.createElement("div");
+  menu.id = "etqMenuDrop";
+  menu.style.cssText = "position:fixed;z-index:9999;background:#1a1a2e;border:1px solid #3a3a5e;border-radius:8px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.5);min-width:160px";
+  menu.style.top = (rect.bottom + 4) + "px";
+  menu.style.left = rect.left + "px";
+  var items = [
+    {ico:"🏷️", lbl:"Envelope", tipo:"envelope"},
+    {ico:"📋", lbl:"Protocolo", tipo:"protocolo"},
+    {ico:"💿", lbl:"CD", tipo:"cd"}
+  ];
+  items.forEach(function(it){
+    var b = document.createElement("button");
+    b.textContent = it.ico + " " + it.lbl;
+    b.style.cssText = "display:block;width:100%;text-align:left;padding:8px 14px;background:none;border:none;color:#e0e0e0;cursor:pointer;font-size:13px;white-space:nowrap";
+    b.onmouseover = function(){ this.style.background="#2a2a4e"; };
+    b.onmouseout = function(){ this.style.background="none"; };
+    b.onclick = function(e){ e.stopPropagation(); menu.remove(); imprimirEtiquetaHist(histItem, it.tipo, pid); };
     menu.appendChild(b);
   });
   document.body.appendChild(menu);
