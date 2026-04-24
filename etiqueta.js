@@ -22,6 +22,15 @@
 //       reusa os 3 geradores (gerarEtiquetaCD/Protocolo/Html).
 //       Marcadores: "imprimirEtiquetaHist", "histItem"
 //
+//   [✓] OMISSAO DE CAMPOS AUSENTES nos 3 geradores (v6)
+//       Quando um campo chega vazio ("", null, undefined, "-"), o gerador
+//       OMITE a linha/pedaco em vez de mostrar "-" feio. Helper: _v(x).
+//       Marcadores: "function _v(", "v6:"
+//       - Envelope: omite Data/Hora/Idade individualmente + linha DR(a)
+//       - Protocolo: omite linha DR(a)
+//       - CD: omite Data/Hora/DR(a)
+//       Fluxo de agendamento novo nao e afetado (sempre preenche tudo).
+//
 //   [✓] 3 geradores de etiqueta:
 //       - gerarEtiquetaHtml     → Envelope (paciente + logo + data/hora/idade + dr + end)
 //       - gerarEtiquetaProtocolo → Protocolo (ordem: paciente > dr > cidade > end > compl)
@@ -189,14 +198,26 @@ function fecharSeletorEndereco() {
 
 // ============================================================
 // ETIQUETA ENVELOPE (fontes aumentadas + tudo negrito)
+// v6: omite campos ausentes (hora/idade/dentista) em vez de mostrar "-"
+//     - nao afeta fluxo de agendamento novo (sempre preenche tudo)
+//     - melhora etiquetas do historico legado (pode ter campos nulos)
 // ============================================================
 function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
+    // v6: helper - trata "-", "", null, undefined como ausente
+    function _v(x) { return x && String(x).trim() !== "" && String(x).trim() !== "-"; }
+
     var cidade = "", enderecoStr = "", complementoStr = "";
     if (endereco) {
         cidade = endereco.cidade || "Santa Maria";
         enderecoStr = endereco.endereco || "";
         complementoStr = endereco.complemento || "";
     }
+
+    // Linha de info: logo + so os pedacos que tiverem valor real
+    var infoInner = "<img src='" + LOGO_COR_ETQ + "'>";
+    if (_v(dataAtend)) infoInner += "<b>Data:&nbsp;" + esc(dataAtend) + "</b>";
+    if (_v(horaAtend)) infoInner += "<b>" + esc(horaAtend) + "</b>";
+    if (_v(idade))     infoInner += "<b>Idade:&nbsp;" + esc(idade) + "</b>";
 
     var html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>" +
         "<title>Etiqueta Envelope</title>" +
@@ -225,15 +246,14 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
 
         "<div class='nome'>" + esc(a.pac || "SEM NOME").toUpperCase() + "</div>" +
 
-        "<div class='info'>" +
-        "<img src='" + LOGO_COR_ETQ + "'>" +
-        "<b>Data:&nbsp;" + dataAtend + "</b>" +
-        "<b>" + horaAtend + "</b>" +
-        "<b>Idade:&nbsp;" + idade + "</b>" +
-        "</div>" +
+        "<div class='info'>" + infoInner + "</div>" +
 
-        "<div class='dbox'><table style='width:100%;border-collapse:collapse'>" +
-        "<tr><td colspan='2' class='dr'><i>DR(a):</i> " + esc(dentNome) + "</td></tr>";
+        "<div class='dbox'><table style='width:100%;border-collapse:collapse'>";
+
+    // Linha DR(a): so se tiver nome de dentista real
+    if (_v(dentNome)) {
+        html += "<tr><td colspan='2' class='dr'><i>DR(a):</i> " + esc(dentNome) + "</td></tr>";
+    }
 
     if (cidade)
         html += "<tr><td class='l'>CIDADE</td><td>" + esc(cidade) + "</td></tr>";
@@ -253,8 +273,11 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
 // ============================================================
 // ETIQUETA PROTOCOLO (v4 - REORDENADO)
 // Ordem: 1.PACIENTE  2.DENTISTA  3.CIDADE  4.ENDERECO  5.COMPLEMENTO
+// v6: omite linha DR(a) se dentNome ausente (paciente legado)
 // ============================================================
 function gerarEtiquetaProtocolo(a, dentNome, endereco) {
+    function _v(x) { return x && String(x).trim() !== "" && String(x).trim() !== "-"; }
+
     var cidade = "", enderecoStr = "", complementoStr = "";
     if (endereco) {
         cidade = endereco.cidade || "Santa Maria";
@@ -285,13 +308,15 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
         "</style></head><body><div class='etq'>" +
 
         // 1. PACIENTE (topo, destaque)
-        "<div class='paciente'>" + esc(a.pac || "SEM NOME").toUpperCase() + "</div>" +
+        "<div class='paciente'>" + esc(a.pac || "SEM NOME").toUpperCase() + "</div>";
 
-        // 2. DENTISTA
-        "<div class='dentista'>DR(a): " + esc(dentNome).toUpperCase() + "</div>" +
+    // 2. DENTISTA - omite linha inteira se nao tiver nome (v6)
+    if (_v(dentNome)) {
+        html += "<div class='dentista'>DR(a): " + esc(dentNome).toUpperCase() + "</div>";
+    }
 
-        // 3-5. CIDADE / ENDERECO / COMPLEMENTO
-        "<div class='dados'>";
+    // 3-5. CIDADE / ENDERECO / COMPLEMENTO
+    html += "<div class='dados'>";
 
     if (cidade)
         html += "<div><span class='lbl'>CIDADE</span>" + esc(cidade) + "</div>";
@@ -311,9 +336,15 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
 
 // ============================================================
 // ETIQUETA CD (fontes aumentadas + tudo negrito)
+// v6: omite hora se ausente (so mostra data); omite DR(a) se vazio
 // ============================================================
 function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
-    var dataHora = dataAtend + " " + horaAtend;
+    function _v(x) { return x && String(x).trim() !== "" && String(x).trim() !== "-"; }
+
+    // Monta string data/hora com os pedacos que existem
+    var dataHora = "";
+    if (_v(dataAtend)) dataHora = String(dataAtend);
+    if (_v(horaAtend)) dataHora = dataHora ? (dataHora + " " + horaAtend) : String(horaAtend);
 
     var html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>" +
         "<title>Etiqueta CD</title>" +
@@ -337,11 +368,18 @@ function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
         "<div class='topo'>" +
         "<img src='" + LOGO_COR_ETQ + "'>" +
         "<div class='topo-txt'>" +
-        "<div class='nome'>" + esc(a.pac || "SEM NOME").toUpperCase() + "</div>" +
-        "<div class='sub'>Data: " + esc(dataHora) + "</div>" +
-        "<div class='sub2'>DR(a): " + esc(dentNome) + "</div>" +
-        "</div></div>" +
+        "<div class='nome'>" + esc(a.pac || "SEM NOME").toUpperCase() + "</div>";
 
+    // Linha de data/hora: so se tiver pelo menos um
+    if (dataHora) {
+        html += "<div class='sub'>Data: " + esc(dataHora) + "</div>";
+    }
+    // Linha DR(a): so se tiver nome
+    if (_v(dentNome)) {
+        html += "<div class='sub2'>DR(a): " + esc(dentNome) + "</div>";
+    }
+
+    html += "</div></div>" +
         "</div>" +
         "<script>window.onload=function(){window.print();}<\/script></body></html>";
 
@@ -385,8 +423,9 @@ async function imprimirEtiquetaHist(histItem, tipo, paciente_id) {
 
     // 2. Tenta achar dentista_id por nome no array global `dents`
     //    (se nao achar, dId fica null -> fluxo sem endereco)
+    //    v6: se dentista_nome ausente, dentNome fica "" (gerador omite a linha)
     var dentId = null;
-    var dentNome = histItem.dentista_nome || "-";
+    var dentNome = histItem.dentista_nome || "";
     if (histItem.dentista_nome && typeof dents !== "undefined" && Array.isArray(dents)) {
         var nomeUpper = histItem.dentista_nome.toUpperCase().trim();
         // Tira prefixos comuns de titulo (match mais tolerante)
@@ -406,15 +445,24 @@ async function imprimirEtiquetaHist(histItem, tipo, paciente_id) {
     }
 
     // 3. Formata data do atendimento pra BR (dd/mm/yyyy)
-    var dataBr = "-";
+    //    v6: usa "" em vez de "-" se ausente (gerador omite)
+    var dataBr = "";
     if (histItem.data_atendimento) {
         var ds = String(histItem.data_atendimento);
         var parts = ds.split("T")[0].split("-");
         if (parts.length === 3) dataBr = parts[2] + "/" + parts[1] + "/" + parts[0];
     }
 
-    // 4. Calcula idade (se tem DOB)
-    var idade = "-";
+    // 3b. Hora do atendimento (v6: vem do backfill, campo hora_atendimento)
+    //     Se nao tiver, fica vazio e o gerador omite
+    var horaStr = "";
+    if (histItem.hora_atendimento) {
+        var hs = String(histItem.hora_atendimento);
+        horaStr = hs.substring(0, 5);  // HH:MM (ignora segundos)
+    }
+
+    // 4. Calcula idade (se tem DOB). "" se nao tiver (gerador omite).
+    var idade = "";
     if (dob) {
         try {
             var dn = new Date(dob);
@@ -433,7 +481,7 @@ async function imprimirEtiquetaHist(histItem, tipo, paciente_id) {
         paciente_data_nascimento: dob,
         dataNasc: dob,
         dt: dataBr,
-        hr: "-",   // historico_atendimentos nao tem hora (so data)
+        hr: horaStr,
         dId: dentId
     };
 
