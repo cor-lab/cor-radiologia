@@ -4289,6 +4289,7 @@ function agEV(ev, id) {
     (function(ag){btns.push({lbl:"📋 Etiq. Protocolo", cls:"btno", fn:function(){ imprimirEtiqueta(ag.id, "protocolo"); }});})(a);
     (function(ag){btns.push({lbl:"💿 Etiq. CD", cls:"btno", fn:function(){ imprimirEtiqueta(ag.id, "cd"); }});})(a);
     (function(ag){btns.push({lbl:"📄 Fichas", cls:"btno", fn:function(){ closeM(); imprimirFichas(ag.id); }});})(a);
+    (function(ag){btns.push({lbl:"📋 Requisição", cls:"btno", fn:function(){ closeM(); imprimirRequisicao(ag.id); }});})(a);
     (function(ag){btns.push({lbl:"📷 Painel Fotos", cls:"btno", fn:function(){ closeM(); imprimirPainelFotos(ag.id); }});})(a);
     btns.push({lbl:"📲 WhatsApp", cls:"btnt", fn:function(){ closeM(); sWAi(ag.id); }});
   })(a);
@@ -5970,7 +5971,7 @@ async function dentEndLoad(dentId){
       el.innerHTML="<div style='color:#666;font-size:12px;padding:6px'>Nenhum endereco cadastrado</div>";
       return;
     }
-    window._dentEndCache=ends.map(function(e){return{id:e.id,dentista_id:dentId,descricao:e.descricao||"",endereco:e.endereco||"",complemento:e.complemento||"",bairro:e.bairro||"",cep:e.cep||"",cidade:e.cidade||"",_status:"existing"};});
+    window._dentEndCache=ends.map(function(e){return{id:e.id,dentista_id:dentId,descricao:e.descricao||"",endereco:e.endereco||"",complemento:e.complemento||"",bairro:e.bairro||"",cep:e.cep||"",cidade:e.cidade||"",principal:!!e.principal,_status:"existing"};});
     dentEndRender();
   } catch(e){ console.error("dentEndLoad exc:",e); el.innerHTML="<div style='color:#f66;font-size:12px'>Erro ao carregar enderecos</div>"; }
 }
@@ -5984,9 +5985,11 @@ function dentEndRender(){
   var h="";
   window._dentEndCache.forEach(function(e,i){
     if(e._status==="deleted") return;
-    h+="<div style='background:#0d1117;border:1px solid #3a3a5e;border-radius:8px;padding:8px 10px;margin-bottom:6px'>"+
+    h+="<div style='background:#0d1117;border:1px solid "+(e.principal?"#4ade80":"#3a3a5e")+";border-radius:8px;padding:8px 10px;margin-bottom:6px'>"+
       "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:5px'>"+
-      "<span style='color:#4ade80;font-size:11px;font-weight:bold'>Endereco "+(i+1)+"</span>"+
+      "<label style='color:"+(e.principal?"#4ade80":"#888")+";font-size:11px;font-weight:bold;cursor:pointer;display:flex;align-items:center;gap:6px'>"+
+      "<input type='radio' name='dePrincipal' "+(e.principal?"checked":"")+" onchange='dentEndSetPrincipal("+i+")' style='margin:0'>"+
+      (e.principal?"⭐ ":"")+"Endereco "+(i+1)+(e.principal?" (Principal)":"")+"</label>"+
       "<button onclick='dentEndRemove("+i+")' style='background:none;border:none;color:#f66;cursor:pointer;font-size:13px' title='Remover'>✕</button></div>"+
       "<div class='field' style='margin-bottom:4px'><label style='font-size:10px'>DESCRICAO</label>"+
       "<input id='deDesc"+i+"' value='"+esc(e.descricao)+"' placeholder='Ex: Consultorio Centro' style='font-size:12px;padding:5px 8px'></div>"+
@@ -6008,7 +6011,7 @@ function dentEndRender(){
 }
 
 function dentEndAddRow(){
-  window._dentEndCache.push({id:null,dentista_id:null,descricao:"",endereco:"",complemento:"",bairro:"",cep:"",cidade:"Santa Maria",_status:"new"});
+  window._dentEndCache.push({id:null,dentista_id:null,descricao:"",endereco:"",complemento:"",bairro:"",cep:"",cidade:"Santa Maria",principal:false,_status:"new"});
   dentEndRender();
   // Scroll para o novo endereço
   var el=document.getElementById("dentEndList");
@@ -6021,6 +6024,16 @@ function dentEndRemove(idx){
   } else {
     window._dentEndCache[idx]._status="deleted";
   }
+  dentEndRender();
+}
+
+function dentEndSetPrincipal(idx){
+  // Coleta valores antes de re-renderizar pra não perder digitação
+  dentEndCollectFromForm();
+  // Garante 1 só principal: marca o escolhido, desmarca os outros
+  window._dentEndCache.forEach(function(e,i){
+    if(e._status!=="deleted") e.principal = (i === idx);
+  });
   dentEndRender();
 }
 
@@ -6046,7 +6059,7 @@ async function dentEndSaveAll(dentId){
   dentEndCollectFromForm();
   for(var i=0;i<window._dentEndCache.length;i++){
     var e=window._dentEndCache[i];
-    var payload={dentista_id:dentId,descricao:e.descricao,endereco:e.endereco,complemento:e.complemento,bairro:e.bairro,cep:e.cep,cidade:e.cidade};
+    var payload={dentista_id:dentId,descricao:e.descricao,endereco:e.endereco,complemento:e.complemento,bairro:e.bairro,cep:e.cep,cidade:e.cidade,principal:!!e.principal};
     try {
       if(e._status==="deleted"&&e.id){
         var rDel = await supa.from("dentista_enderecos").delete().eq("id", e.id);
@@ -6647,6 +6660,12 @@ function rcfg(){
   h+="<div><div style='font-size:.73rem;font-weight:700;color:var(--gr);text-transform:uppercase;margin-bottom:7px'>Exames prontos (FotonWeb) — {nome} {codigo} {link} {clinica}</div><div class='field'><textarea id='waTx' style='min-height:100px' oninput='pvWA()'>"+esc(waT.ex||DEFAULT_WA_EX)+"</textarea></div><div class='wapv' id='waPx'></div></div>";
   h+="</div>";
   h+="<div style='margin-top:13px;padding:10px 14px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.15);border-radius:8px;font-size:.79rem;color:var(--tl)'>📌 <strong>Integracao Z-API/Evolution API:</strong> configure a URL e token para envio real. Os botoes 📲 abrem o WhatsApp com a mensagem preenchida.</div>";
+  h+="</div>";
+
+  // Calibração da Requisição
+  h+="<div class='card'>";
+  h+="<div class='ctitle'>📐 Calibração da Requisição <button class='btn btnt bsm' onclick='abrirCalibracaoRequisicao()'>📐 Abrir</button></div>";
+  h+="<div style='font-size:.8rem;color:var(--gr);line-height:1.5'>Ajusta a posição (em mm) onde nome do dentista, CRO, endereço e telefone são impressos no papel timbrado pré-impresso da requisição.</div>";
   h+="</div>";
 
   // Tipos de Exame
@@ -7724,5 +7743,6 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
 </script>
 <script src="etiqueta.js"></script>
 <script src="fichas.js"></script>
+<script src="requisicao.js"></script>
 </body>
 </html>
