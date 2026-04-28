@@ -443,7 +443,7 @@ body{font-family:Arial,Helvetica,sans-serif;background:#fff;color:#1a1a2e}\
 .pf-nome{text-align:center;font-size:10px;font-weight:700;margin:0.5mm 0;letter-spacing:.5px}\
 .pf-row{display:flex;justify-content:center;gap:1mm;margin-bottom:1mm}\
 .pf-row img{border:1px solid #ccc;object-fit:cover;background:#f0f0f0}\
-.pf-row-3 img{width:28%;aspect-ratio:3/4}\
+.pf-row-3 img{width:22%;aspect-ratio:3/4}\
 .pf-row-2i img{width:42%;aspect-ratio:4/3}\
 .pf-row-mix{align-items:center}\
 .pf-row-mix .pf-mix-fac{width:22%;aspect-ratio:3/4}\
