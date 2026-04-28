@@ -701,13 +701,24 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 //
 // Retorna: { bruto, faturado, desconto, descontoPct }
 window.calcValoresAg = function(ag){
-  if(!ag) return { bruto:0, faturado:0, desconto:0, descontoPct:0 };
+  if(!ag) return { bruto:0, faturado:0, desconto:0, descontoPct:0, naoFaturavel:0 };
   var itens = ag.exames || ag.itens || [];
   var bruto = 0;
+  var naoFaturavel = 0;
 
   if(itens.length > 0){
-    // SEMPRE soma pelos exames quando há itens (verdade absoluta para mistos)
-    itens.forEach(function(it){ bruto += Number(it.preco || 0); });
+    // Separa itens faturáveis (Particular/Conv2025/SUS/Tabela) dos NÃO-faturáveis (UNIMED/SYNS — fora do faturamento)
+    // O "fora do faturamento" não soma ao bruto/faturado, vai num campo separado
+    var temHelper = (typeof itemEhConvenioForaDoFaturamento === "function");
+    itens.forEach(function(it){
+      var preco = Number(it.preco || 0);
+      var foraFat = temHelper ? itemEhConvenioForaDoFaturamento(it) : false;
+      if(foraFat){
+        naoFaturavel += preco;
+      } else {
+        bruto += preco;
+      }
+    });
   } else {
     // Fallback: usa valor_bruto salvo no agendamento
     bruto = Number(ag.valor_bruto || ag.vl || ag.valor || 0);
@@ -744,7 +755,8 @@ window.calcValoresAg = function(ag){
     bruto: Number(bruto.toFixed(2)),
     faturado: Number(faturado.toFixed(2)),
     desconto: Number(desconto.toFixed(2)),
-    descontoPct: descontoPct
+    descontoPct: descontoPct,
+    naoFaturavel: Number(naoFaturavel.toFixed(2))
   };
 };
 
@@ -4291,7 +4303,6 @@ function agEV(ev, id) {
     (function(ag){btns.push({lbl:"📄 Fichas", cls:"btno", fn:function(){ closeM(); imprimirFichas(ag.id); }});})(a);
     (function(ag){btns.push({lbl:"📋 Requisição", cls:"btno", fn:function(){ closeM(); imprimirRequisicao(ag.id); }});})(a);
     (function(ag){btns.push({lbl:"📷 Painel Fotos", cls:"btno", fn:function(){ closeM(); imprimirPainelFotos(ag.id); }});})(a);
-    (function(ag){btns.push({lbl:"📷 Painel Fotos 9", cls:"btno", fn:function(){ closeM(); imprimirPainelFotos9(ag.id); }});})(a);
     btns.push({lbl:"📲 WhatsApp", cls:"btnt", fn:function(){ closeM(); sWAi(ag.id); }});
   })(a);
 
