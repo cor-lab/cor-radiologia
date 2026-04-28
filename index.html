@@ -7148,10 +7148,13 @@ async function imprimirRelatorioDia() {
     var vb = _vals.bruto;
     var vd = _vals.desconto;
     var vf = _vals.faturado;
+    var vnf = _vals.naoFaturavel || 0;
 
-    totalBruto += vb;
+    // Bruto e Faturado totais incluem "fora do faturamento" (UNIMED) pra bater com resumo por convenio
+    // Desconto NÃO inclui "fora do faturamento" (eles vão direto pro convenio, nao sao desconto)
+    totalBruto += vb + vnf;
     totalDesc += vd;
-    totalFat += vf;
+    totalFat += vf + vnf;
 
     // ===== CORRECAO: Resumo por convenio ITEM A ITEM =====
     // Antes: agrupava agendamento inteiro por itens[0] (bug com mistos)
