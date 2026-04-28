@@ -444,8 +444,10 @@ body{font-family:Arial,Helvetica,sans-serif;background:#fff;color:#1a1a2e}\
 .pf-row{display:flex;justify-content:center;gap:1mm;margin-bottom:1mm}\
 .pf-row img{border:1px solid #ccc;object-fit:cover;background:#f0f0f0}\
 .pf-row-3 img{width:28%;aspect-ratio:3/4}\
-.pf-row-2f img{width:32%;aspect-ratio:3/4}\
 .pf-row-2i img{width:42%;aspect-ratio:4/3}\
+.pf-row-mix{align-items:center}\
+.pf-row-mix .pf-mix-fac{width:22%;aspect-ratio:3/4}\
+.pf-row-mix .pf-mix-int{width:35%;aspect-ratio:4/3}\
 @media print{body{margin:0!important}.pf-page{padding:1mm}}\
 ';
 
@@ -473,10 +475,10 @@ html+='<img src="'+fotos.fs+'" '+err+' alt="Frontal Sorrindo">';
 html+='<img src="'+fotos.fpd+'" '+err+' alt="Perfil Direito">';
 html+='</div>';
 
-// Row 2: 1 facial extra (perfil direito sorrindo) + 1 intraoral frontal
-html+='<div class="pf-row pf-row-2f">';
-html+='<img src="'+fotos.fpds+'" '+err+' alt="Perfil Direito Sorrindo">';
-html+='<img src="'+fotos.fif+'" '+err+' alt="Intraoral Frontal">';
+// Row 2: 1 facial extra (perfil direito sorrindo, RETRATO) + 1 intraoral frontal (PAISAGEM)
+html+='<div class="pf-row pf-row-mix">';
+html+='<img class="pf-mix-fac" src="'+fotos.fpds+'" '+err+' alt="Perfil Direito Sorrindo">';
+html+='<img class="pf-mix-int" src="'+fotos.fif+'" '+err+' alt="Intraoral Frontal">';
 html+='</div>';
 
 // Row 3: 2 fotos intraorais laterais (direita e esquerda)
