@@ -4071,6 +4071,13 @@ function agEV(ev, id) {
   var a = ags.find(function(x){ return x.id === id; });
   if(!a) return;
 
+  // Snapshot pra detectar edição de exames em atendimento já realizado
+  // (bloqueado no save - exige reverter primeiro)
+  a._statusOriginal = a.status_clinico || a.status || a.st;
+  a._examesOriginais = (a.exames || []).map(function(it){
+    return { exame_id: it.exame_id, convenio_id: it.convenio_id || null, preco: Number(it.preco || 0) };
+  });
+
   var ex3 = fex(a.ex);
   var d3 = fdent(a.dId) || {n:"—"};
   var cv3 = fconv(a.cv);
@@ -4479,6 +4486,25 @@ function openEditAg(id) {
       a.desconto_valor = calcPgEdit.desconto_valor;
       a.valor_faturado = calcPgEdit.valor_faturado;
       a.vl = calcPgEdit.valor_faturado;
+
+      // ════════════════════════════════════════════════════════════════
+      // BLOQUEIO: editar exames de atendimento JÁ REALIZADO requer revert
+      // (evita órfãos em FXARQ041 - caso CONRADO 29/04/26)
+      // ════════════════════════════════════════════════════════════════
+      var statusOriginal = a._statusOriginal || a.status_clinico_original;
+      var examesOriginais = a._examesOriginais;
+      if (statusOriginal === "realizado" && Array.isArray(examesOriginais)) {
+        var assinaturaAtual = (itensEdit || [])
+          .map(function(it){ return it.exame_id+"|"+(it.convenio_id||"")+"|"+Number(it.preco||0).toFixed(2); })
+          .sort().join(";");
+        var assinaturaOriginal = examesOriginais
+          .map(function(it){ return it.exame_id+"|"+(it.convenio_id||"")+"|"+Number(it.preco||0).toFixed(2); })
+          .sort().join(";");
+        if (assinaturaAtual !== assinaturaOriginal) {
+          toast("⚠️", "Atendimento já realizado: para editar exames, reverta o atendimento primeiro (botão Reverter no menu).");
+          return;
+        }
+      }
 
       var ok = await dbSaveAg(a);
       if (!ok) {
