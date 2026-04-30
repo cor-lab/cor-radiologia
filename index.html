@@ -1372,8 +1372,11 @@ function iniciarPollingNfse(agId, nfseId, reference) {
         var numNota = (d.focus && (d.focus.numero || d.focus.numero_nfse)) || null;
         var ag=(ags||[]).find(function(x){return x.id===agId;});
         if(ag){
-          ag.status_fiscal="emitida";
+          // FIX 29/04/26: chama dbUpdStatusFiscalAgendamento para disparar
+          // creditarCashbackSeElegivel. Antes só atualizava local e perdia o
+          // side-effect de cashback (55 NFS-e órfãs entre 16/04 e 29/04).
           ag.numero_nfse=numNota;
+          await dbUpdStatusFiscalAgendamento(agId, "emitida", ag.nfse_id);
         }
         if(typeof rndAg==="function") rndAg();
         if(typeof renderAtendimento==="function") renderAtendimento();
@@ -5677,7 +5680,7 @@ function rportal(dId){
   h+="<div class='cp'>";
   h+="<div class='cbig'>"+fmtN(d.pts)+"</div>";
   h+="<div class='clbl'>pontos confirmados</div>";
-  h+="<div class='cval'>≈ R$ "+(d.pts*0.05).toFixed(2)+"</div>";
+  h+="<div class='cval'>≈ R$ "+(d.pts*1).toFixed(2)+"</div>";
   h+="<div style='margin-top:6px;font-size:.78rem;color:var(--gr)'>Pendentes: <strong style='color:var(--or)'>"+fmtN(ptsPend)+" pts</strong></div>";
   h+="<button class='btn btno' style='margin-top:11px;width:100%;justify-content:center;font-size:.74rem' onclick=\"abrirExtratoCashback("+d.id+")\">📄 Extrato</button>";
   h+="</div></div>";
@@ -5725,7 +5728,7 @@ function abrirExtratoCashback(dId){
   h += "<div style='background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px'>";
   h += "<div style='font-size:1rem;font-weight:700'>" + esc(d.n) + "</div>";
   h += "<div style='font-size:.82rem;color:var(--gr);margin-top:4px'>CRO " + esc(d.cro) + " • " + esc(d.esp) + "</div>";
-  h += "<div style='margin-top:10px;font-size:.9rem'>Saldo atual: <strong style='color:var(--g)'>" + fmtN(d.pts) + " pts</strong> ≈ <strong style='color:var(--tl)'>R$ " + (d.pts*0.05).toFixed(2) + "</strong></div>";
+  h += "<div style='margin-top:10px;font-size:.9rem'>Saldo atual: <strong style='color:var(--g)'>" + fmtN(d.pts) + " pts</strong> ≈ <strong style='color:var(--tl)'>R$ " + (d.pts*1).toFixed(2) + "</strong></div>";
   h += "</div>";
 
   h += "<div style='max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:8px'>";
