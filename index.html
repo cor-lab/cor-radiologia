@@ -119,6 +119,9 @@
   - worker_nfse.py — NSSM "WorkerNFSe", processa nfse_fila → Focus NFe.
     Padrão Nacional v1.01 (worker_nfse_nacional.py + emissor_nfse_nacional.py)
     está dormente esperando virada de 30/06/2026.
+    A discriminação da NFS-e é montada na Edge Function
+    emitir-nfse-focus (v32, 30/04). Filtra exames UNIMED/SYNS - eles
+    são "fora do faturamento" e faturados a parte pelo convênio.
     
   - auditar_divergencias.py v2.3 — Task Scheduler 8x/dia. Detecta e
     auto-corrige SERVICO_APONTA_DIRETO_FXARQ028. Outros tipos só alertam.
@@ -126,6 +129,15 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-04-30: Edge Function emitir-nfse-focus v32 - filtra exames UNIMED
+              e SYNS ("fora do faturamento") da discriminação da NFS-e.
+              Antes (v31, deploy 16/04): listava TODOS exames incluindo
+              UNIMED com valor, confundindo paciente. Bug exposto pelo
+              JORGE 30/04 (NFS-e 48625): valor R$ 48 mas descrição
+              listava também Panorâmica UNIMED R$ 19.19. Não afeta
+              valor fiscal. Helper ehConvenioForaDoFaturamento(nome)
+              detecta "unimed"/"syns" no nome do convênio. NFS-e
+              48625 ficou como ficou (não vale cancelar fiscalmente).
   2026-04-29: Adicionado botão "📷 Painel 9 Fotos" no menu do agendamento
               (linha ~4394) chamando imprimirPainelFotos9(ag.id) do
               fichas.js. Faltava no index.html - função existia em
