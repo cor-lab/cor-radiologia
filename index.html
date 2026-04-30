@@ -39,6 +39,14 @@
   refatoração. Se for reescrever um bloco que contém uma delas, preserve
   a funcionalidade ou avise explicitamente antes.
   
+  ⚠️ REGRA OBRIGATÓRIA — ATUALIZAÇÃO DO MANIFESTO:
+  Toda vez que editar este arquivo, ANTES de entregar a versão final:
+    1. Adicionar entrada nova no HISTÓRICO com data + descrição da mudança
+    2. Se a mudança introduziu nova feature crítica → adicionar em FEATURES
+    3. Se ficou pendente outro arquivo (ex: ordem_servico.js) → mencionar
+  Manifesto desatualizado = próxima IA pode quebrar features sem saber.
+  Esta regra vale para QUALQUER edição, por menor que seja.
+  
   ───────── FEATURES ─────────
   
   [✓] Fechamento de Caixa — visão agenda (simplificada) vs admin (expandida)
@@ -69,16 +77,91 @@
   [✓] Indicação de dentista em agendamento (dentista que solicitou)
       Marcadores: "dId", "INDICACAO", "fdent"
   
+  [✓] Bloqueio de edição de exames em atendimento realizado
+      Marcadores: "_statusOriginal", "_examesOriginais", "agEV" linha ~4076
+      Save linha ~4493 compara assinatura (exame_id|convenio|preco) e
+      bloqueia se mudou. Outras edições (tel/email/obs) seguem livres.
+      Funciona em DUPLA com revert_atendimento.py v3.2 - juntos formam
+      o ciclo "Reverter → Editar livre → Realizar de novo" sem órfãos.
+  
   ───────── ARQUIVOS SEPARADOS (incluir junto em backups) ─────────
   
   - ordem_servico.js — Impressão de Ordem de Serviço A4 (v2.7+)
   - etiqueta.js — Etiquetas (Envelope, Protocolo, CD), 3 tipos
-  - fichas.js — Fichas A4 (Ficha 1, 2, 3, 4 pendente)
+  - fichas.js — Fichas A4 (Ficha 1, 2, 3, 4 pendente) + Painel Fotos V1/V2
   - pacientes_busca.js — Busca avançada de pacientes
   - logo.png — Logo COR usada nas impressões
   
+  ───────── SCRIPTS PYTHON BACKEND (servidor 192.168.0.200) ─────────
+  
+  Localização: C:\sync_cor\  |  Python: C:\Python38_32\python.exe
+  
+  - sync_service.py v2.7 — Supabase→Firebird, NSSM service "SyncCOR" (3s).
+    Replica pacientes, dentistas, agendamentos. NÃO cria FXARQ039+041
+    pra agendamento não-executado (verificado 29/04/26: agendados ficam
+    só no Supa, FB só recebe na execução).
+    
+  - sync_reverso.py v4.3 — Firebird→Supabase, NSSM "SyncReverso" (8s).
+    Histórico, dedupe, pacientes legados.
+    
+  - executar_atendimento.py v2 — Cria FXARQ039+041+042 atomicamente
+    quando atendimento é executado. Atualiza Access (CDT2000.mdb) e
+    firebird_seq_atend no Supa.
+    
+  - revert_atendimento.py v3.2 — Reverte realizado→agendado.
+    DELETE FXARQ042 + DELETE FXARQ041 + UPDATE FXARQ039 (status=NULL,
+    DATAATEND=NULL) + DELETE Access Pacientes/PacientesSistemas + PATCH
+    Supabase (firebird_atend_id=NULL, firebird_seq_atend=NULL,
+    pending_revert=false). Limpa TUDO pra ciclo limpo de Realizar.
+    SEQATEND queima 1 código por revert+reexecutar (Firebird gap-allowed
+    normal). Combina com bloqueio frontend de edição pós-realizado.
+    
+  - worker_nfse.py — NSSM "WorkerNFSe", processa nfse_fila → Focus NFe.
+    Padrão Nacional v1.01 (worker_nfse_nacional.py + emissor_nfse_nacional.py)
+    está dormente esperando virada de 30/06/2026.
+    
+  - auditar_divergencias.py v2.3 — Task Scheduler 8x/dia. Detecta e
+    auto-corrige SERVICO_APONTA_DIRETO_FXARQ028. Outros tipos só alertam.
+    Comparação Supabase vs FXARQ041, tolerância R$1, ignora pré-08/04.
+  
   ───────── HISTÓRICO ─────────
   
+  2026-04-29: Adicionado botão "📷 Painel 9 Fotos" no menu do agendamento
+              (linha ~4394) chamando imprimirPainelFotos9(ag.id) do
+              fichas.js. Faltava no index.html - função existia em
+              fichas.js desde 28/04 mas sem trigger no app. Agora os
+              dois botões coexistem (V1 8 fotos + V2 9 fotos).
+  2026-04-29: Manifesto expandido - nova seção SCRIPTS PYTHON BACKEND
+              listando sync_service, sync_reverso, executar_atendimento,
+              revert_atendimento, worker_nfse, auditar_divergencias.
+              Agora manifesto cobre frontend + backend juntos.
+  2026-04-29: revert_atendimento.py v3.2 - DELETE FXARQ041 ao reverter
+              (antes só FXARQ042+FXARQ039.reset deixava FXARQ041 órfão,
+              caso CONRADO). Combina com bloqueio frontend (este arquivo)
+              formando ciclo limpo: Reverter→Edita exames→Realizar de novo
+              SEM órfãos. Esforço total ~16 linhas, eliminou categoria
+              de bug recorrente. Auditor v2.4 EXAME_ORFAO desnecessário.
+  2026-04-29: Adicionada REGRA OBRIGATÓRIA de atualização do manifesto a
+              cada edição (HISTÓRICO + FEATURES quando aplicável). Evita
+              que próxima IA quebre features por desconhecer mudanças.
+  2026-04-29: Fix cashback dentistas (3 fixes): (1) polling NFS-e dispara
+              dbUpdStatusFiscalAgendamento (creditarCashback) - antes só
+              atualizava local, perdeu side-effect e órfãs 488 pts em
+              55 NFS-e (16-29/abr); (2) UI conversão pts→reais corrigida
+              de pts*0.05 pra pts*1 (regra: 1 pt = R$ 1); (3) UPDATE
+              em massa em exames_tipos.pontos_cashback (82 exames: 28
+              zerados + 54 arredondamento) pra ROUND(preco*0.05).
+              Retroativo: 488 pts em 51 lançamentos creditados.
+  2026-04-29: Bloqueio de edição de exames em atendimento já realizado
+              (snapshot em agEV linha 4076 + verificação no save linha
+              4493). Mensagem pede reverter primeiro. Edições não-exame
+              (tel/email/obs) seguem livres. Combina com revert v3.2.
+  2026-04-28: Fix calcValoresAg fora do faturamento - separa naoFaturavel
+              (UNIMED em paciente não-Unimed) do bruto. Resolve bug LARA.
+              Total bruto/faturado do relatório por exame inclui
+              naoFaturavel pra bater com resumo por convênio.
+  2026-04-28: Painel Fotos V2 (9 fotos) com sufixo fpds.jpg adicionado
+              em fichas.js (V1 8 fotos preservado).
   2026-04-23: Restaurado toggle pode_ver_pontos_fotonweb (havia sumido)
   2026-04-21: Compartilhamento LGPD de exames (via FotonWeb)
   2026-04-19: Acesso FotonWeb COR integrado no modal de dentista
@@ -4313,6 +4396,7 @@ function agEV(ev, id) {
     (function(ag){btns.push({lbl:"📄 Fichas", cls:"btno", fn:function(){ closeM(); imprimirFichas(ag.id); }});})(a);
     (function(ag){btns.push({lbl:"📋 Requisição", cls:"btno", fn:function(){ closeM(); imprimirRequisicao(ag.id); }});})(a);
     (function(ag){btns.push({lbl:"📷 Painel Fotos", cls:"btno", fn:function(){ closeM(); imprimirPainelFotos(ag.id); }});})(a);
+    (function(ag){btns.push({lbl:"📷 Painel 9 Fotos", cls:"btno", fn:function(){ closeM(); imprimirPainelFotos9(ag.id); }});})(a);
     btns.push({lbl:"📲 WhatsApp", cls:"btnt", fn:function(){ closeM(); sWAi(ag.id); }});
   })(a);
 
