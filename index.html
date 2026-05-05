@@ -141,6 +141,14 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-05 (v3): Limite de carregamento de agendamentos aumentado de 500
+              para 2000 em DOIS pontos: load inicial (linha ~2002) e
+              auto-refresh (linha ~3036). Antes: dias 10/13/14/15/16 de
+              abril sumiam do app porque ag=500 cobria só ~3 semanas
+              (corte caía em 16/04). Pacientes pendentes de NFS-e ficavam
+              invisíveis. Com 2000, cobre todo o histórico atual (855
+              registros) com folga. Quando atingir ~1500, revisitar.
+              Marcador: ".limit(2000)".
   2026-05-05 (v2): Fix HELENA — bug duplo descoberto:
               (a) imprimirRelatorioDia EXISTE DENTRO do index.html (linha ~7226),
                   NÃO era carregado o imprimirRelatorioDia.js externo. Toda
@@ -1999,7 +2007,7 @@ async function loadAllData(){
       supa.from("convenios").select("*").eq("ativo",true).order("nome"),
       supa.from("convenio_precos").select("*").limit(5000),
       supa.from("dentistas").select("*").eq("ativo",true).order("nome").range(0,999),
-      supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(500),
+      supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(2000),
       supa.from("agendamento_exames").select("*").order("ordem",{ascending:true}),
       supa.from("premios").select("*").eq("ativo",true).order("pontos_necessarios"),
       supa.from("usuarios").select("*").eq("ativo",true).order("nome"),
@@ -3033,7 +3041,7 @@ function iniciarAutoRefresh(){
     if(!CU) return;
     try{
       // Recarregar agendamentos
-      var agR = await supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(500);
+      var agR = await supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(2000);
       var agexR = await supa.from("agendamento_exames").select("*").order("ordem",{ascending:true});
 
       if(agR.data){
