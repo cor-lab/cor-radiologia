@@ -52,52 +52,58 @@ async function imprimirRelatorioDia() {
   var ds = selDate.getFullYear() + "-" + pad(selDate.getMonth()+1) + "-" + pad(selDate.getDate());
   var dsBR = ds.substring(8,10) + "/" + ds.substring(5,7) + "/" + ds.substring(0,4);
 
-  var dayAgs = ags.filter(function(a){
-    var adt = a.dt;
-    if(!adt) return false;
-    var pts = adt.split("/");
-    if(pts.length !== 3) return false;
-    var iso = pts[2] + "-" + pts[1] + "-" + pts[0];
-    return iso === ds && (a.status_clinico || a.st) === "realizado";
-  });
-
-  // Se não encontrou localmente, buscar do Supabase
-  if(!dayAgs.length){
-    try{
-      var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc",
+  // ⚡ FIX 05/05/2026 — SEMPRE busca dados frescos do Supabase
+  // Antes: usava cache local `ags` se não vazio. Problema: após
+  // reverter+editar+realizar, os agendamento_exames novos não eram
+  // refletidos no cache, gerando relatório com itens faltando.
+  // Caso descoberto: HELENA ZIANI CLERICI (98664) — adicionou Modelo ABS
+  // depois do reverter, relatório não mostrou o exame novo (R$ 515 vs R$ 635).
+  var dayAgs = [];
+  try{
+    var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc",
+      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+    var dados = await r.json();
+    if(dados && dados.length){
+      var ids = dados.map(function(a){return a.id});
+      var rItens = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")",
         {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
-      var dados = await r.json();
-      if(dados && dados.length){
-        var ids = dados.map(function(a){return a.id});
-        var rItens = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")",
-          {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
-        var todosItens = await rItens.json() || [];
-        dayAgs = dados.map(function(a){
-          var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
-          return {
-            id:a.id, pac:a.paciente_nome||"", pId:a.paciente_id,
-            tel:a.paciente_telefone||"", cpf:a.paciente_cpf||"",
-            ex:a.exame_id, exames:itens,
-            dt:iso2br(a.data_exame), hr:(a.hora_exame||"08:00").substring(0,5),
-            dId:a.dentista_id, cv:a.convenio_id||"",
-            vl:parseFloat(a.valor||0),
-            valor_bruto:parseFloat(a.valor_bruto||a.valor||0),
-            valor_faturado:parseFloat(a.valor_faturado||a.valor||0),
-            desconto_percentual:Number(a.desconto_percentual||0),
-            desconto_valor:Number(a.desconto_valor||0),
-            forma_pagamento_prevista:a.forma_pagamento_prevista||"avista",
-            forma_pagamento_final:a.forma_pagamento_final||"",
-            cb:a.cashback_pts||0,
-            st:a.status||"agendado",status:a.status||"agendado",
-            status_clinico:a.status_clinico||a.status||"agendado",
-            status_fiscal:a.status_fiscal||"nao_emitida",
-            nfse_id:a.nfse_id||null,numero_nfse:a.numero_nfse||null,
-            firebird_seq_atend:a.firebird_seq_atend||null,
-            obs:a.observacoes||""
-          };
-        });
-      }
-    }catch(e){console.error("Relatorio fetch:",e)}
+      var todosItens = await rItens.json() || [];
+      dayAgs = dados.map(function(a){
+        var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
+        return {
+          id:a.id, pac:a.paciente_nome||"", pId:a.paciente_id,
+          tel:a.paciente_telefone||"", cpf:a.paciente_cpf||"",
+          ex:a.exame_id, exames:itens,
+          dt:iso2br(a.data_exame), hr:(a.hora_exame||"08:00").substring(0,5),
+          dId:a.dentista_id, cv:a.convenio_id||"",
+          vl:parseFloat(a.valor||0),
+          valor_bruto:parseFloat(a.valor_bruto||a.valor||0),
+          valor_faturado:parseFloat(a.valor_faturado||a.valor||0),
+          desconto_percentual:Number(a.desconto_percentual||0),
+          desconto_valor:Number(a.desconto_valor||0),
+          forma_pagamento_prevista:a.forma_pagamento_prevista||"avista",
+          forma_pagamento_final:a.forma_pagamento_final||"",
+          cb:a.cashback_pts||0,
+          st:a.status||"agendado",status:a.status||"agendado",
+          status_clinico:a.status_clinico||a.status||"agendado",
+          status_fiscal:a.status_fiscal||"nao_emitida",
+          nfse_id:a.nfse_id||null,numero_nfse:a.numero_nfse||null,
+          firebird_seq_atend:a.firebird_seq_atend||null,
+          obs:a.observacoes||""
+        };
+      });
+    }
+  }catch(e){
+    console.error("Relatorio fetch:",e);
+    // Fallback: se rede falhou, tenta cache local pra não quebrar o relatório
+    dayAgs = ags.filter(function(a){
+      var adt = a.dt;
+      if(!adt) return false;
+      var pts = adt.split("/");
+      if(pts.length !== 3) return false;
+      var iso = pts[2] + "-" + pts[1] + "-" + pts[0];
+      return iso === ds && (a.status_clinico || a.st) === "realizado";
+    });
   }
 
   dayAgs.sort(function(a,b){ return (a.hr||"").localeCompare(b.hr||""); });
