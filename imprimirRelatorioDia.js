@@ -58,15 +58,20 @@ async function imprimirRelatorioDia() {
   // refletidos no cache, gerando relatório com itens faltando.
   // Caso descoberto: HELENA ZIANI CLERICI (98664) — adicionou Modelo ABS
   // depois do reverter, relatório não mostrou o exame novo (R$ 515 vs R$ 635).
+  //
+  // ⚡ FIX 05/05/2026 (v2) — usa supaFetch (JWT autenticado), não fetch direto.
+  // Bug crítico: fetch puro com SUPA_KEY usa role=anon, e agendamento_exames
+  // tem RLS que só libera SELECT pra role=authenticated. Resultado: vinha 0
+  // itens, relatório mostrava só os exames já em cache local (HELENA: 2 de 4).
+  // supaFetch (definido em window no index.html) injeta o JWT do usuário
+  // logado, role=authenticated, RLS libera leitura — vem todos os 4 itens.
   var dayAgs = [];
   try{
-    var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc",
-      {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+    var r = await supaFetch("/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
     var dados = await r.json();
     if(dados && dados.length){
       var ids = dados.map(function(a){return a.id});
-      var rItens = await fetch(SUPA_URL+"/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")",
-        {headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY}});
+      var rItens = await supaFetch("/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")");
       var todosItens = await rItens.json() || [];
       dayAgs = dados.map(function(a){
         var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
