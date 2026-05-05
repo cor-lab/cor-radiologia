@@ -141,6 +141,18 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-05 (v2): Fix HELENA — bug duplo descoberto:
+              (a) imprimirRelatorioDia EXISTE DENTRO do index.html (linha ~7226),
+                  NÃO era carregado o imprimirRelatorioDia.js externo. Toda
+                  edição naquele arquivo .js era ignorada. Função interna
+                  agora usa supaFetch (JWT auth, RLS libera) e SEMPRE busca
+                  fresco do Supabase.
+              (b) ags[i].exames stale após reverter+editar+realizar:
+                  o app não recarregava os itens novos do banco em memória.
+                  Adicionada função recarregarAgFresh(id) chamada no fim de
+                  marcarRealizadoEEmitir e atMarkRealizado, recarrega ag +
+                  exames frescos do Supabase.
+              Marcadores: "FIX 05/05/2026 (v2)", "recarregarAgFresh".
   2026-05-05: Fix Fechamento de Caixa + Relatório do Dia — sempre busca
               dados frescos do Supabase. Antes: usava cache local `ags`
               se não vazio, e cache não era atualizado após
@@ -1519,6 +1531,37 @@ function iniciarPollingNfse(agId, nfseId, reference) {
     }catch(e){console.log("Polling NFS-e erro:",e);}
   }, 15000);
 }
+// ⚡ FIX 05/05/2026 — recarrega ag fresco do Supabase após realizar
+// Resolve cache stale do `ags` em memória após reverter+editar+realizar:
+// Os agendamento_exames novos eram inseridos no banco mas ags[i].exames
+// continuava com a lista antiga. Caso HELENA (98664): adicionou Modelo ABS
+// depois do reverter, app ficava mostrando 3 itens em vez de 4.
+async function recarregarAgFresh(agendamentoId) {
+  try {
+    const idx = ags.findIndex(x => x.id === agendamentoId);
+    if (idx < 0) return;
+    const rAg = await supaFetch('/rest/v1/agendamentos?select=*&id=eq.' + agendamentoId);
+    const arrAg = await rAg.json();
+    if (!arrAg || !arrAg.length) return;
+    const agFresh = arrAg[0];
+    const rEx = await supaFetch('/rest/v1/agendamento_exames?select=*&agendamento_id=eq.' + agendamentoId);
+    const examesFresh = await rEx.json();
+    // Atualiza só os campos que podem ter mudado por reverter+editar+realizar
+    ags[idx].exames = examesFresh || [];
+    ags[idx].valor = parseFloat(agFresh.valor || 0);
+    ags[idx].vl = parseFloat(agFresh.valor || 0);
+    ags[idx].valor_bruto = parseFloat(agFresh.valor_bruto || agFresh.valor || 0);
+    ags[idx].valor_faturado = parseFloat(agFresh.valor_faturado || agFresh.valor || 0);
+    ags[idx].desconto_valor = Number(agFresh.desconto_valor || 0);
+    ags[idx].desconto_percentual = Number(agFresh.desconto_percentual || 0);
+    ags[idx].status = agFresh.status || ags[idx].status;
+    ags[idx].status_clinico = agFresh.status_clinico || ags[idx].status_clinico;
+    ags[idx].st = agFresh.status || ags[idx].st;
+  } catch (e) {
+    console.error('recarregarAgFresh:', e);
+  }
+}
+
 async function marcarRealizadoEEmitir(agendamentoId){
   try{
     const ag = (ags || []).find(x => x.id === agendamentoId);
@@ -1551,6 +1594,10 @@ async function marcarRealizadoEEmitir(agendamentoId){
     ag.st = "realizado";
     ag.status = "realizado";
     ag.status_clinico = "realizado";
+
+    // ⚡ FIX 05/05/2026 — recarrega ag fresco do Supabase pra atualizar
+    // ags[i].exames com os itens novos (caso reverter+editar+realizar)
+    await recarregarAgFresh(agendamentoId);
 
     if(typeof renderAgendamentos === "function"){
       renderAgendamentos();
@@ -3882,6 +3929,9 @@ async function atMarkRealizado(id) {
     if (a) {
       a.st = "realizado";
       a.status_clinico = "realizado";
+      // ⚡ FIX 05/05/2026 — recarrega ag fresco do Supabase pra atualizar
+      // ags[i].exames com os itens novos (caso reverter+editar+realizar)
+      await recarregarAgFresh(id);
       // FotonWeb COR: gera token de acesso do paciente (silencioso)
       try {
         if (a.firebird_seq_atend) {
@@ -7228,50 +7278,59 @@ async function imprimirRelatorioDia() {
   var ds = selDate.getFullYear() + "-" + pad(selDate.getMonth()+1) + "-" + pad(selDate.getDate());
   var dsBR = ds.substring(8,10) + "/" + ds.substring(5,7) + "/" + ds.substring(0,4);
 
-  var dayAgs = ags.filter(function(a){
-    var adt = a.dt;
-    if(!adt) return false;
-    var pts = adt.split("/");
-    if(pts.length !== 3) return false;
-    var iso = pts[2] + "-" + pts[1] + "-" + pts[0];
-    return iso === ds && (a.status_clinico || a.st) === "realizado";
-  });
-
-  // Se não encontrou localmente, buscar do Supabase
-  if(!dayAgs.length){
-    try{
-      var r = await fetch(SUPA_URL+"/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
-      var dados = await r.json();
-      if(dados && dados.length){
-        var ids = dados.map(function(a){return a.id});
-        var rItens = await supaFetch("/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")");
-        var todosItens = await rItens.json() || [];
-        dayAgs = dados.map(function(a){
-          var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
-          return {
-            id:a.id, pac:a.paciente_nome||"", pId:a.paciente_id,
-            tel:a.paciente_telefone||"", cpf:a.paciente_cpf||"",
-            ex:a.exame_id, exames:itens,
-            dt:iso2br(a.data_exame), hr:(a.hora_exame||"08:00").substring(0,5),
-            dId:a.dentista_id, cv:a.convenio_id||"",
-            vl:parseFloat(a.valor||0),
-            valor_bruto:parseFloat(a.valor_bruto||a.valor||0),
-            valor_faturado:parseFloat(a.valor_faturado||a.valor||0),
-            desconto_percentual:Number(a.desconto_percentual||0),
-            desconto_valor:Number(a.desconto_valor||0),
-            forma_pagamento_prevista:a.forma_pagamento_prevista||"avista",
-            forma_pagamento_final:a.forma_pagamento_final||"",
-            cb:a.cashback_pts||0,
-            st:a.status||"agendado",status:a.status||"agendado",
-            status_clinico:a.status_clinico||a.status||"agendado",
-            status_fiscal:a.status_fiscal||"nao_emitida",
-            nfse_id:a.nfse_id||null,numero_nfse:a.numero_nfse||null,
-            firebird_seq_atend:a.firebird_seq_atend||null,
-            obs:a.observacoes||""
-          };
-        });
-      }
-    }catch(e){console.error("Relatorio fetch:",e)}
+  // ⚡ FIX 05/05/2026 (v2) — SEMPRE busca dados frescos do Supabase via supaFetch
+  // Antes: filtrava cache local `ags`. Cache podia estar desatualizado após
+  // reverter+editar+realizar (DELETE+INSERT em agendamento_exames não refletia
+  // em memória) → relatório com itens faltando.
+  // Caso descoberto: HELENA ZIANI CLERICI (98664) — adicionou Modelo ABS
+  // depois do reverter, relatório só mostrava 3 dos 4 exames.
+  // CRÍTICO usar supaFetch (JWT autenticado), não fetch direto, porque
+  // agendamento_exames tem RLS só pra role=authenticated. Fetch puro com
+  // SUPA_KEY (anon) retornaria 0 itens.
+  var dayAgs = [];
+  try{
+    var r = await supaFetch("/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
+    var dados = await r.json();
+    if(dados && dados.length){
+      var ids = dados.map(function(a){return a.id});
+      var rItens = await supaFetch("/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")");
+      var todosItens = await rItens.json() || [];
+      dayAgs = dados.map(function(a){
+        var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
+        return {
+          id:a.id, pac:a.paciente_nome||"", pId:a.paciente_id,
+          tel:a.paciente_telefone||"", cpf:a.paciente_cpf||"",
+          ex:a.exame_id, exames:itens,
+          dt:iso2br(a.data_exame), hr:(a.hora_exame||"08:00").substring(0,5),
+          dId:a.dentista_id, cv:a.convenio_id||"",
+          vl:parseFloat(a.valor||0),
+          valor_bruto:parseFloat(a.valor_bruto||a.valor||0),
+          valor_faturado:parseFloat(a.valor_faturado||a.valor||0),
+          desconto_percentual:Number(a.desconto_percentual||0),
+          desconto_valor:Number(a.desconto_valor||0),
+          forma_pagamento_prevista:a.forma_pagamento_prevista||"avista",
+          forma_pagamento_final:a.forma_pagamento_final||"",
+          cb:a.cashback_pts||0,
+          st:a.status||"agendado",status:a.status||"agendado",
+          status_clinico:a.status_clinico||a.status||"agendado",
+          status_fiscal:a.status_fiscal||"nao_emitida",
+          nfse_id:a.nfse_id||null,numero_nfse:a.numero_nfse||null,
+          firebird_seq_atend:a.firebird_seq_atend||null,
+          obs:a.observacoes||""
+        };
+      });
+    }
+  }catch(e){
+    console.error("Relatorio fetch:",e);
+    // Fallback: se rede falhou, tenta cache local pra não quebrar o relatório
+    dayAgs = ags.filter(function(a){
+      var adt = a.dt;
+      if(!adt) return false;
+      var pts = adt.split("/");
+      if(pts.length !== 3) return false;
+      var iso = pts[2] + "-" + pts[1] + "-" + pts[0];
+      return iso === ds && (a.status_clinico || a.st) === "realizado";
+    });
   }
 
   dayAgs.sort(function(a,b){ return (a.hr||"").localeCompare(b.hr||""); });
