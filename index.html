@@ -141,6 +141,15 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-05 (v4): Fix propagação paciente — edição de DOB/CPF/endereço
+              no modal do agendamento agora propaga pra tabela `pacientes`
+              (cadastro mestre). Antes: dbSaveAg só atualizava
+              agendamentos.paciente_*, pacientes.* ficava desatualizado.
+              Caso GABRIEL VESTENA (141721): editou DOB+CPF, salvou no
+              agendamento mas pacientes continuava NULL → abrir cadastro
+              do paciente mostrava DOB vazia, parecia "não corrigiu".
+              UPDATE não-bloqueante (try/catch) após dbSaveAg.
+              Marcador: "FIX 05/05/2026 — propaga edição".
   2026-05-05 (v3): Limite de carregamento de agendamentos aumentado de 500
               para 2000 em DOIS pontos: load inicial (linha ~2002) e
               auto-refresh (linha ~3036). Antes: dias 10/13/14/15/16 de
@@ -4716,6 +4725,35 @@ function openEditAg(id) {
         toast("⚠️","Erro ao salvar alterações do agendamento");
         return;
       }
+
+      // ⚡ FIX 05/05/2026 — propaga edição do paciente pra tabela `pacientes`
+      // Antes: dbSaveAg só atualizava `agendamentos.paciente_*`. O cadastro
+      // mestre `pacientes` ficava desatualizado. Caso GABRIEL VESTENA
+      // (paciente 141721): editou DOB no agendamento, salvou em
+      // agendamentos.paciente_data_nascimento mas pacientes.data_nascimento
+      // continuava NULL — abrir cadastro do paciente mostrava DOB vazia.
+      // Não bloqueia o save do agendamento se este UPDATE falhar.
+      if (a.pId) {
+        try {
+          await supa.from("pacientes").update({
+            cpf: a.paciente_cpf || null,
+            data_nascimento: a.paciente_data_nascimento || null,
+            sexo: a.paciente_sexo || null,
+            telefone: a.tel || null,
+            email: a.paciente_email || null,
+            cep: a.paciente_cep || null,
+            logradouro: a.paciente_logradouro || null,
+            numero: a.paciente_numero || null,
+            complemento: a.paciente_complemento || null,
+            bairro: a.paciente_bairro || null,
+            municipio: a.paciente_municipio || null,
+            uf: a.paciente_uf || null
+          }).eq("id", a.pId);
+        } catch (e) {
+          console.error("Propagação paciente:", e);
+        }
+      }
+
       lastAg = a; // 🔥 ESSENCIAL
       // Atualizar cache local: encontrar e atualizar o objeto no array ags
       for (var i = 0; i < ags.length; i++) {
