@@ -84,6 +84,14 @@
       Funciona em DUPLA com revert_atendimento.py v3.2 - juntos formam
       o ciclo "Reverter → Editar livre → Realizar de novo" sem órfãos.
   
+  [✓] Bloqueio de REALIZAR atendimento sem data de nascimento do paciente
+      Marcadores: comentário "🔒 BLOQUEIO OBRIGATÓRIO" em DUAS funções:
+        - marcarRealizadoEEmitir (linha ~1489) - fluxo com NFS-e
+        - atMarkRealizado (linha ~3829) - fluxo simples
+      Verifica ag.paciente_data_nascimento antes de UPDATE status=realizado.
+      No agendamento permanece permitido (regra é só na realização).
+      Toast: "Não é possível realizar o exame sem a data de nascimento..."
+  
   ───────── ARQUIVOS SEPARADOS (incluir junto em backups) ─────────
   
   - ordem_servico.js — Impressão de Ordem de Serviço A4 (v2.7+)
@@ -129,6 +137,15 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-05: Bloqueio de REALIZAR atendimento sem data de nascimento do
+              paciente. Aplicado em DUAS funções (marcarRealizadoEEmitir
+              + atMarkRealizado) — verifica ag.paciente_data_nascimento
+              antes de UPDATE status=realizado. Toast amigável instrui
+              a editar o cadastro. Agendamento segue permitido sem DOB
+              (regra é só na realização). Motivo: identificação completa
+              do paciente (LGPD) e evitar realizar com dados incompletos.
+              Caso descoberto: GABRIEL RODRIGUES VESTENA (paciente 141721)
+              tinha realizado exame sem DOB.
   2026-04-30: Edge Function emitir-nfse-focus v32 - filtra exames UNIMED
               e SYNS ("fora do faturamento") da discriminação da NFS-e.
               Antes (v31, deploy 16/04): listava TODOS exames incluindo
@@ -1491,6 +1508,13 @@ async function marcarRealizadoEEmitir(agendamentoId){
     const ag = (ags || []).find(x => x.id === agendamentoId);
     if(!ag){
       toast("Erro", "Agendamento não encontrado.");
+      return false;
+    }
+
+    // 🔒 BLOQUEIO OBRIGATÓRIO — paciente precisa ter data de nascimento cadastrada
+    // Regra de cadastro/LGPD: não realizar exame sem identificação completa do paciente.
+    if (!ag.paciente_data_nascimento || String(ag.paciente_data_nascimento).trim() === '') {
+      toast("⚠️ Bloqueado", "Não é possível realizar o exame sem a data de nascimento do paciente. Edite o cadastro do paciente primeiro.");
       return false;
     }
 
@@ -3828,6 +3852,14 @@ function setAtFilter(f) {
 }
 
 async function atMarkRealizado(id) {
+  // 🔒 BLOQUEIO OBRIGATÓRIO — paciente precisa ter data de nascimento cadastrada
+  // Regra de cadastro/LGPD: não realizar exame sem identificação completa do paciente.
+  var aPre = (ags || []).find(function(x) { return x.id === id; });
+  if (aPre && (!aPre.paciente_data_nascimento || String(aPre.paciente_data_nascimento).trim() === '')) {
+    toast("⚠️ Bloqueado", "Não é possível realizar o exame sem a data de nascimento do paciente. Edite o cadastro do paciente primeiro.");
+    return;
+  }
+
   var ok = await dbUpdAgSt(id, "realizado");
   if (ok) {
     var a = ags.find(function(x) { return x.id === id; });
