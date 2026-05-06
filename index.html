@@ -84,7 +84,11 @@
   [✓] Aviso WhatsApp ao dentista quando atendimento é realizado
       Marcadores: "avisarDentistaAtendimentoRealizado", "DEFAULT_WA_AVISO",
       "waT.av", "dRaar", "raar", "recebe_aviso_atendimento_realizado"
-      Disparo: rAt() linha ~3964 (após toast "Atendimento realizado!")
+      Disparo: SEMPRE via atMarkRealizado() linha ~3960. Os DOIS botões de
+      "marcar realizado" (botão "✓" inline na lista linha ~3729 + botão
+      "✅ Realizado" no menu de ações linha ~4388) chamam atMarkRealizado.
+      ⚠️ NÃO criar atalho que chame dbUpdAgSt direto pra status="realizado"
+      — pula bloqueio LGPD, token FotonWeb e aviso WhatsApp.
       Opt-out: dentista.recebe_aviso_atendimento_realizado=false
       Template editável em Configurações → 📲 Templates WhatsApp (4ª textarea)
       Placeholders: {dentista} {paciente} {data} {hora} {exames} {clinica}
@@ -150,6 +154,19 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06 (v3): Fix DEFINITIVO aviso WhatsApp ao dentista — bug era na
+              função CHAMADORA, não no aviso. Investigação com console.trace
+              revelou que o botão "✅ Realizado" do menu de ações (linha
+              ~4388) chamava dbUpdAgSt direto, pulando atMarkRealizado e
+              consequentemente: bloqueio LGPD de data_nasc, geração de token
+              FotonWeb E o aviso WhatsApp ao dentista. Refatorado pra delegar
+              tudo a atMarkRealizado(ag.id). Adicionado rndAg() no fim de
+              atMarkRealizado pra re-renderizar a agenda quando vem do menu.
+              Logs de debug [avisarDentista] mantidos por enquanto pra
+              confirmação do fix em produção (remover quando validado).
+              ⚠️ Lição: ao adicionar feature em fluxo crítico, GREP por TODOS
+              os lugares que chamam dbUpdAgSt(id,"realizado") direto, não
+              só o ponto óbvio.
   2026-05-06 (v2): Fix pop-up bloqueado no aviso WhatsApp ao dentista.
               Browsers bloqueiam window.open chamado depois de await
               (perde "user activation"). Solução: pré-abre janela em
@@ -4004,6 +4021,11 @@ async function atMarkRealizado(id) {
       }
     }
     renderAtendimento();
+    // ⚡ FIX 06/05/2026 — re-renderiza agenda também (rndAg). Quando atMarkRealizado
+    // é chamado pelo botão do menu de agendamento, é a tela da agenda que está
+    // ativa, não a de atendimento. Sem isso, o card ficava com status antigo
+    // até o próximo refresh.
+    if (typeof rndAg === "function") rndAg();
     toast("✅", "Atendimento realizado!");
     // Aviso ao dentista via WhatsApp - usa janela pré-aberta (waWindow)
     console.log("[avisarDentista] POS: a=" + (a?("dId="+a.dId+" pac="+a.pac):"NULL") + " waWindow=" + !!waWindow);
@@ -4386,16 +4408,14 @@ function agEV(ev, id) {
         lbl:"✅ Realizado",
         cls:"btng",
         fn:async function(){
-          var ok = await dbUpdAgSt(ag.id,"realizado");
-          if(ok){
-            ag.st = "realizado";
-            ag.status_clinico = "realizado";
-            closeM();
-            rndAg();
-            toast("✅","Realizado");
-          }else{
-            toast("Erro","Falha ao atualizar status.");
-          }
+          // ⚡ FIX 06/05/2026 — handler unificado.
+          // Antes: chamava dbUpdAgSt direto, pulando bloqueio LGPD de data_nasc,
+          // geração de token FotonWeb e aviso WhatsApp ao dentista. Agora delega
+          // pra atMarkRealizado que centraliza TODO o fluxo de "marcar realizado".
+          // closeM() roda sync ANTES do await pra preservar user activation
+          // (window.open dentro de atMarkRealizado precisa disso).
+          closeM();
+          await atMarkRealizado(ag.id);
         }
       });
     })(a);
