@@ -150,6 +150,12 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06 (v2): Fix pop-up bloqueado no aviso WhatsApp ao dentista.
+              Browsers bloqueiam window.open chamado depois de await
+              (perde "user activation"). Solução: pré-abre janela em
+              about:blank ANTES dos awaits em atMarkRealizado, depois
+              substitui location.href com URL do WhatsApp. Janela é
+              fechada se o aviso não couber (sem dentista, sem tel, etc).
   2026-05-06: Aviso WhatsApp ao dentista quando atendimento é realizado.
               wa.me manual (abre WhatsApp Web em nova aba), zero servidor.
               Template editável em Configurações → 📲 Templates WhatsApp
@@ -3960,6 +3966,20 @@ async function atMarkRealizado(id) {
     return;
   }
 
+  // 📲 Pré-abre janela do WhatsApp ANTES dos awaits (mantém vínculo com user click,
+  // evita bloqueio de pop-up). Será preenchida com URL ao final ou fechada se não couber.
+  var waWindow = null;
+  try {
+    if (aPre) {
+      var dentPre = (dents || []).find(function(d){ return d.id === aPre.dId; });
+      var telPre = dentPre ? String(dentPre.tel || "").replace(/\D/g, "") : "";
+      var podeAvisar = dentPre && dentPre.raar !== false && telPre;
+      if (podeAvisar) {
+        waWindow = window.open("about:blank", "_blank");
+      }
+    }
+  } catch(e) { console.error("[avisarDentista] pre-open:", e); }
+
   var ok = await dbUpdAgSt(id, "realizado");
   if (ok) {
     var a = ags.find(function(x) { return x.id === id; });
@@ -3981,10 +4001,11 @@ async function atMarkRealizado(id) {
     }
     renderAtendimento();
     toast("✅", "Atendimento realizado!");
-    // Aviso ao dentista via WhatsApp (wa.me manual, abre em nova aba)
-    // Respeita opt-out (dent.raar === false) e dentistas sem telefone
-    try { avisarDentistaAtendimentoRealizado(a); } catch(e){ console.error("[avisarDentista] erro:", e); }
+    // Aviso ao dentista via WhatsApp - usa janela pré-aberta (waWindow)
+    try { avisarDentistaAtendimentoRealizado(a, waWindow); } catch(e){ console.error("[avisarDentista] erro:", e); }
   } else {
+    // Falhou: fecha janela pré-aberta se houver
+    if (waWindow) { try { waWindow.close(); } catch(e){} }
     toast("Erro", "Falha ao atualizar status.");
   }
 }
@@ -5486,25 +5507,31 @@ function sWAi(id){
 
 // ═══ Aviso ao dentista quando atendimento é realizado ═══
 // Adicionado em 2026-05-06: dispara WhatsApp manual (wa.me) ao dentista
-// Triggers: chamado automaticamente em rAt() após marcar como realizado
+// Triggers: chamado automaticamente em atMarkRealizado() após marcar como realizado
 // Opt-out: dentista.recebe_aviso_atendimento_realizado = false
-async function avisarDentistaAtendimentoRealizado(ag){
-  if(!ag) return;
+// IMPORTANTE: recebe `waWindow` pré-aberta (window.open antes dos awaits) pra
+// evitar bloqueio de popup. Se waWindow for null, tenta abrir nova (fallback).
+async function avisarDentistaAtendimentoRealizado(ag, waWindow){
+  function fecharSeAberta(){ if(waWindow){ try{ waWindow.close(); }catch(e){} } }
+  if(!ag) { fecharSeAberta(); return; }
   // Pega dentista do agendamento
   var dent = (dents || []).find(function(d){ return d.id === ag.dId; });
   if(!dent){
     console.log("[avisarDentista] dentista não encontrado para ag", ag.id);
+    fecharSeAberta();
     return;
   }
   // Opt-out: respeita preferência do dentista
   if(dent.raar === false){
     console.log("[avisarDentista] dentista " + dent.n + " optou por não receber aviso");
+    fecharSeAberta();
     return;
   }
   // Telefone obrigatório
   var tel = String(dent.tel || "").replace(/\D/g, "");
   if(!tel){
     console.log("[avisarDentista] dentista " + dent.n + " sem telefone cadastrado");
+    fecharSeAberta();
     return;
   }
   // Monta lista de exames (sem o sufixo de convênio)
@@ -5526,11 +5553,17 @@ async function avisarDentistaAtendimentoRealizado(ag){
     .replaceAll("{hora}", ag.hr || "")
     .replaceAll("{exames}", nomesExames)
     .replaceAll("{clinica}", "COR — Centro Odontologico de Radiologia");
-  // Abre WhatsApp Web/app em nova aba
-  window.open(
-    "https://wa.me/55" + tel + "?text=" + encodeURIComponent(msg),
-    "_blank"
-  );
+  var url = "https://wa.me/55" + tel + "?text=" + encodeURIComponent(msg);
+  // Usa janela pré-aberta (evita bloqueio de popup) ou abre nova (fallback)
+  if(waWindow){
+    try { waWindow.location.href = url; }
+    catch(e){
+      console.error("[avisarDentista] erro ao usar janela pré-aberta:", e);
+      window.open(url, "_blank");
+    }
+  } else {
+    window.open(url, "_blank");
+  }
 }
 
 function obterDescontoPagamento(formaPagamento){
