@@ -154,6 +154,22 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06 (v5): Fix OS imprimindo com itens STALE. Caso ELDER 214548:
+              banco tinha 3 exames (Pasta+Doc Completa+Modelo ABS=R$440)
+              mas OS imprimiu só 2 (R$320). ags[i].exames em memória estava
+              desatualizado em relação ao banco. recarregarAgFresh já existia
+              (criada em 05/05 caso HELENA) mas só era chamada após
+              "marcar realizado", não antes de imprimir OS.
+              FIX em ordem_servico.js: imprimirOS agora é async e chama
+              recarregarAgFresh(agId) ANTES de ler a, garantindo que exames+
+              valores+status são atuais do Supabase. Falha em recarregar
+              não bloqueia impressão (cai no fallback do estado local).
+              ⚠️ MESMA CLASSE de bug pode existir em outras funções que leem
+              ags[i].* sem recarregar: imprimirOrdemServico, etiquetas,
+              fichas, painel fotos, requisição. Avaliar caso a caso se
+              também precisam recarregar antes — em geral SIM se mostram
+              valor/exames; NÃO se mostram só dados de paciente/dentista.
+
   2026-05-06 (v4): Fix 3 valores divergentes para mesmo agendamento (caso
               ELDER 214548). Modal mostrava R$ 360, OS imprimia R$ 230,
               formulário R$ 256. Causa: três pontos do sistema liam três

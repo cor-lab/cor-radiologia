@@ -60,7 +60,17 @@ function _formatarDataBR(dataISO) {
     return p[2] + "/" + p[1] + "/" + p[0];
 }
 
-function imprimirOS(agId) {
+async function imprimirOS(agId) {
+    // ⚡ FIX 06/05/2026 — recarrega ag fresco do Supabase ANTES de imprimir.
+    // Evita OS com itens stale quando o usuário adiciona/remove exames numa
+    // sessão e imprime sem refresh (caso ELDER 214548: tinha 3 exames no banco
+    // incluindo Modelo ABS, mas memória local tinha só 2). recarregarAgFresh
+    // atualiza ags[idx].exames + valores + status do banco.
+    if (typeof recarregarAgFresh === "function") {
+        try { await recarregarAgFresh(agId); }
+        catch(e) { console.error("[imprimirOS] recarregarAgFresh falhou:", e); }
+    }
+
     var a = ags.find(function(x) { return x.id === agId; });
     if (!a) {
         toast("Erro", "Agendamento nao encontrado");
