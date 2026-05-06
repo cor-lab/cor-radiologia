@@ -162,6 +162,9 @@
               FotonWeb E o aviso WhatsApp ao dentista. Refatorado pra delegar
               tudo a atMarkRealizado(ag.id). Adicionado rndAg() no fim de
               atMarkRealizado pra re-renderizar a agenda quando vem do menu.
+              BÔNUS: guard atDate=null em renderAtendimento — antes só era
+              chamada após o usuário abrir a tela de atendimento, agora pode
+              ser chamada vinda da agenda e atDate ainda pode estar null.
               Logs de debug [avisarDentista] mantidos por enquanto pra
               confirmação do fix em produção (remover quando validado).
               ⚠️ Lição: ao adicionar feature em fluxo crítico, GREP por TODOS
@@ -3599,6 +3602,12 @@ function ratendimento() {
 function renderAtendimento() {
   var el = document.getElementById("pgAt");
   if (!el) return;
+  // ⚡ FIX 06/05/2026 — guard atDate=null. atDate só é inicializado quando
+  // o usuário ABRE a tela de atendimento (via ratendimento()). Se atMarkRealizado
+  // chamar renderAtendimento sem o usuário ter aberto a tela ainda, atDate=null
+  // e agF(null) quebra com TypeError. Quando a tela for aberta de fato,
+  // ratendimento() inicializa atDate e re-chama renderAtendimento normalmente.
+  if (!atDate) return;
 
   var ds = agF(atDate);
   var hoje = new Date();
