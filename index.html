@@ -108,6 +108,17 @@
       Verifica ag.paciente_data_nascimento antes de UPDATE status=realizado.
       No agendamento permanece permitido (regra é só na realização).
       Toast: "Não é possível realizar o exame sem a data de nascimento..."
+
+  [✓] Centralização de exibição de valor monetário (Sessão 1 simplificação)
+      Marcadores: "fmtValorAg", "calcValoresAg"
+      REGRA: TODA exibição de valor de agendamento usa fmtValorAg(ag).
+      NUNCA ler ag.vl, ag.valor_faturado, ag.valor diretamente pra exibir.
+      Esses campos podem estar STALE em relação aos exames atuais.
+      fmtValorAg → calcValoresAg → cálculo on-the-fly dos exames.
+      Pontos centralizados: modal de detalhes do agendamento (linha ~4488),
+      card mini Atendimento (linha ~3853), tabela bldExRows (linha ~5424).
+      Cálculos internos (save, NFS-e, fechamento) podem ler campos direto
+      pois usam dados frescos do form ou do Supabase em tempo real.
   
   ───────── ARQUIVOS SEPARADOS (incluir junto em backups) ─────────
   
@@ -154,6 +165,63 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06 (BUG SILENCIOSO crítico, 2ª camada): agendamento_exames cortado
+              em 1000 mesmo com .limit(10000) no cliente. Causa real: o
+              PostgREST do Supabase tem cap server-side (db.max_rows, default
+              1000). O .limit(N>1000) do cliente é IGNORADO silenciosamente.
+              Primeira tentativa de fix (adicionar .limit(10000)) NÃO RESOLVEU
+              porque o cap é do servidor. FIX definitivo: paginação via
+              .range() em loop. Criada função fetchAllAgEx() que pagina de
+              1000 em 1000 (max 30k registros). Substituídas 2 chamadas:
+                - loadAllData (linha ~2195)
+                - autoRefresh (linha ~3232)
+              Sintoma original: Modelo ABS adicionado ao Elder #214548 não
+              aparecia na OS nem no modal — banco tinha 3 itens (ID 3237
+              entre os mais novos), memória local tinha só 2.
+              ⚠️ TICKET ABERTO: revisar todas as outras tabelas conforme
+              crescem. Hoje seguras: agendamentos (limit 2000), convenio_precos
+              (limit 5000), dentistas (paginação já existia). Crescem sem
+              limit: cashback_lancamentos, cashback_ajustes, exames_problemas,
+              nfse_fila, nfse_emitidas. Mesma classe de bug pode aparecer
+              quando essas passarem de 1000.
+
+  2026-05-06 (BUG SILENCIOSO crítico): agendamento_exames cortado por
+              limite default do Supabase. Banco passou de 1000 registros
+              esta semana (1051 hoje), e as duas queries de carga não
+              especificavam .limit(). Supabase retornava silenciosamente
+              só 1000 registros, cortando os 51 mais recentes — incluindo
+              Modelo ABS adicionado hoje ao Elder #214548. Sintoma: banco
+              tinha 3 exames mas memória local tinha 2, valores divergiam
+              após Sessão 1 de centralização (cálculo on-the-fly em cima
+              de dados incompletos). FIX: adicionado .limit(10000) em:
+                - loadAllData (linha ~2178)
+                - autoRefresh (linha ~3214)
+              ⚠️ TICKET ABERTO: revisar TODAS as queries .select() sem
+              limit em uma próxima sessão (potencial mesmo bug em outras
+              tabelas conforme crescem). Tabelas seguras hoje: agendamentos
+              (limit 2000), convenio_precos (limit 5000), dentistas
+              (range 0,999). Demais: VERIFICAR.
+
+  2026-05-06 (Sessão 1 simplificação): Centralização de exibição de valor.
+              Início do plano de simplificação progressiva (5 sessões pra
+              eliminar classes de bug recorrentes). Sessão 1: criado helper
+              window.fmtValorAg(ag) que SEMPRE calcula faturado on-the-fly
+              dos exames (delega pra calcValoresAg). Substituídos 2 últimos
+              pontos que liam a.vl direto pra exibir:
+                - Card mini Atendimento (linha ~3853)
+                - Tabela bldExRows (linha ~5424)
+              Modal de detalhes e OS já tinham sido centralizados nos fixes
+              anteriores de hoje. Resultado: TODA exibição de valor de
+              agendamento agora passa por uma função única, eliminando a
+              família de bugs "3 telas mostrando 3 valores diferentes".
+              Risco baixo: cada substituição é 1 linha, calcValoresAg já
+              estava em produção e validada.
+              Próximas sessões previstas (em ordem decrescente de impacto):
+                Sessão 2: setStatusAg() — centralizar mudança de status
+                Sessão 3: snapshot de edição em variável global (não em a._*)
+                Sessão 4: rerenderPaginaAtual() — re-render automático
+                Sessão 5: eliminar funções duplicadas (faxina)
+
   2026-05-06 (v6): Fix REGRESSÃO bloqueio de edição de atendimento realizado.
               O bloqueio (criado em sessão anterior) parou de funcionar de
               forma intermitente: edições rápidas (<15s) ainda bloqueavam,
@@ -1023,6 +1091,24 @@ window.calcValoresAg = function(ag){
     descontoPct: descontoPct,
     naoFaturavel: Number(naoFaturavel.toFixed(2))
   };
+};
+
+// ═══ HELPER DE EXIBIÇÃO DE VALOR ═══════════════════════════════════════
+// PLANO DE SIMPLIFICAÇÃO — Sessão 1 (06/05/2026): centralizar valores.
+// USAR fmtValorAg(ag) em TODA exibição de valor monetário de agendamento.
+// NUNCA ler ag.vl, ag.valor_faturado, ag.valor diretamente pra mostrar
+// na tela — esses campos podem estar STALE em relação aos exames atuais.
+// Esta função delega pra calcValoresAg que sempre calcula on-the-fly
+// dos exames, ignorando cache desatualizado. Retorna string já formatada
+// no padrão BR (ex: "256,00") — basta colocar "R$ " na frente.
+//
+// Histórico de bugs que esta centralização previne:
+//   - ELDER 06/05/2026 (3 valores divergentes em 3 telas)
+//   - HELENA 05/05/2026 (cache stale pós reverter+editar+realizar)
+window.fmtValorAg = function(ag) {
+  if (!ag) return "0,00";
+  var c = calcValoresAg(ag);
+  return Number(c.faturado || 0).toFixed(2).replace(".", ",");
 };
 
 // ═══ HELPER GLOBAL: fetch autenticado ao Supabase REST API ═══
@@ -2118,6 +2204,28 @@ function sendWA(id){
 }
 
 // ── LOAD ALL DATA ──
+
+// Helper de paginação pra contornar limite de 1000 linhas do PostgREST.
+// Mesmo com .limit(N) no cliente, o servidor aplica o cap configurado
+// em db.max_rows (default 1000). Solução robusta: paginar com .range().
+// Usado pra agendamento_exames (passou de 1000 em 06/05/2026).
+async function fetchAllAgEx(){
+  var todos = [];
+  var pg = 0;
+  var pageSize = 1000;
+  while(pg < 30){ // safety: max 30k registros
+    var r = await supa.from("agendamento_exames")
+      .select("*")
+      .order("ordem", {ascending: true})
+      .range(pg * pageSize, (pg + 1) * pageSize - 1);
+    if(!r.data || !r.data.length) break;
+    todos = todos.concat(r.data);
+    if(r.data.length < pageSize) break;
+    pg++;
+  }
+  return { data: todos, error: null };
+}
+
 async function loadAllData(){
   try{
     var r = await Promise.all([
@@ -2126,7 +2234,7 @@ async function loadAllData(){
       supa.from("convenio_precos").select("*").limit(5000),
       supa.from("dentistas").select("*").eq("ativo",true).order("nome").range(0,999),
       supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(2000),
-      supa.from("agendamento_exames").select("*").order("ordem",{ascending:true}),
+      fetchAllAgEx(),
       supa.from("premios").select("*").eq("ativo",true).order("pontos_necessarios"),
       supa.from("usuarios").select("*").eq("ativo",true).order("nome"),
       supa.from("cashback_ajustes").select("*").order("created_at",{ascending:false}),
@@ -3162,7 +3270,7 @@ function iniciarAutoRefresh(){
     try{
       // Recarregar agendamentos
       var agR = await supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(2000);
-      var agexR = await supa.from("agendamento_exames").select("*").order("ordem",{ascending:true});
+      var agexR = await fetchAllAgEx();
 
       if(agR.data){
         var mapAgEx = {};
@@ -3830,7 +3938,8 @@ function renderAtendimento() {
         h += "<span class='badge " + ({agendado:"bo",realizado:"bg",cancelado:"bgr",aguardando:"bgo"}[st] || "bgr") + "' style='font-size:.58rem;padding:1px 5px'>" + (sl[st] || st) + "</span>";
         if(a.firebird_seq_atend) h += "<span style='color:var(--tl);font-weight:700;font-size:.7rem'>#" + a.firebird_seq_atend + "</span>";
         h += "<span>🦷 " + esc(d.n) + "</span>";
-        h += "<span>R$ " + Number(a.vl || 0).toFixed(2).replace(".", ",") + "</span>";
+        // ⚡ Sessão 1 simplificação 06/05/2026 — usa fmtValorAg em vez de a.vl
+        h += "<span>R$ " + fmtValorAg(a) + "</span>";
         h += "</div>";
         h += "<div class='at-mini-actions'>";
         if (st === "agendado") {
@@ -5400,7 +5509,8 @@ function bldExRows() {
       h += "<td>" + examesHtml + "</td>";
       h += "<td style='font-family:DM Mono,monospace;font-size:.78rem'>" + esc(a.dt) + " " + esc(a.hr) + "</td>";
       h += "<td style='color:var(--gr)'>" + esc(d.n) + "</td>";
-      h += "<td><strong>R$ " + Number(a.vl || 0).toFixed(2).replace('.', ',') + "</strong></td>";
+      // ⚡ Sessão 1 simplificação 06/05/2026 — usa fmtValorAg em vez de a.vl
+      h += "<td><strong>R$ " + fmtValorAg(a) + "</strong></td>";
       h += "<td style='color:var(--g);font-family:DM Mono,monospace;font-weight:700'>+" + a.cb + " pts</td>";
       h += "<td><span class='badge " + (sc[a.st] || "bgr") + "'>" + (sl[a.st] || a.st) + "</span></td>";
       h += "<td><div style='display:flex;gap:4px'>" +
