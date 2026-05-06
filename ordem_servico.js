@@ -141,6 +141,15 @@ function imprimirOS(agId) {
 
     var ehMisto = temParticular && temConvenio;
 
+    // ⚡ FIX 06/05/2026 — desc_valor cacheado pode estar STALE em relação aos
+    // exames atuais (caso ELDER 214548: bruto particular=320 com desc_pct=20
+    // mas desc_valor salvo=90, divergente). Recalcula desc_valor a partir
+    // de desc_pct (fonte de verdade, vem da forma de pagamento) e da soma
+    // particular ATUAL. Mantém cached só se desc_pct=0 (desconto manual legado).
+    if (descontoPerc > 0 && somaParticular > 0) {
+        descontoValor = Number((somaParticular * (descontoPerc / 100)).toFixed(2));
+    }
+
     // ── CORRECAO v2.6: Aplicar desconto proporcional na parte PARTICULAR ──
     // Funciona tanto em 100% particular quanto em misto (desconto só na parte particular)
     itensInfo.forEach(function(info) {

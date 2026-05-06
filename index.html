@@ -154,6 +154,30 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06 (v4): Fix 3 valores divergentes para mesmo agendamento (caso
+              ELDER 214548). Modal mostrava R$ 360, OS imprimia R$ 230,
+              formulário R$ 256. Causa: três pontos do sistema liam três
+              campos diferentes que ficaram dessincronizados no banco
+              (a.vl/valor legado, a.desconto_valor cacheado, e cálculo
+              on-the-fly). Sync, edições parciais ou criações antigas podem
+              deixar campos stale; o sistema não pode confiar em valores
+              cacheados quando os exames são fonte de verdade.
+              FIX em 3 lugares (TODOS calculam on-the-fly agora):
+                (a) calcValoresAg (linha ~926) — se desc_pct>0, recalcula
+                    desc_valor = bruto × desc_pct/100 ignorando cached.
+                (b) Modal de detalhes do agendamento (linha ~4386) — usa
+                    calcValoresAg(a).faturado em vez de a.vl direto.
+                (c) ordem_servico.js (linha ~144) — recalcula descontoValor
+                    a partir de desc_pct e somaParticular dos exames atuais.
+              desc_pct é fonte de verdade (deriva da forma de pagamento:
+              avista=20%, 3x/4x=10%, 10x=0%). Mantém retro-compat: se
+              desc_pct=0 e desc_valor>0, ainda usa o cached (descontos
+              manuais legados, se houver).
+              ⚠️ AVISO: este fix corrige a EXIBIÇÃO. Os campos stale no
+              banco continuam stale até o próximo save do agendamento.
+              Não é problema porque o cálculo on-the-fly ignora eles.
+              Se quiser limpar de vez, rodar UPDATE em massa no Supabase
+              recalculando desc_valor a partir de desc_pct.
   2026-05-06 (v3): Fix DEFINITIVO aviso WhatsApp ao dentista — bug era na
               função CHAMADORA, não no aviso. Investigação com console.trace
               revelou que o botão "✅ Realizado" do menu de ações (linha
@@ -928,7 +952,15 @@ window.calcValoresAg = function(ag){
   var vfSalvo = Number(ag.valor_faturado || 0);
   var faturado;
 
-  if(desconto > 0){
+  // ⚡ FIX 06/05/2026 — desc_valor cacheado pode estar STALE (caso ELDER 214548:
+  // bruto=320 com desc_pct=20 mas desc_valor salvo=90, divergente). Quando
+  // desc_pct > 0, desc_pct é fonte de verdade (vem da forma de pagamento) e
+  // desc_valor é recalculado a partir do bruto ATUAL (somado dos exames).
+  // Caso desc_pct=0 e desc_valor>0 → desconto manual legado, mantém cached.
+  if(descontoPct > 0 && bruto > 0){
+    desconto = Number((bruto * (descontoPct / 100)).toFixed(2));
+    faturado = bruto - desconto;
+  } else if(desconto > 0){
     // Desconto real salvo - fonte de verdade
     faturado = bruto - desconto;
   } else if(vfSalvo > 0 && vfSalvo < bruto - 0.01){
@@ -4383,7 +4415,13 @@ function agEV(ev, id) {
   b += "<div style=\"font-size:1.15rem;font-weight:700;font-family:Playfair Display,serif;margin-bottom:4px\">" + esc(a.pac) + "</div>";
   b += "<div style=\"display:flex;flex-wrap:wrap;gap:6px 14px;padding:12px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:10px;margin-bottom:8px\">";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📅</span> <strong>" + esc(a.dt) + "</strong> — " + esc(a.hr) + " ate " + em3 + "</div>";
-  b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">" + ex3.ico + "</span> " + esc(ex3.n) + " — <strong>R$ " + a.vl + "</strong></div>";
+  // ⚡ FIX 06/05/2026 — usa calcValoresAg em vez de a.vl direto. a.vl é
+  // populado de a.valor (campo legado) no load (linha 2208), pode estar
+  // STALE em relação aos exames atuais (caso ELDER 214548: a.vl=360 mas
+  // soma real dos exames=256). calcValoresAg sempre calcula on-the-fly.
+  var _calcModal = (typeof calcValoresAg === "function") ? calcValoresAg(a) : null;
+  var _vlExibir = _calcModal ? _calcModal.faturado : a.vl;
+  b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">" + ex3.ico + "</span> " + esc(ex3.n) + " — <strong>R$ " + Number(_vlExibir).toFixed(2).replace(".", ",") + "</strong></div>";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🦷</span> " + esc(d3.n) + "</div>";
   if(d3.end) b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📍</span> <span style=\"color:var(--gr);font-size:.82rem\">" + esc(d3.end) + "</span></div>";
   if(cv3) b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">💚</span> " + esc(cv3.n) + "</div>";
