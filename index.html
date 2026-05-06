@@ -165,6 +165,23 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06 (aviso reativo de tel vazio): Investigação do "WhatsApp não
+              dispara" revelou problema de DADOS, não de código. Banco
+              tem 230 dentistas ativos com agendamentos sem telefone (218
+              já tiveram atendimentos realizados perdendo aviso). Causa
+              raiz: telefone nunca foi populado no Foton (FXARQ005.FONE_SMS
+              vazio em todos os exemplos verificados). Migração não perdeu
+              os dados — eles nunca existiram. Solução adotada: cadastro
+              orgânico conforme atendimentos forem realizados.
+              FIX no app: toast claro avisa quando aviso WhatsApp não foi
+              enviado por falta de tel, com duração maior (6s) pra garantir
+              que o operador veja. Próximo passo manual: editar o dentista
+              em "Dentistas → ✏️ Editar" e cadastrar o telefone.
+              ⚠️ Obs: O cap de 1000 do PostgREST também afetou a query do
+              dry-run de dentistas (script atualizar_telefones_dentistas.py
+              ficou inutilizado). Não vale apertar isso porque a fonte de
+              dados (Firebird) também não tem os telefones.
+
   2026-05-06 (BUG SILENCIOSO crítico, 2ª camada): agendamento_exames cortado
               em 1000 mesmo com .limit(10000) no cliente. Causa real: o
               PostgREST do Supabase tem cap server-side (db.max_rows, default
@@ -5763,6 +5780,20 @@ async function avisarDentistaAtendimentoRealizado(ag, waWindow){
   var tel = String(dent.tel || "").replace(/\D/g, "");
   if(!tel){
     console.log("[avisarDentista] dentista " + dent.n + " sem telefone cadastrado");
+    // ⚡ FIX 06/05/2026 — toast visível pra lembrar de cadastrar.
+    // Plano de cadastro orgânico: 218 dentistas com tel vazio (telefone
+    // nunca foi populado no Foton). Toast + duração maior (6s) faz com
+    // que cada atendimento realizado vire oportunidade de cadastrar.
+    // Usuário pode editar o dentista em Dentistas → ✏️ Editar.
+    toast("📵", "WhatsApp não enviado: Dr(a). " + (dent.n || "—") + " sem telefone");
+    // Estende duração do toast pra 6 segundos (default é 3s)
+    try {
+      clearTimeout(tT);
+      tT = setTimeout(function(){
+        var t = document.getElementById("toast");
+        if(t) t.classList.remove("show");
+      }, 6000);
+    } catch(e) {}
     fecharSeAberta();
     return;
   }
