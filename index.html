@@ -3974,9 +3974,13 @@ async function atMarkRealizado(id) {
       var dentPre = (dents || []).find(function(d){ return d.id === aPre.dId; });
       var telPre = dentPre ? String(dentPre.tel || "").replace(/\D/g, "") : "";
       var podeAvisar = dentPre && dentPre.raar !== false && telPre;
+      console.log("[avisarDentista] PRE: aPre.dId=" + (aPre.dId) + " dentPre=" + (dentPre?dentPre.n:"NULL") + " tel=" + telPre + " raar=" + (dentPre?dentPre.raar:"-") + " podeAvisar=" + podeAvisar);
       if (podeAvisar) {
         waWindow = window.open("about:blank", "_blank");
+        console.log("[avisarDentista] janela pre-aberta:", !!waWindow);
       }
+    } else {
+      console.log("[avisarDentista] PRE: aPre é null/undefined!");
     }
   } catch(e) { console.error("[avisarDentista] pre-open:", e); }
 
@@ -4002,6 +4006,7 @@ async function atMarkRealizado(id) {
     renderAtendimento();
     toast("✅", "Atendimento realizado!");
     // Aviso ao dentista via WhatsApp - usa janela pré-aberta (waWindow)
+    console.log("[avisarDentista] POS: a=" + (a?("dId="+a.dId+" pac="+a.pac):"NULL") + " waWindow=" + !!waWindow);
     try { avisarDentistaAtendimentoRealizado(a, waWindow); } catch(e){ console.error("[avisarDentista] erro:", e); }
   } else {
     // Falhou: fecha janela pré-aberta se houver
