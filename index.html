@@ -80,6 +80,15 @@
       
   [✓] Indicação de dentista em agendamento (dentista que solicitou)
       Marcadores: "dId", "INDICACAO", "fdent"
+
+  [✓] Aviso WhatsApp ao dentista quando atendimento é realizado
+      Marcadores: "avisarDentistaAtendimentoRealizado", "DEFAULT_WA_AVISO",
+      "waT.av", "dRaar", "raar", "recebe_aviso_atendimento_realizado"
+      Disparo: rAt() linha ~3964 (após toast "Atendimento realizado!")
+      Opt-out: dentista.recebe_aviso_atendimento_realizado=false
+      Template editável em Configurações → 📲 Templates WhatsApp (4ª textarea)
+      Placeholders: {dentista} {paciente} {data} {hora} {exames} {clinica}
+      Usa wa.me (manual, abre WhatsApp Web), zero infraestrutura.
   
   [✓] Bloqueio de edição de exames em atendimento realizado
       Marcadores: "_statusOriginal", "_examesOriginais", "agEV" linha ~4076
@@ -141,6 +150,13 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06: Aviso WhatsApp ao dentista quando atendimento é realizado.
+              wa.me manual (abre WhatsApp Web em nova aba), zero servidor.
+              Template editável em Configurações → 📲 Templates WhatsApp
+              (4º campo). Opt-out por dentista via toggle "Receber aviso".
+              Coluna recebe_aviso_atendimento_realizado adicionada à tabela
+              dentistas (default true). Dispara em rAt() após marcar
+              realizado, respeita opt-out e dentistas sem telefone.
   2026-05-05 (v4): Fix propagação paciente — edição de DOB/CPF/endereço
               no modal do agendamento agora propaga pra tabela `pacientes`
               (cadastro mestre). Antes: dbSaveAg só atualizava
@@ -1088,6 +1104,7 @@ async function enviarWhatsAppExames(ag, opts) {
 
 // Template padrão da mensagem de exames prontos (usuário pode editar em Config)
 var DEFAULT_WA_EX = "🦷 *COR — Exames disponíveis*\n\nOla, {nome}!\n\nSeus exames ja estao disponiveis online:\n{link}\n\n*Codigo de acesso:* {codigo}\n\nQualquer duvida, estamos a disposicao!\n{clinica}";
+var DEFAULT_WA_AVISO = "🦷 *COR — Atendimento realizado*\n\nOla, Dr(a). {dentista}!\nSeu paciente *{paciente}* realizou os exames hoje:\n\n📅 {data} as {hora}\n🔬 {exames}\n\nOs exames estarao disponiveis online em breve.\n\nAtenciosamente,\n{clinica}";
 
 // Helpers de data
 function iso2br(d){ if(!d)return""; var p=d.split("T")[0].split("-"); return p[2]+"/"+p[1]+"/"+p[0]; }
@@ -2094,7 +2111,8 @@ async function loadAllData(){
           ini: d.ini || d.nome.substring(0,2).toUpperCase(),
           bg: d.bg || "linear-gradient(135deg,#4ab848,#7dcf6e)",
           cor: d.cor || "#fff",
-          pvpf: d.pode_ver_pontos_fotonweb === true
+          pvpf: d.pode_ver_pontos_fotonweb === true,
+          raar: d.recebe_aviso_atendimento_realizado !== false
         };
       });
 
@@ -2273,7 +2291,8 @@ async function dbDelCv(id){
 async function dbSaveDent(d,isNew){
   var data={nome:d.n,cro:d.cro,especialidade:d.esp,telefone:d.tel,
     nivel:d.nv,pontos:d.pts,indicacoes:d.ind,ini:d.ini,bg:d.bg,cor:d.cor,ativo:true,
-    pode_ver_pontos_fotonweb: d.pvpf === true};
+    pode_ver_pontos_fotonweb: d.pvpf === true,
+    recebe_aviso_atendimento_realizado: d.raar !== false};
   var r=isNew?await supa.from("dentistas").insert(data).select().single():await supa.from("dentistas").update(data).eq("id",d.id);
   if(!r.error&&isNew&&r.data)d.id=r.data.id;
   return !r.error;
@@ -3159,7 +3178,8 @@ var ags = [];
 var waT = {
   ag: "🦷 *COR — Centro Odontologico de Radiologia*\n\nOla, {nome}!\n\nAgendamento confirmado:\nExame: {exame}\nData: {data}\nHorario: {hora}\nLocal: {clinica}\n\nQualquer duvida é só chamar!",
   lb: "🦷 *COR — Lembrete*\n\nOla, {nome}! Amanha voce tem:\nExame: {exame}\nHorario: {hora}\n\nNao esqueca seus documentos!",
-  ex: DEFAULT_WA_EX
+  ex: DEFAULT_WA_EX,
+  av: DEFAULT_WA_AVISO
 };
 
 loadWaTemplates();
@@ -3961,6 +3981,9 @@ async function atMarkRealizado(id) {
     }
     renderAtendimento();
     toast("✅", "Atendimento realizado!");
+    // Aviso ao dentista via WhatsApp (wa.me manual, abre em nova aba)
+    // Respeita opt-out (dent.raar === false) e dentistas sem telefone
+    try { avisarDentistaAtendimentoRealizado(a); } catch(e){ console.error("[avisarDentista] erro:", e); }
   } else {
     toast("Erro", "Falha ao atualizar status.");
   }
@@ -5460,6 +5483,56 @@ function sWAi(id){
     "_blank"
   );
 }
+
+// ═══ Aviso ao dentista quando atendimento é realizado ═══
+// Adicionado em 2026-05-06: dispara WhatsApp manual (wa.me) ao dentista
+// Triggers: chamado automaticamente em rAt() após marcar como realizado
+// Opt-out: dentista.recebe_aviso_atendimento_realizado = false
+async function avisarDentistaAtendimentoRealizado(ag){
+  if(!ag) return;
+  // Pega dentista do agendamento
+  var dent = (dents || []).find(function(d){ return d.id === ag.dId; });
+  if(!dent){
+    console.log("[avisarDentista] dentista não encontrado para ag", ag.id);
+    return;
+  }
+  // Opt-out: respeita preferência do dentista
+  if(dent.raar === false){
+    console.log("[avisarDentista] dentista " + dent.n + " optou por não receber aviso");
+    return;
+  }
+  // Telefone obrigatório
+  var tel = String(dent.tel || "").replace(/\D/g, "");
+  if(!tel){
+    console.log("[avisarDentista] dentista " + dent.n + " sem telefone cadastrado");
+    return;
+  }
+  // Monta lista de exames (sem o sufixo de convênio)
+  var nomesExames = "";
+  if(ag.exames && ag.exames.length){
+    nomesExames = ag.exames.map(function(it){
+      var ex = fex(it.exame_id || it.ex);
+      return ex ? ex.n : (it.nome_exame || "Exame");
+    }).join(", ");
+  } else if(ag.ex){
+    var ex2 = fex(ag.ex);
+    nomesExames = ex2 ? ex2.n : "Exame";
+  }
+  // Aplica template (DEFAULT se não tiver salvo)
+  var msg = String(waT.av || DEFAULT_WA_AVISO)
+    .replaceAll("{dentista}", dent.n || "")
+    .replaceAll("{paciente}", ag.pac || "")
+    .replaceAll("{data}", ag.dt || "")
+    .replaceAll("{hora}", ag.hr || "")
+    .replaceAll("{exames}", nomesExames)
+    .replaceAll("{clinica}", "COR — Centro Odontologico de Radiologia");
+  // Abre WhatsApp Web/app em nova aba
+  window.open(
+    "https://wa.me/55" + tel + "?text=" + encodeURIComponent(msg),
+    "_blank"
+  );
+}
+
 function obterDescontoPagamento(formaPagamento){
     if(formaPagamento === "avista") return 20;
     if(formaPagamento === "3x") return 10;
@@ -6193,6 +6266,21 @@ function openDtM(eid){
         "</div>"+
       "</div>"+
       "</div>";
+
+    // ═══ Seção Aviso WhatsApp - atendimento realizado ═══
+    b += "<div style='border-top:1px solid #3a3a5e;margin-top:6px;padding-top:8px'>"+
+      "<label style='font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px'>📲 Aviso WhatsApp</label>"+
+      "<div class='field'>"+
+        "<label style='display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;padding:6px 0'>"+
+          "<input type='checkbox' id='dRaar' "+(ed.raar !== false ?"checked":"")+" style='margin:0;cursor:pointer'>"+
+          "<span>Receber aviso por WhatsApp quando o exame do paciente for <strong style='color:#4ade80'>realizado</strong></span>"+
+        "</label>"+
+        "<div style='color:#666;font-size:11px;line-height:1.45;padding:4px 0 2px 22px'>"+
+          "Ao marcar o exame como realizado, abre o WhatsApp Web com mensagem pré-preenchida ao dentista. "+
+          "É necessário ter telefone cadastrado. Desligue se o dentista preferir não receber."+
+        "</div>"+
+      "</div>"+
+      "</div>";
   }
 
   // ═══ Seção Acesso FotonWeb COR ═══
@@ -6215,6 +6303,8 @@ function openDtM(eid){
         ed.tel=document.getElementById("dTel").value;ed.nv=document.getElementById("dNv").value;ed.ini=ini;
         var pvpfEl=document.getElementById("dPvpf");
         if(pvpfEl) ed.pvpf = pvpfEl.checked;
+        var raarEl=document.getElementById("dRaar");
+        if(raarEl) ed.raar = raarEl.checked;
       } else {
         var nid=dents.length?Math.max.apply(null,dents.map(function(x){return x.id;}))+1:1;
         dents.push({id:nid,n:nm,cro:document.getElementById("dCro").value,esp:document.getElementById("dEsp").value,
@@ -6939,6 +7029,7 @@ function rcfg(){
   h+="<div><div style='font-size:.73rem;font-weight:700;color:var(--gr);text-transform:uppercase;margin-bottom:7px'>Confirmacao — {nome} {exame} {data} {hora} {clinica}</div><div class='field'><textarea id='waTa' style='min-height:100px' oninput='pvWA()'>"+esc(waT.ag)+"</textarea></div><div class='wapv' id='waPa'></div></div>";
   h+="<div><div style='font-size:.73rem;font-weight:700;color:var(--gr);text-transform:uppercase;margin-bottom:7px'>Lembrete — {nome} {exame} {data} {hora}</div><div class='field'><textarea id='waTl' style='min-height:100px' oninput='pvWA()'>"+esc(waT.lb)+"</textarea></div><div class='wapv' id='waPl'></div></div>";
   h+="<div><div style='font-size:.73rem;font-weight:700;color:var(--gr);text-transform:uppercase;margin-bottom:7px'>Exames prontos (FotonWeb) — {nome} {codigo} {link} {clinica}</div><div class='field'><textarea id='waTx' style='min-height:100px' oninput='pvWA()'>"+esc(waT.ex||DEFAULT_WA_EX)+"</textarea></div><div class='wapv' id='waPx'></div></div>";
+  h+="<div><div style='font-size:.73rem;font-weight:700;color:var(--gr);text-transform:uppercase;margin-bottom:7px'>Aviso ao dentista (atendimento realizado) — {dentista} {paciente} {data} {hora} {exames} {clinica}</div><div class='field'><textarea id='waTv' style='min-height:100px' oninput='pvWA()'>"+esc(waT.av||DEFAULT_WA_AVISO)+"</textarea></div><div class='wapv' id='waPv'></div></div>";
   h+="</div>";
   h+="<div style='margin-top:13px;padding:10px 14px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.15);border-radius:8px;font-size:.79rem;color:var(--tl)'>📌 <strong>Integracao Z-API/Evolution API:</strong> configure a URL e token para envio real. Os botoes 📲 abrem o WhatsApp com a mensagem preenchida.</div>";
   h+="</div>";
@@ -6998,25 +7089,30 @@ function pvWA(){
   var a=document.getElementById("waTa");
   var l=document.getElementById("waTl");
   var x=document.getElementById("waTx");
+  var v=document.getElementById("waTv");
   if(!a)return;
-  var v={nome:"Maria Silva",exame:"Tomografia",data:"25/03/2026",hora:"08:00",clinica:"COR — Radiologia",codigo:"382947",link:(FOTONWEB_URL||"")+"/p/382947"};
+  var sample={nome:"Maria Silva",exame:"Tomografia",data:"25/03/2026",hora:"08:00",clinica:"COR — Radiologia",codigo:"382947",link:(FOTONWEB_URL||"")+"/p/382947",dentista:"João Oliveira",paciente:"Maria Silva",exames:"Tomografia, Panorâmica"};
   var pa=document.getElementById("waPa");
   var pl=document.getElementById("waPl");
   var px=document.getElementById("waPx");
-  if(pa)pa.innerHTML="<div class='wabl'>"+waHtml(waFmt(a.value,v))+"</div>";
-  if(pl)pl.innerHTML="<div class='wabl'>"+waHtml(waFmt(l.value,v))+"</div>";
-  if(px)px.innerHTML="<div class='wabl'>"+waHtml(waFmt(x.value,v))+"</div>";
+  var pv=document.getElementById("waPv");
+  if(pa)pa.innerHTML="<div class='wabl'>"+waHtml(waFmt(a.value,sample))+"</div>";
+  if(pl)pl.innerHTML="<div class='wabl'>"+waHtml(waFmt(l.value,sample))+"</div>";
+  if(px)px.innerHTML="<div class='wabl'>"+waHtml(waFmt(x.value,sample))+"</div>";
+  if(pv && v)pv.innerHTML="<div class='wabl'>"+waHtml(waFmt(v.value,sample))+"</div>";
 }
 function svWA(){
   var a = document.getElementById("waTa");
   var l = document.getElementById("waTl");
   var x = document.getElementById("waTx");
+  var v = document.getElementById("waTv");
 
   if(a) waT.ag = a.value;
   if(l) waT.lb = l.value;
   if(x) waT.ex = x.value;
+  if(v) waT.av = v.value;
 
-  var payload = { ag: waT.ag, lb: waT.lb, ex: waT.ex };
+  var payload = { ag: waT.ag, lb: waT.lb, ex: waT.ex, av: waT.av };
 
   // Salvar no Supabase (persistente)
   supa.from("configuracoes").upsert({
@@ -7043,6 +7139,7 @@ function loadWaTemplates(){
       if(saved.ag) waT.ag = saved.ag;
       if(saved.lb) waT.lb = saved.lb;
       if(saved.ex) waT.ex = saved.ex;
+      if(saved.av) waT.av = saved.av;
       console.log("WA templates carregados do Supabase");
       return;
     }
@@ -7061,6 +7158,7 @@ function loadWaTemplatesLocal(){
       if(saved.ag) waT.ag = saved.ag;
       if(saved.lb) waT.lb = saved.lb;
       if(saved.ex) waT.ex = saved.ex;
+      if(saved.av) waT.av = saved.av;
     }
   }catch(e){
     console.error("Erro ao carregar templates WA local:", e);
