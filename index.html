@@ -154,6 +154,24 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06 (v6): Fix REGRESSÃO bloqueio de edição de atendimento realizado.
+              O bloqueio (criado em sessão anterior) parou de funcionar de
+              forma intermitente: edições rápidas (<15s) ainda bloqueavam,
+              edições demoradas passavam silenciosamente. Causa: o snapshot
+              (_statusOriginal, _examesOriginais) era anexado ao próprio
+              objeto do agendamento em ags[], e o auto-refresh (linha ~3142)
+              recria todos os objetos a cada 15s, DESTRUINDO os snapshots.
+              Quando o save procurava _statusOriginal ele era undefined e
+              o bloqueio era pulado. FIX: no remap do auto-refresh, monta
+              um mapa do estado anterior por id e copia os campos efêmeros
+              (_statusOriginal, _examesOriginais) pros objetos novos.
+              ⚠️ LIÇÃO PADRÃO: campos prefixados com _ (efêmeros) anexados
+              a objetos de ags são frágeis. Auto-refresh recria objetos.
+              Pra estado de edição que precisa durar mais que 15s, melhor
+              guardar em variável global separada (ex: var _editandoSnapshot
+              = {id, status, exames}) e limpar no save/cancel. Por enquanto
+              o fix mantém a abordagem atual mas protege do auto-refresh.
+
   2026-05-06 (v5): Fix OS imprimindo com itens STALE. Caso ELDER 214548:
               banco tinha 3 exames (Pasta+Doc Completa+Modelo ABS=R$440)
               mas OS imprimiu só 2 (R$320). ags[i].exames em memória estava
@@ -3159,6 +3177,15 @@ function iniciarAutoRefresh(){
           });
         });
 
+        // ⚡ FIX 06/05/2026 — preservar snapshots de edição durante auto-refresh.
+        // Auto-refresh recria todos os objetos de ags do zero a cada 15s.
+        // Antes: campos efêmeros (_statusOriginal, _examesOriginais) eram
+        // DESTRUÍDOS, fazendo o bloqueio de edição de atendimento realizado
+        // (linha ~4840) parar de funcionar se a edição demorasse mais de 15s.
+        // Agora: monta um mapa do estado anterior pra preservar esses campos.
+        var _agsAntigosMap = {};
+        (ags || []).forEach(function(x){ _agsAntigosMap[x.id] = x; });
+
         ags = agR.data.map(function(a){
           var itens = mapAgEx[a.id] || [];
           if(!itens.length && a.exame_id){
@@ -3166,7 +3193,8 @@ function iniciarAutoRefresh(){
           }
           itens.sort(function(x,y){return (x.ordem||0)-(y.ordem||0);});
 
-          return {
+          var _antigo = _agsAntigosMap[a.id];
+          var novo = {
             id:a.id, pac:a.paciente_nome, tel:a.paciente_tel||"",
             paciente_cpf:a.paciente_cpf||"", paciente_cnpj:a.paciente_cnpj||"",
             paciente_email:a.paciente_email||"",
@@ -3199,6 +3227,12 @@ function iniciarAutoRefresh(){
             paciente_data_nascimento:a.paciente_data_nascimento||'',
             paciente_sexo:a.paciente_sexo||''
           };
+          // Preserva campos efêmeros do snapshot de edição (criados em agEV)
+          if (_antigo) {
+            if (_antigo._statusOriginal !== undefined) novo._statusOriginal = _antigo._statusOriginal;
+            if (_antigo._examesOriginais !== undefined) novo._examesOriginais = _antigo._examesOriginais;
+          }
+          return novo;
         });
       }
 
