@@ -165,6 +165,50 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06 (caixa: REGRESSÃO corrigida): Caixa do dia divergia em R$ 24
+              do relatório (438,20 vs 462,20). Investigação revelou que a
+              regra "só Particular/Tabela tem desconto" JÁ EXISTIA no código
+              em 6+ lugares (save linha 1732, edição 5069, confAg 5305, OS,
+              relatório 7648). itemTemDesconto() já estava implementada
+              corretamente desde sessões anteriores.
+              ⚠️ A REGRESSÃO foi minha (Claude): no fix do Elder mais cedo
+              hoje (caso 214548, 3 valores divergentes), reescrevi
+              calcValoresAg pra recalcular desc_valor a partir de desc_pct,
+              MAS apliquei sobre BRUTO TOTAL ignorando a separação CD/SD
+              que já existia no resto do sistema. Em mistos com Conv2025/SUS,
+              o desconto era inflado.
+              Casos do dia que evidenciaram: DANIELI (Conv2025) e GIAN (SUS),
+              ambos com desc_pct=20 mas desc_valor=0 no banco — operador
+              marcou "à vista" no form pra exames sem desconto. Relatório
+              recalculava on-the-fly (= calcValoresAg buggy = R$24 a mais),
+              modal lia desc_valor direto (=0).
+              FIX: calcValoresAg agora separa somaComDesc (Particular/Tabela)
+              de somaSemDesc (Conv2025/SUS), igual ao que o save e a OS já
+              fazem há sessões. Ambos modal e relatório agora dão R$ 438,20.
+              ⚠️ LIÇÃO PRA MIM: ao mexer em função central como calcValoresAg,
+              GREP por todas as regras de negócio relacionadas (itemTemDesconto,
+              itensCD/SD, somaParticular) ANTES de reescrever a lógica.
+
+  2026-05-06 (fix divergência fechamento vs relatório): Caixa do dia
+
+  2026-05-06 (fix divergência fechamento vs relatório): Caixa do dia
+              divergia em R$ 24 entre o modal "Fechamento de Caixa"
+              (R$ 4.497,20) e o "Relatório do Dia" impresso (R$ 4.473,20).
+              Causa: 2 agendamentos (DANIELI 214531, GIAN 214547) salvos
+              com desc_pct=20% mas desc_valor=0 no banco — inconsistência
+              de dados de algum fluxo de save antigo. O modal lia
+              a.desconto_valor direto (=0) e o relatório recalculava
+              on-the-fly (=correto). FIX: modal agora usa calcValoresAg
+              que aplica a regra "se desc_pct>0 e desc_valor=0, recalcula
+              do bruto" (mesmo padrão do fix da OS de hoje cedo).
+              Linha 8136: descontoEfetivo via calcValoresAg em vez de
+              a.desconto_valor. Linhas 8189-8205: valorFatComDesconto usa
+              descontoEfetivo. Modal e relatório agora batem sempre.
+              ⚠️ Os 2 agendamentos continuam com desc_valor=0 stale no
+              banco. Não vale fazer UPDATE pra normalizar (são poucos e
+              o cálculo on-the-fly cobre). Próxima edição deles vai
+              normalizar naturalmente.
+
   2026-05-06 (whatsapp:// protocolo direto): Trocado wa.me/55... por
               whatsapp://send?phone=...&text=... em todos os 5 lugares que
               disparam WhatsApp (paciente confirmação, paciente exames online,
@@ -1082,23 +1126,34 @@ window.calcValoresAg = function(ag){
   var itens = ag.exames || ag.itens || [];
   var bruto = 0;
   var naoFaturavel = 0;
+  // ⚡ FIX 06/05/2026 (caixa) — separa itens com desconto (Particular/Tabela)
+  // dos sem desconto (Convenio 2025/SUS). Desconto só vale pra parte com
+  // desconto. Antes: aplicava sobre bruto total → estourava desconto em
+  // mistos (caso Caixa 06/05/26: relatório R$ 462 vs caixa R$ 438 = R$ 24
+  // de discrepância em atendimentos com Particular + SUS misturados).
+  var somaComDesc = 0;       // Particular, Tabela (sujeitos a desconto à vista/3x/4x)
+  var somaSemDesc = 0;       // Convenio 2025, SUS (preço fixo, sem desconto)
 
   if(itens.length > 0){
-    // Separa itens faturáveis (Particular/Conv2025/SUS/Tabela) dos NÃO-faturáveis (UNIMED/SYNS — fora do faturamento)
-    // O "fora do faturamento" não soma ao bruto/faturado, vai num campo separado
-    var temHelper = (typeof itemEhConvenioForaDoFaturamento === "function");
+    var temForaFat = (typeof itemEhConvenioForaDoFaturamento === "function");
+    var temComDesc = (typeof itemTemDesconto === "function");
     itens.forEach(function(it){
       var preco = Number(it.preco || 0);
-      var foraFat = temHelper ? itemEhConvenioForaDoFaturamento(it) : false;
+      var foraFat = temForaFat ? itemEhConvenioForaDoFaturamento(it) : false;
       if(foraFat){
         naoFaturavel += preco;
       } else {
         bruto += preco;
+        // Sub-classifica: tem desconto (Particular/Tabela) ou não (Convenio2025/SUS)
+        var comDesc = temComDesc ? itemTemDesconto(it) : true; // fallback otimista
+        if(comDesc) somaComDesc += preco;
+        else        somaSemDesc += preco;
       }
     });
   } else {
     // Fallback: usa valor_bruto salvo no agendamento
     bruto = Number(ag.valor_bruto || ag.vl || ag.valor || 0);
+    somaComDesc = bruto; // sem itens, assume tudo com desconto (compatibilidade)
   }
 
   var descontoPct = Number(ag.desconto_percentual || 0);
@@ -1106,13 +1161,12 @@ window.calcValoresAg = function(ag){
   var vfSalvo = Number(ag.valor_faturado || 0);
   var faturado;
 
-  // ⚡ FIX 06/05/2026 — desc_valor cacheado pode estar STALE (caso ELDER 214548:
-  // bruto=320 com desc_pct=20 mas desc_valor salvo=90, divergente). Quando
-  // desc_pct > 0, desc_pct é fonte de verdade (vem da forma de pagamento) e
-  // desc_valor é recalculado a partir do bruto ATUAL (somado dos exames).
-  // Caso desc_pct=0 e desc_valor>0 → desconto manual legado, mantém cached.
-  if(descontoPct > 0 && bruto > 0){
-    desconto = Number((bruto * (descontoPct / 100)).toFixed(2));
+  // desc_valor cacheado pode estar STALE. Quando desc_pct > 0, desc_pct é fonte
+  // de verdade (vem da forma de pagamento) e desc_valor é recalculado a partir
+  // da soma DOS ITENS COM DESCONTO atual (somaComDesc). Caso desc_pct=0 e
+  // desc_valor>0 → desconto manual legado, mantém cached.
+  if(descontoPct > 0 && somaComDesc > 0){
+    desconto = Number((somaComDesc * (descontoPct / 100)).toFixed(2));
     faturado = bruto - desconto;
   } else if(desconto > 0){
     // Desconto real salvo - fonte de verdade
@@ -8133,7 +8187,13 @@ async function abrirFechamentoCaixa() {
     if (!valorBrutoAt && itens.length) {
       itens.forEach(function(it){ valorBrutoAt += Number(it.preco || 0); });
     }
-    totalDescontos += Number(a.desconto_valor || a.desc || 0);
+    // ⚡ FIX 06/05/2026 — usa calcValoresAg que recalcula desconto quando
+    // desc_valor=0 mas desc_pct>0 (caso DANIELI/GIAN 06/05: salvos com
+    // desc_pct=20 mas desc_valor=0, divergiam entre modal e relatório).
+    // Antes: lia a.desconto_valor direto, ignorando esses casos.
+    var _calcCx = (typeof calcValoresAg === "function") ? calcValoresAg(a) : null;
+    var descontoEfetivo = _calcCx ? _calcCx.desconto : Number(a.desconto_valor || a.desc || 0);
+    totalDescontos += descontoEfetivo;
 
     // ===== CORRECAO: separar faturado vs nao-faturado POR ITEM =====
     // Antes: usava itens[0] apenas (bug com agendamentos mistos Part+UNIMED)
@@ -8188,16 +8248,14 @@ async function abrirFechamentoCaixa() {
 
     // Para a parte particular, descontar proporcionalmente o desconto do agendamento
     // (desconto so se aplica a parte particular/faturavel)
+    // ⚡ FIX 06/05/2026 — usa descontoEfetivo (recalculado quando desc_valor=0
+    // mas desc_pct>0) em vez de a.desconto_valor direto.
     var valorFatComDesconto = valorBrutoParticularItens;
-    if (valorBrutoParticularItens > 0 && Number(a.desconto_valor || 0) > 0) {
-      // Se tudo no agendamento eh particular, usa valor_faturado direto
-      if (!temNaoFat && a.valor_faturado) {
-        valorFatComDesconto = Number(a.valor_faturado);
-      } else {
-        valorFatComDesconto = valorBrutoParticularItens - Number(a.desconto_valor || 0);
-      }
+    if (valorBrutoParticularItens > 0 && descontoEfetivo > 0) {
+      // Aplica desconto na parte particular (em mistos, desc só vai aqui)
+      valorFatComDesconto = valorBrutoParticularItens - descontoEfetivo;
     } else if (!temNaoFat && a.valor_faturado) {
-      // Agendamento 100% particular, usa valor_faturado
+      // Sem desconto, 100% particular: usa valor_faturado salvo
       valorFatComDesconto = Number(a.valor_faturado);
     }
 
