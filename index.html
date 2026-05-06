@@ -165,6 +165,26 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06 (whatsapp:// protocolo direto): Trocado wa.me/55... por
+              whatsapp://send?phone=...&text=... em todos os 5 lugares que
+              disparam WhatsApp (paciente confirmação, paciente exames online,
+              paciente WhatsApp do menu, dentista aviso, dentista botão).
+              Motivo: wa.me redireciona pra api.whatsapp.com/send que mostra
+              página intermediária verde com diálogo "Abrir WhatsApp?". Era
+              fricção dupla: clique no botão → página → diálogo → app.
+              Com whatsapp:// puro: clique no botão → diálogo (uma vez se
+              marcar "Sempre permitir") → app. Próximas chamadas: clique → app.
+              Criado helper window.abrirWhatsApp(tel, msg) que normaliza
+              telefone (adiciona 55 se faltar, valida 10-13 dígitos) e
+              dispara o protocolo via window.location.href.
+              SIMPLIFICAÇÃO: avisarDentistaAtendimentoRealizado não precisa
+              mais do parâmetro waWindow (era contorno pra popup blocker do
+              wa.me). Mantido por retrocompat — se vier, é fechado.
+              ⚠️ LIMITAÇÃO: WhatsApp continua exigindo clique humano em
+              "Enviar" no app (anti-spam Meta, não tem como contornar).
+              Pra envio 100% automático seria preciso WPPConnect (desativado
+              em 06/04/2026) ou WhatsApp Business API oficial (paga).
+
   2026-05-06 (botão dedicado WhatsApp Dentista): Adicionado botão "🦷 Avisar
               Dentista" no modal de detalhes do agendamento. Motivo: o
               disparo AUTOMÁTICO em atMarkRealizado, embora corrigido várias
@@ -1143,6 +1163,32 @@ window.fmtValorAg = function(ag) {
   return Number(c.faturado || 0).toFixed(2).replace(".", ",");
 };
 
+// ═══ HELPER: abrir WhatsApp via protocolo nativo ════════════════════════
+// Usa whatsapp://send em vez de wa.me/55... — pula a página intermediária
+// api.whatsapp.com (com diálogo "Abrir WhatsApp?") e abre direto no app
+// instalado. Na primeira chamada o navegador pergunta uma vez; ao marcar
+// "Sempre permitir", futuras chamadas abrem direto.
+//
+// Normaliza tel: aceita "55999540737", "(55) 99954-0737", "55+ 55 99954-0737"
+// etc. Adiciona código de país 55 se faltar (10-11 dígitos = DDD + número).
+//
+// Retorna true se conseguiu disparar, false se telefone inválido.
+window.abrirWhatsApp = function(tel, msg) {
+  var t = String(tel || "").replace(/\D/g, "");
+  // 10-11 dígitos = DDD + número, sem código de país → adiciona 55
+  if (t.length === 10 || t.length === 11) t = "55" + t;
+  // Aceita 12-13 dígitos (com país). Outros formatos = inválido.
+  if (t.length < 12 || t.length > 13) {
+    console.warn("[abrirWhatsApp] telefone inválido:", tel, "→", t);
+    return false;
+  }
+  var url = "whatsapp://send?phone=" + t + "&text=" + encodeURIComponent(msg || "");
+  // window.location dispara o handler do protocolo SEM navegar a página atual.
+  // Não usa window.open pra não criar aba intermediária em branco.
+  window.location.href = url;
+  return true;
+};
+
 // ═══ HELPER GLOBAL: fetch autenticado ao Supabase REST API ═══
 // Usa JWT do usuário logado (authenticated) ao invés da publishable key (anon)
 // Essencial pois as RLS exigem role authenticated pra SELECT/INSERT/UPDATE/DELETE
@@ -1305,10 +1351,7 @@ async function enviarWhatsAppExames(ag, opts) {
     return false;
   }
   if (opts.silent) return { token: token, link: link, msg: msg };
-  window.open(
-    "https://wa.me/55" + tel + "?text=" + encodeURIComponent(msg),
-    "_blank"
-  );
+  abrirWhatsApp(tel, msg);
   return { token: token, link: link };
 }
 
@@ -4781,7 +4824,7 @@ function agEV(ev, id) {
             .replaceAll("{link}", link)
             .replaceAll("{clinica}", "COR — Centro Odontologico de Radiologia");
           var tel = String(ag.tel || "").replace(/\D/g, "");
-          window.open("https://wa.me/55" + tel + "?text=" + encodeURIComponent(msg), "_blank");
+          abrirWhatsApp(tel, msg);
         }catch(e){
           console.error("Exames Online:", e);
           toast("Erro", e.message || "Falha ao gerar link.");
@@ -4836,16 +4879,14 @@ function agEV(ev, id) {
     // Vantagem: usuário tem controle direto, dá pra reenviar se WhatsApp foi
     // fechado por engano, e funciona independente do status estar setado.
     // Aparece sempre — mesmo em agendado, pra permitir aviso prévio se útil.
+    // Desde a migração pra protocolo whatsapp://, não precisa pré-abrir janela.
     (function(ag){
       btns.push({
         lbl:"🦷 Avisar Dentista",
         cls:"btnt",
         fn:function(){
-          // Pré-abre janela ANTES dos awaits dentro de avisarDentista...
-          // (preserva user activation pra wa.me não ser bloqueado por popup blocker)
-          var waWindow = window.open("about:blank", "_blank");
           closeM();
-          avisarDentistaAtendimentoRealizado(ag, waWindow);
+          avisarDentistaAtendimentoRealizado(ag);
         }
       });
     })(a);
@@ -5405,8 +5446,7 @@ async function confAg(isAtendimento) {
       if (tl) {
         var waNum = tl.replace(/\D/g, "");
         if (waNum) {
-          var waUrl = "https://wa.me/55" + waNum + "?text=" + encodeURIComponent(wm);
-          window.open(waUrl, "_blank");
+          abrirWhatsApp(waNum, wm);
         } else {
           toast("Atenção", "Agendamento confirmado, mas o telefone é inválido para WhatsApp.");
         }
@@ -5781,10 +5821,7 @@ function sWAi(id){
     return;
   }
 
-  window.open(
-    "https://wa.me/55" + tel + "?text=" + encodeURIComponent(msg),
-    "_blank"
-  );
+  abrirWhatsApp(tel, msg);
 }
 
 // ═══ Aviso ao dentista quando atendimento é realizado ═══
@@ -5849,17 +5886,11 @@ async function avisarDentistaAtendimentoRealizado(ag, waWindow){
     .replaceAll("{hora}", ag.hr || "")
     .replaceAll("{exames}", nomesExames)
     .replaceAll("{clinica}", "COR — Centro Odontologico de Radiologia");
-  var url = "https://wa.me/55" + tel + "?text=" + encodeURIComponent(msg);
-  // Usa janela pré-aberta (evita bloqueio de popup) ou abre nova (fallback)
-  if(waWindow){
-    try { waWindow.location.href = url; }
-    catch(e){
-      console.error("[avisarDentista] erro ao usar janela pré-aberta:", e);
-      window.open(url, "_blank");
-    }
-  } else {
-    window.open(url, "_blank");
-  }
+  // ⚡ FIX 06/05/2026 — usa protocolo whatsapp:// direto. Não precisa mais
+  // de waWindow pré-aberta (essa lógica era pra contornar popup blocker do
+  // wa.me). whatsapp:// é handler de protocolo, não navega a página atual.
+  fecharSeAberta(); // Fecha qualquer waWindow legacy se ainda vier
+  abrirWhatsApp(tel, msg);
 }
 
 function obterDescontoPagamento(formaPagamento){
