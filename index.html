@@ -165,6 +165,21 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-06 (botão dedicado WhatsApp Dentista): Adicionado botão "🦷 Avisar
+              Dentista" no modal de detalhes do agendamento. Motivo: o
+              disparo AUTOMÁTICO em atMarkRealizado, embora corrigido várias
+              vezes hoje, depende de muitas coisas (popup blocker, estado
+              em memória, ordem de awaits). Botão dedicado é DETERMINÍSTICO:
+              click → window.open imediato → preenche URL. Vantagens:
+              (1) usuário controla quando dispara,
+              (2) dá pra reenviar se WhatsApp foi fechado por engano,
+              (3) se não funcionar, problema é direto (fácil de diagnosticar),
+              (4) funciona em qualquer status (não só realizado).
+              Reusa avisarDentistaAtendimentoRealizado existente — mesmo
+              template, mesma lógica de validação (opt-out, sem tel).
+              Disparo automático em atMarkRealizado mantido como conveniência,
+              mas não é mais a única forma de disparar.
+
   2026-05-06 (aviso reativo de tel vazio): Investigação do "WhatsApp não
               dispara" revelou problema de DADOS, não de código. Banco
               tem 230 dentistas ativos com agendamentos sem telefone (218
@@ -4816,6 +4831,24 @@ function agEV(ev, id) {
     (function(ag){btns.push({lbl:"📋 Requisição", cls:"btno", fn:function(){ closeM(); imprimirRequisicao(ag.id); }});})(a);
     (function(ag){btns.push({lbl:"📷 Painel Fotos", cls:"btno", fn:function(){ closeM(); imprimirPainelFotos(ag.id); }});})(a);
     (function(ag){btns.push({lbl:"📷 Painel 9 Fotos", cls:"btno", fn:function(){ closeM(); imprimirPainelFotos9(ag.id); }});})(a);
+    // ⚡ FIX 06/05/2026 — botão dedicado pra disparar aviso WhatsApp ao dentista.
+    // Substitui (ou complementa) o disparo automático em atMarkRealizado.
+    // Vantagem: usuário tem controle direto, dá pra reenviar se WhatsApp foi
+    // fechado por engano, e funciona independente do status estar setado.
+    // Aparece sempre — mesmo em agendado, pra permitir aviso prévio se útil.
+    (function(ag){
+      btns.push({
+        lbl:"🦷 Avisar Dentista",
+        cls:"btnt",
+        fn:function(){
+          // Pré-abre janela ANTES dos awaits dentro de avisarDentista...
+          // (preserva user activation pra wa.me não ser bloqueado por popup blocker)
+          var waWindow = window.open("about:blank", "_blank");
+          closeM();
+          avisarDentistaAtendimentoRealizado(ag, waWindow);
+        }
+      });
+    })(a);
     btns.push({lbl:"📲 WhatsApp", cls:"btnt", fn:function(){ closeM(); sWAi(ag.id); }});
   })(a);
 
