@@ -55,6 +55,9 @@
 //
 //   ───────── HISTÓRICO ─────────
 //
+//   v9 — logo monocromatica (grayscale 100%) no envelope e CD
+//   v8 — envelope: ajusta altura/fontes pra caber em 29mm sem precisar
+//        imprimir a 90%. info 7.5→6mm, dbox 8.5→8pt, line-height 1.2→1.15
 //   v7 — labels com ":" + reordenacao (ENDERECO > COMPLEMENTO > CIDADE)
 //        afeta envelope e protocolo
 //   v6 — adiciona imprimirEtiquetaHist() para pacientes do legado
@@ -199,7 +202,7 @@ function fecharSeletorEndereco() {
 }
 
 // ============================================================
-// ETIQUETA ENVELOPE (fontes aumentadas + tudo negrito)
+// ETIQUETA ENVELOPE (v8 - ajustada pra caber em 29mm sem scale 90%)
 // v6: omite campos ausentes (hora/idade/dentista) em vez de mostrar "-"
 //     - nao afeta fluxo de agendamento novo (sempre preenche tudo)
 //     - melhora etiquetas do historico legado (pode ter campos nulos)
@@ -233,13 +236,13 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
         ".nome{font-size:14pt;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
         "border-bottom:2pt solid #1a3a6e;padding-bottom:0.3mm;margin-bottom:0.4mm;letter-spacing:.2pt}" +
 
-        ".info{display:flex;align-items:center;height:7.5mm;white-space:nowrap}" +
-        ".info img{height:7mm;margin-right:2mm}" +
-        ".info b{font-size:9.5pt;font-weight:bold;font-style:italic}" +
-        ".info b+b{margin-left:3.5mm}" +
+        ".info{display:flex;align-items:center;height:6mm;white-space:nowrap}" +
+        ".info img{height:5.8mm;margin-right:2mm;filter:grayscale(100%)}" +
+        ".info b{font-size:9pt;font-weight:bold;font-style:italic}" +
+        ".info b+b{margin-left:3mm}" +
 
-        ".dbox{border:0.7pt solid #000;padding:0.3mm 1.5mm;font-size:8.5pt;line-height:1.2;overflow:hidden;font-weight:bold}" +
-        ".dbox .dr{font-style:italic;font-size:9pt;font-weight:bold}" +
+        ".dbox{border:0.7pt solid #000;padding:0.3mm 1.5mm;font-size:8pt;line-height:1.15;overflow:hidden;font-weight:bold}" +
+        ".dbox .dr{font-style:italic;font-size:8.5pt;font-weight:bold}" +
         ".dbox td{font-weight:bold}" +
         ".dbox td.l{font-weight:bold;padding-right:2mm;white-space:nowrap}" +
 
@@ -358,7 +361,7 @@ function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
         ".etq{width:100mm;height:29mm;padding:1.5mm 2.5mm 1mm 2.5mm;border:0.5pt solid #ccc}" +
 
         ".topo{display:flex;align-items:flex-start}" +
-        ".topo img{height:10mm;margin-right:2.5mm;flex-shrink:0}" +
+        ".topo img{height:10mm;margin-right:2.5mm;flex-shrink:0;filter:grayscale(100%)}" +
         ".topo-txt{overflow:hidden;flex:1}" +
         ".topo-txt .nome{font-size:14pt;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.2pt}" +
         ".topo-txt .sub{font-size:9pt;font-weight:bold;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.5mm}" +
@@ -536,4 +539,4 @@ async function imprimirEtiquetaHist(histItem, tipo, paciente_id) {
     }
 }
 
-console.log("[COR] Modulo etiqueta v7 carregado (labels com ':' + reordenacao end/compl/cidade)");
+console.log("[COR] Modulo etiqueta v9 carregado (logo monocromatica envelope+CD)");
