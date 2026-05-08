@@ -33,7 +33,7 @@
 //
 //   [✓] 3 geradores de etiqueta:
 //       - gerarEtiquetaHtml     → Envelope (paciente + logo + data/hora/idade + dr + end)
-//       - gerarEtiquetaProtocolo → Protocolo (ordem: paciente > dr > cidade > end > compl)
+//       - gerarEtiquetaProtocolo → Protocolo (ordem: paciente > dr > end > compl > cidade)
 //       - gerarEtiquetaCD        → CD (logo + paciente + data/hora + dr)
 //
 //   [✓] Seletor de endereço (mostrarSeletorEndereco)
@@ -55,6 +55,8 @@
 //
 //   ───────── HISTÓRICO ─────────
 //
+//   v7 — labels com ":" + reordenacao (ENDERECO > COMPLEMENTO > CIDADE)
+//        afeta envelope e protocolo
 //   v6 — adiciona imprimirEtiquetaHist() para pacientes do legado
 //        (seleção via tela de histórico do paciente no App COR)
 //   v5 — usa cliente supa em vez de fetch direto (corrige RLS authenticated)
@@ -255,12 +257,12 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
         html += "<tr><td colspan='2' class='dr'><i>DR(a):</i> " + esc(dentNome) + "</td></tr>";
     }
 
-    if (cidade)
-        html += "<tr><td class='l'>CIDADE</td><td>" + esc(cidade) + "</td></tr>";
     if (enderecoStr)
-        html += "<tr><td class='l'>ENDERECO</td><td>" + esc(enderecoStr) + "</td></tr>";
+        html += "<tr><td class='l'>ENDERECO:</td><td>" + esc(enderecoStr) + "</td></tr>";
     if (complementoStr)
-        html += "<tr><td class='l'>COMPLEMENTO</td><td>" + esc(complementoStr) + "</td></tr>";
+        html += "<tr><td class='l'>COMPLEMENTO:</td><td>" + esc(complementoStr) + "</td></tr>";
+    if (cidade)
+        html += "<tr><td class='l'>CIDADE:</td><td>" + esc(cidade) + "</td></tr>";
 
     html += "</table></div></div>" +
         "<script>window.onload=function(){window.print();}<\/script></body></html>";
@@ -271,8 +273,8 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
 }
 
 // ============================================================
-// ETIQUETA PROTOCOLO (v4 - REORDENADO)
-// Ordem: 1.PACIENTE  2.DENTISTA  3.CIDADE  4.ENDERECO  5.COMPLEMENTO
+// ETIQUETA PROTOCOLO (v7 - REORDENADO + LABELS COM ":")
+// Ordem: 1.PACIENTE  2.DENTISTA  3.ENDERECO  4.COMPLEMENTO  5.CIDADE
 // v6: omite linha DR(a) se dentNome ausente (paciente legado)
 // ============================================================
 function gerarEtiquetaProtocolo(a, dentNome, endereco) {
@@ -315,15 +317,15 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
         html += "<div class='dentista'>DR(a): " + esc(dentNome).toUpperCase() + "</div>";
     }
 
-    // 3-5. CIDADE / ENDERECO / COMPLEMENTO
+    // 3-5. ENDERECO / COMPLEMENTO / CIDADE
     html += "<div class='dados'>";
 
-    if (cidade)
-        html += "<div><span class='lbl'>CIDADE</span>" + esc(cidade) + "</div>";
     if (enderecoStr)
-        html += "<div><span class='lbl'>ENDERECO</span>" + esc(enderecoStr) + "</div>";
+        html += "<div><span class='lbl'>ENDERECO:</span>" + esc(enderecoStr) + "</div>";
     if (complementoStr)
-        html += "<div><span class='lbl'>COMPLEMENTO</span>" + esc(complementoStr) + "</div>";
+        html += "<div><span class='lbl'>COMPLEMENTO:</span>" + esc(complementoStr) + "</div>";
+    if (cidade)
+        html += "<div><span class='lbl'>CIDADE:</span>" + esc(cidade) + "</div>";
 
     html += "</div>" +
         "</div>" +
@@ -534,4 +536,4 @@ async function imprimirEtiquetaHist(histItem, tipo, paciente_id) {
     }
 }
 
-console.log("[COR] Modulo etiqueta v6 carregado (legado via historico_atendimentos)");
+console.log("[COR] Modulo etiqueta v7 carregado (labels com ':' + reordenacao end/compl/cidade)");
