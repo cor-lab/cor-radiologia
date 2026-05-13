@@ -165,6 +165,51 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-13: Botão "🔄 Forçar Sync" pra destravar sync travado do Firebird.
+              Contexto: PAULO ROBERTO BORBA RIBAS (id 98891) marcado como
+              realizado mas sem firebird_seq_atend porque sync_service.py
+              travou após 5 tentativas com erro estranho "conversion error
+              from string 51952-05-16" (ano com 5 dígitos) — dado no banco
+              estava CORRETO (1952-05-16), provável condição de corrida.
+              Resolução manual foi UPDATE no Supabase zerando os campos
+              de pausa do sync. Sync executou na próxima tentativa e gerou
+              código DigitalS 214690.
+              FIX: botão "🔄 Forçar Sync" no modal do agendamento,
+              VISÍVEL APENAS quando status=realizado E firebird_seq_atend
+              IS NULL (sinal visual = "código DigitalS não apareceu" já é
+              suficiente, não precisa alerta separado). Click → confirma →
+              PATCH zerando firebird_sync_pausado, _tentativas, _erro e
+              _ultimo_erro_em. Sync executa em até 8-15s.
+              ⚠️ Não foi mexido nada no sync_service.py — risco de quebrar
+              produção rodando. Quando voltar a acontecer com outro
+              paciente, basta o operador clicar o botão. Se acontecer com
+              frequência (>1x por semana), aí sim investigar o Python.
+
+  2026-05-08 (doc): Investigação do aviso amarelo "exhausting multiple
+              resources" no painel do Supabase. Conclusão: FALSO POSITIVO.
+              Métricas reais (Settings → Usage):
+                Egress 16% / Compute 507h / RAM 411MB / CPU 3% / 17 conexões.
+              Tudo dentro do limite Pro. O aviso vem do volume alto de
+              CALLS (1,9M chamadas/semana de queries simples), não de
+              recursos esgotados. Origem: auto-refresh global de 15s × N
+              usuários × 6 queries paralelas + sync_service (3s) +
+              sync_reverso (8s) rodando 24h.
+              ⚠️ DOCUMENTAÇÃO IMPORTANTE PRA PRÓXIMAS SESSÕES:
+              O auto-refresh de 15s NÃO É arbitrário. Ele é o canal pelo
+              qual o firebird_seq_atend (código DigitalS) volta ao app
+              depois do sync executar no Firebird. Aumentar o intervalo
+              afeta UX crítica (operador esperaria 60s+ pra ver o número
+              DigitalS após realizar atendimento).
+              Plano pra otimização futura (NÃO HOJE, registrado pra sessão
+              dedicada):
+                Op 1: polling seletivo — só puxar agendamentos com
+                      status=realizado E firebird_seq=null (5s); resto 60s.
+                Op 2: Supabase Realtime — canal escutando mudanças em
+                      firebird_seq_atend, eliminando polling. Pro plan
+                      já inclui (uso atual: 0/5M mensagens).
+              Comentário detalhado adicionado na constante
+              AUTO_REFRESH_INTERVALO (linha ~3410) pra evitar regressão.
+
   2026-05-08: Fix busca de paciente "sumindo" na tela Atendimento.
               Sintoma: usuário digitava nome/CPF/código no campo de busca
               global da aba Atendimento, clicava buscar, resultados
@@ -3406,8 +3451,25 @@ async function restaurarSessao(){
 }
 
 // ══ AUTO-REFRESH ══
+// ⚠️ NÃO AUMENTAR ESSE INTERVALO sem ler aqui antes:
+// O auto-refresh NÃO é só pra "atualizar tela" — ele é o canal pelo qual
+// o `firebird_seq_atend` (código DigitalS do legado) retorna ao app depois
+// que sync_service.py executa o atendimento no Firebird.
+// Sequência: app marca realizado → Supabase update → sync_service (3s)
+// detecta + executa Firebird + grava firebird_seq_atend de volta no
+// Supabase → auto-refresh (15s) puxa e mostra código no card.
+// Se aumentar pra 60s+, operador espera demais pra ver o número DigitalS.
+//
+// Plano pra eventual otimização (Sessão futura — NÃO mexer agora):
+//   1) Polling seletivo: só agendamentos "realizado mas firebird_seq=null"
+//      a cada 5s; resto fica em 60s.
+//   2) Supabase Realtime: assinar mudanças em firebird_seq_atend via canal,
+//      eliminar polling global. Plano Pro já tem Realtime incluído (gratuito
+//      até 5M msgs/mês — uso atual: 0).
+// (registro adicionado em 08/05/2026 após investigação do aviso amarelo
+// "exhausting resources" no Supabase, que era falso positivo)
 var _autoRefreshTimer = null;
-var AUTO_REFRESH_INTERVALO = 15000; // 15 segundos
+var AUTO_REFRESH_INTERVALO = 15000; // 15 segundos (ver comentário acima ANTES de mudar)
 
 function iniciarAutoRefresh(){
   if(_autoRefreshTimer) clearInterval(_autoRefreshTimer);
@@ -4947,6 +5009,46 @@ function agEV(ev, id) {
       }
     });
   })(a);
+
+  // ⚡ FIX 13/05/2026 — botão "Forçar Sync" pra destravar agendamento
+  // realizado que ficou sem código DigitalS por erro do sync_service.py.
+  // Aparece SOMENTE quando: status=realizado E firebird_seq_atend IS NULL.
+  // Caso histórico: PAULO ROBERTO BORBA RIBAS (id 98891), sync pausado
+  // após 5 tentativas com erro "conversion error from string 51952-05-16".
+  // Resolução foi UPDATE manual no banco zerando os campos de pausa.
+  // Agora esse mesmo UPDATE pode ser disparado pelo botão. Em geral,
+  // após destravar o sync executa em até 8s e gera o código DigitalS.
+  if(!a.firebird_seq_atend){
+    (function(ag){
+      btns.push({
+        lbl:"🔄 Forçar Sync",
+        cls:"btnr",
+        fn:async function(){
+          if(!confirm("Forçar nova tentativa de sincronização com Firebird?\n\nUse quando o atendimento foi marcado como realizado mas o código DigitalS não apareceu (sync travado).")) return;
+          try{
+            var r = await supaFetch("/rest/v1/agendamentos?id=eq."+ag.id,{
+              method:"PATCH",
+              headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
+              body:JSON.stringify({
+                firebird_sync_pausado:false,
+                firebird_sync_tentativas:0,
+                firebird_sync_erro:null,
+                firebird_sync_ultimo_erro_em:null
+              })
+            });
+            if(r.ok){
+              closeM();
+              toast("🔄","Sync destravado. Código deve aparecer em ~15s.");
+            }else{
+              toast("Erro","Falha ao destravar: "+r.status);
+            }
+          }catch(e){
+            toast("Erro","Falha: "+e.message);
+          }
+        }
+      });
+    })(a);
+  }
 }
 
   (function(ag){
