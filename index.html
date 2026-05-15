@@ -132,10 +132,17 @@
   
   Localização: C:\sync_cor\  |  Python: C:\Python38_32\python.exe
   
-  - sync_service.py v2.7 — Supabase→Firebird, NSSM service "SyncCOR" (3s).
+  - sync_service.py v2.9 — Supabase→Firebird, NSSM service "SyncCOR" (3s).
     Replica pacientes, dentistas, agendamentos. NÃO cria FXARQ039+041
     pra agendamento não-executado (verificado 29/04/26: agendados ficam
     só no Supa, FB só recebe na execução).
+    ⚠️ Convênios com id alfanumérico no Supabase (ex: "fb_syns") DEVEM
+    estar mapeados no dict CONVENIOS_SUPA_PARA_FB no topo do script.
+    Sem mapeamento → int() falha silencioso → FXARQ041 fica com
+    CONVENIO=0 e SERVICO=FXARQ028.ID direto (errado). FXARQ041.SERVICO
+    aponta pra FXARQ031.ID (preço por convênio), nunca FXARQ028 direto.
+    Convênio precisa existir na FXARQ008 antes (cadastro manual no
+    Foton). Atual: {"fb_syns": 123890}.
     
   - sync_reverso.py v4.3 — Firebird→Supabase, NSSM "SyncReverso" (8s).
     Histórico, dedupe, pacientes legados.
@@ -163,8 +170,128 @@
     auto-corrige SERVICO_APONTA_DIRETO_FXARQ028. Outros tipos só alertam.
     Comparação Supabase vs FXARQ041, tolerância R$1, ignora pré-08/04.
   
+  - gerar_template_jpg.py v1.0 — Task Scheduler 1x/hora. Gera template
+    JPG (DigitalS-style) p/ radiografias 2D quando técnico esquece de
+    clicar "gerar template" no DigitalS. Sufixos crus processados:
+    p0 (pano), tl (tele), c (carpograma). Output: FilmeTelXX.jpg
+    (próximo nº livre na pasta). Pula SEQ se já tem qualquer
+    FilmeTel*/FilmePer* (operador já mexeu). Header com logo COR +
+    Paciente/DN/Idade/DataAtend/Indicação, imagem centralizada,
+    footer com endereço/WhatsApp. Sem isso, dentista não consegue
+    enviar exame pro convênio. Log: gerar_template_jpg.log.
+  
+  ───────── APPS COMPLEMENTARES (PCs externos) ─────────
+  
+  Apps standalone rodando em PCs específicos da clínica que se
+  comunicam com o servidor via JSON feed em \\192.168.0.200\dados\.
+  
+  - TomografoCopy v1.0 — PC XP do iCATVision (tomógrafo). Python
+    3.4.4 32-bit. Lê agendamentos_hoje.json gerado pelo servidor
+    (tomografo_feed.py v1.0, NSSM "TomografoFeed", 30s) e auto-
+    preenche cadastro do paciente no iCATVision via Win32 SendInput
+    (ctypes). SEQ + TAB×2 sequencial pra 3 campos do nome. DN com
+    seta_direita entre dia/mês/ano. Modal countdown 3s antes de
+    disparar. Refresh manual (mais estável no XP).
+  
+  - ThreeShapeCopy v1.0 — PC Win10/11 do 3Shape Trios. Python 3.10+.
+    Lê agendamentos_semana.json gerado pelo servidor (threeshape_feed.py
+    v1.0, NSSM "ThreeShapeFeed", 60s) e auto-preenche cadastro no
+    3Shape Communicate. SEQ + TAB + (SSN pulado) + TAB + Primeiro +
+    TAB + Sobrenome. ⚠️ Tentativa inicial direto com Supabase anon
+    key falhou (403 após overhaul de segurança 19/04) — solução foi
+    feed-servidor (mesma arquitetura do TomografoCopy).
+  
   ───────── HISTÓRICO ─────────
   
+  2026-05-15: Sessão massiva (7 deliveries). Em ordem cronológica:
+
+              (1) TomografoCopy v1.0 — app standalone pro PC XP do
+              iCATVision auto-preencher cadastro do paciente via
+              Win32 SendInput. Arquitetura split: feed-servidor
+              (tomografo_feed.py NSSM 30s) + app cliente XP (Python
+              3.4.4 32-bit). Modal countdown 3s + minimização. Auto
+              SEQ + TAB×2 + DN com setas.
+
+              (2) ThreeShapeCopy v1.0 — mesma arquitetura split mas
+              pra PC Win10/11 do 3Shape Trios. Aprendido na marra:
+              acesso direto ao Supabase com anon key resulta em 403
+              após overhaul de segurança (19/04) — sempre usar feed-
+              servidor em apps standalone.
+
+              (3) Fix convênio SYNS no sync_service.py (v2.7→v2.9).
+              Bug: CARLA SAVIAM SEQ 214772 mostrava "Qtd=1" mas
+              serviço/convênio em branco no DigitalS. Causa raiz:
+              int("syns") falhava silencioso → fb_convenio_id=0 →
+              FXARQ041 com CONVENIO=0 + SERVICO=FXARQ028.ID direto
+              (errado, deveria apontar pra FXARQ031.ID). Descobertas:
+              (a) FXARQ041.SERVICO aponta pra FXARQ031.ID (preço por
+              convênio), nunca FXARQ028 direto; (b) convênio SYNS
+              não existia na FXARQ008. Solução: cadastrei SYNS no
+              Foton como cópia de "CONVENIO 2025" → id=123890 com
+              643 entradas em FXARQ031. Patch sync_service v2.9:
+              função mapear_convenio_supa_para_fb() + dict
+              CONVENIOS_SUPA_PARA_FB = {"fb_syns": 123890}. Script
+              corrigir_syns.py (DRY-RUN+--aplicar) corrigiu 4
+              atendimentos órfãos (CARLA 214772, MARIA VIRGINIA
+              214663, HENRIQUE 214470, MARCIO 214776).
+              ⚠️ LIÇÃO: novo convênio com id alfanumérico no Supa
+              → ADICIONAR no dict CONVENIOS_SUPA_PARA_FB sempre.
+              Pendência futura: ajustar preços individuais das 643
+              entradas SYNS em FXARQ031 (todas atualmente com preço
+              Tabela 2025).
+
+              (4) FotonWeb COR — nome do paciente nos downloads.
+              Antes: arquivos baixavam com nome genérico
+              ("214772fs.jpg"). Agora: "CARLA_SAVIAM_FOGGIATO_214772fs.jpg".
+              Patch em main.py: imports re+unicodedata, função
+              _filename_com_paciente() faz NFKD→ASCII+UPPER+sanitize+
+              prefixa. 3 endpoints atualizados:
+              /api/arquivo/{pasta}/{nome} (X-Accel + FileResponse),
+              /api/download-lote (ZIP), /api/share/{token}/arquivo/...
+              (link LGPD compartilhado).
+
+              (5) FotonWeb COR — fast-path ZIP single (backend).
+              Bug do dentista chato: download de tomografia ZIP de
+              200MB+ travava em "Empacotando 1 arquivo..." 0% no
+              modal frontend. Patch backend em /api/download-lote:
+              se pedido tem só 1 arquivo .zip, serve direto via
+              X-Accel-Redirect sem empacotar (não faz ZIP-de-ZIP).
+              Resultado backend: zero overhead, nginx descarrega I/O.
+
+              (6) FotonWeb COR — fast-path ZIP single (frontend).
+              Backend resolvido mas frontend continuou travando: era
+              JSZip (CDN) empacotando do lado do navegador, segurava
+              200MB+ na RAM e a aba sumia. Patch em frontend/index.html
+              função downloadSelecionados(): se 1 único arquivo .zip,
+              pula o JSZip completo e usa <a href download> direto
+              na URL do endpoint /api/arquivo/... Browser envia cookie
+              "fotonweb_session" automaticamente (auth já suportado
+              em _extrai_jwt linha 218), baixa em STREAM nativo, mostra
+              progresso na barra de downloads. ZERO RAM. Resultado
+              real: tomografia 171MB baixando a 777 KB/s sem travar
+              (~6 Mbps, limitado pela banda DO DENTISTA — banda da
+              clínica é 314/112 Mbps).
+
+              (7) gerar_template_jpg.py v1.0 + Task Scheduler 1x/hora.
+              Problema: quando técnico esquece de gerar template no
+              DigitalS, dentista não consegue mandar exame pro
+              convênio (cabeçalho com dados do paciente é obrigatório).
+              Solução: script Python+Pillow que escaneia últimos 7
+              dias do Supabase, lista cruas (p0/tl/c) sem template
+              correspondente e gera FilmeTelXX.jpg com header
+              (logo COR + dados paciente) + imagem centralizada +
+              footer (endereço/WhatsApp). Skip se pasta já tem
+              FilmeTel*/FilmePer* (não duplica trabalho do operador).
+              Execução em produção (15/05 16:27): 23 templates
+              gerados em 19 SEQs em ~25s. Task Scheduler "GERADOR
+              DE TEMPLATE JPG" agendada a cada 1h via taskschd.msc
+              (CORSERVER\\Administrador, privilégios mais altos,
+              run-after-missed habilitado). Primeira execução
+              automática confirmada às 17:06:41.
+              ⚠️ Pendência fase 2: periapical (FilmePer) é mais
+              complexo (mosaico p1..p14) — não implementado nessa
+              versão.
+
   2026-05-13: Botão "🔄 Forçar Sync" pra destravar sync travado do Firebird.
               Contexto: PAULO ROBERTO BORBA RIBAS (id 98891) marcado como
               realizado mas sem firebird_seq_atend porque sync_service.py
