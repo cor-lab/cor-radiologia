@@ -203,6 +203,70 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-17: Sessão de continuidade. 3 fixes pequenos + 1 incidente:
+
+              (1) FotonWeb COR — remoção do prefixo "COR_" hardcoded
+              no nome dos arquivos baixados via JSZip. Linha 1596 do
+              index.html do FotonWeb tinha
+                a.download = 'COR_' + safeName + ...
+              Agora consistente com o fast-path single-zip que usa só
+              o nome do paciente. Resultado: arquivos saem como
+              "HELENA_DUTRA_OLIVEIRA_214785_2026-05-17.zip" sem COR_
+              prefixado. Pacientes não vão se confundir achando que
+              é arquivo do sistema/empresa.
+
+              (2) Manifesto: atualizado com deliveries 5-7 da sessão
+              15/05 (FotonWeb nome paciente + fast-path ZIP backend
+              + fast-path ZIP frontend + gerar_template_jpg.py +
+              Task Scheduler 1h). Versão de 15/05 ficou guardada em
+              outputs sem ser commitada — essa é a versão consolidada.
+
+              (3) INCIDENTE GABRIELA RAMOS DA SILVA SCHMITT (SEQ
+              214778, 15/05/2026 15:02). Atendimento INTERPROXIMAL
+              SUS R$20 sincronizou pro Firebird MAS FXARQ041 ficou
+              vazio (paciente aparecia no DigitalS sem serviço). Bug
+              análogo ao SYNS mas em outra camada:
+
+                Causa raiz: exames_tipos.sus_interproximal.fb_id era
+                NULL no Supabase. Sem fb_id, resolver_fb_servico_id()
+                no sync_service v2.9 (linhas 358-398) retorna 0,
+                FXARQ041 não é criado.
+
+                Complicação adicional: FXARQ031.ID=20211 (preço
+                INTERPROXIMAIS SUS no Firebird) tinha VALOR=NULL —
+                quem cadastrou o convênio SUS no Foton esqueceu de
+                preencher o valor dessa linha. Mesmo se o fb_id
+                estivesse setado, atendimento entraria com preço
+                zero.
+
+                Tela do Foton (Convênios > SUS > Exames) ordena por
+                nome alfabético mas pode mostrar valores em ordem
+                diferente, criando ilusão de cadastro correto —
+                investigar visual é insuficiente, precisa SQL no
+                Firebird pra confirmar estado real.
+
+                Correção em 3 SQL:
+                  UPDATE FXARQ031 SET VALOR=20 WHERE ID=20211;
+                  UPDATE exames_tipos SET fb_id=159 WHERE id='sus_interproximal';
+                  INSERT INTO FXARQ041 VALUES (280602, 224764, 20211, 92, 1, 20, 'S');
+
+                ⚠️ Mapeamento crítico: o SERVICO em FXARQ041 deve ser
+                o ID de FXARQ031 (preço por convênio), não o ID base
+                de FXARQ028. Pra sus_interproximal: fb_id=159
+                (FXARQ028 base) e sync_service depois resolve pra
+                FXARQ031.ID=20211 via JOIN em FXARQ031.SERVICO+CONVENIO.
+
+                ⚠️ REGRA NOVA: ao criar exame com prefixo customizado
+                (sus_*, conv_*, etc) em exames_tipos, SEMPRE preencher
+                fb_id apontando pro FXARQ028.ID base correspondente,
+                ANTES de qualquer atendimento. Sem isso, sync silencia
+                e FXARQ041 fica vazio (não dá erro, só não cria).
+
+                ⚠️ Auditoria pendente: confirmar se outros exames com
+                id alfanumérico em exames_tipos têm fb_id NULL. Query:
+                SELECT id, nome FROM exames_tipos WHERE fb_id IS NULL
+                AND ativo=true;
+
   2026-05-15: Sessão massiva (7 deliveries). Em ordem cronológica:
 
               (1) TomografoCopy v1.0 — app standalone pro PC XP do
