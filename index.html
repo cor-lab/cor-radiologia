@@ -2892,6 +2892,22 @@ async function dbDelPrem(id){return !(await supa.from("premios").update({ativo:f
 
 // ── AGENDAMENTOS ──
 async function dbSaveAg(ag){
+  // ⚡ FIX 18/05/2026 — repropagação forçada em edição de exame antigo (v3.0)
+  // O sync_service.py só varre edições com data_exame >= 7 dias atrás (otimização).
+  // Pra editar exame mais antigo (correção retroativa de indicação, etc), o app
+  // seta firebird_repropagar=true e o sync ignora o filtro de data.
+  // Caso original: FABRICIO BRUXEL DUARTE 13/04/2026, troca de indicação 35d depois
+  // — DigitalS continuou mostrando indicador antigo até UPDATE manual no FB.
+  // Ativa também quando ag._forcarRepropagacao=true (botão "Forçar Reenvio").
+  var _hoje = new Date();
+  var _dataExame = ag.dt ? new Date(br2iso(ag.dt)) : null;
+  var _exameAntigo = false;
+  if (_dataExame && !isNaN(_dataExame)) {
+    var _diasDif = (_hoje - _dataExame) / (1000 * 60 * 60 * 24);
+    if (_diasDif > 7) _exameAntigo = true;
+  }
+  var _precisaRepropagar = !ag._new && (_exameAntigo || ag._forcarRepropagacao === true);
+
   var d = {
   paciente_nome: ag.pac,
   paciente_tel: ag.tel,
@@ -2936,6 +2952,13 @@ async function dbSaveAg(ag){
   forma_entrega: ag.forma_entrega || null,
   previsao_entrega: ag.previsao_entrega || null
 };
+
+  // v3.0: só envia o flag quando precisar (auto-detect ou botão explícito).
+  // Não setamos no objeto literal acima pq deixar default ali causaria
+  // overwrite com false em toda edição, anulando flags pendentes.
+  if (_precisaRepropagar) {
+    d.firebird_repropagar = true;
+  }
 
   var r = ag._new
     ? await supa.from("agendamentos").insert(d).select().single()
@@ -5232,6 +5255,41 @@ function agEV(ev, id) {
               toast("🔄","Sync destravado. Código deve aparecer em ~15s.");
             }else{
               toast("Erro","Falha ao destravar: "+r.status);
+            }
+          }catch(e){
+            toast("Erro","Falha: "+e.message);
+          }
+        }
+      });
+    })(a);
+  }
+
+  // ⚡ FIX 18/05/2026 — botão "Forçar Reenvio ao DigitalS" (v3.0)
+  // Aparece em atendimento já realizado COM código DigitalS (firebird_seq_atend).
+  // Diferente do "Forçar Sync" (que destrava sync FALHADO), este força REPROPAGAÇÃO
+  // de edições já sincronizadas — útil quando os dados no DigitalS divergem do App
+  // (ex: indicação trocada e não refletida porque o exame é antigo > 7 dias).
+  // Caso original: FABRICIO BRUXEL DUARTE 13/04/2026 — indicação trocada no App
+  // 35 dias depois, sync ignorou pelo filtro de data. Botão marca
+  // firebird_repropagar=true e o sync v3.0 propaga ignorando o filtro.
+  if(a.firebird_seq_atend){
+    (function(ag){
+      btns.push({
+        lbl:"🔁 Forçar Reenvio ao DigitalS",
+        cls:"btnr",
+        fn:async function(){
+          if(!confirm("Forçar reenvio de TODOS os dados deste atendimento ao DigitalS?\n\nUse quando você editou indicação, paciente, observações etc. e os dados não refletiram no DigitalS (típico em exames com mais de 7 dias).\n\nO sync vai propagar nos próximos ~10s.")) return;
+          try{
+            var r = await supaFetch("/rest/v1/agendamentos?id=eq."+ag.id,{
+              method:"PATCH",
+              headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
+              body:JSON.stringify({firebird_repropagar:true})
+            });
+            if(r.ok){
+              closeM();
+              toast("🔁","Repropagação agendada. Dados serão atualizados no DigitalS em ~10s.");
+            }else{
+              toast("Erro","Falha ao agendar repropagação: "+r.status);
             }
           }catch(e){
             toast("Erro","Falha: "+e.message);
