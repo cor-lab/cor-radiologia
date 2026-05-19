@@ -2,8 +2,8 @@
   "name": "COR — Centro Odontológico de Radiologia",
   "short_name": "COR",
   "description": "Sistema de gestão de agendamentos, exames e NFS-e da clínica COR.",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0d1830",
@@ -12,7 +12,7 @@
   "icons": [
     {
       "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
+      "sizes": "16x16 32x32 48x48 64x64 128x128 256x256",
       "type": "image/x-icon"
     }
   ]
