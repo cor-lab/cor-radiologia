@@ -208,7 +208,7 @@
   
   ───────── HISTÓRICO ─────────
   
-  2026-05-20: 3 incidentes + auditoria FXARQ031 + sync_service v2.9 → v2.10.
+  2026-05-20: 3 incidentes + auditoria FXARQ031 + sync_service v2.9 → v2.10 → v2.11.
 
               ## INCIDENTE CLEYDE WEIMAR DOS SANTOS HENRIQUES (SEQ 214899)
               
@@ -281,6 +281,55 @@
                 copy sync_service.py v2.10 → C:\\sync_cor\\
                 sc start SyncCOR
               Backup mantido em C:\\sync_cor\\sync_service_v2_9_backup.py
+
+              ## CORREÇÃO 3: sync_service v2.11 (race condition dentista novo)
+              
+              Análise pós-v2.10 levantou cenário não coberto: ao cadastrar
+              dentista NOVO no App COR e marcar atendimento pra ele em
+              menos de 3s (mesmo ciclo do sync), pode ocorrer:
+                1. App COR insere dentistas.id=NOVO, firebird_id=NULL
+                2. App COR insere agendamentos.dentista_id=NOVO
+                3. sync_service ciclo (a cada 3s) executa:
+                   - sincronizar() PRIMEIRO → vê atendimento, busca
+                     firebird_id no Supa → NULL → fallback nome → não
+                     acha no FB (dentista ainda não criado) → INDICACAO=0
+                   - sincronizar_dentistas() DEPOIS → cria dentista no
+                     FB, preenche firebird_id (mas tarde demais)
+              Resultado: atendimento fica INDICACAO=0 (mesmo bug CLEYDE
+              mas por causa raiz diferente: timing).
+
+              Fix v2.11: invertida a ordem das 3 funções no main loop
+              (modo --once linhas 1541-1547 e modo contínuo linhas 1549-1559):
+                ANTES (v2.10): sincronizar() → sincronizar_edicoes() → sincronizar_dentistas()
+                DEPOIS (v2.11): sincronizar_dentistas() → sincronizar() → sincronizar_edicoes()
+
+              Agora o sync GARANTE que qualquer dentista novo já tenha
+              firebird_id preenchido ANTES de qualquer atendimento ser
+              criado. Janela de race condition fechada.
+
+              Custo: zero (mesmas 3 chamadas em ordem diferente).
+              Risco residual: se sincronizar_dentistas() falhar (rede/FB
+              indisponível) no mesmo ciclo, o atendimento ficaria pendente
+              e a próxima rodada (3s depois) corrige.
+
+              Deploy v2.11 aplicado:
+                sc stop SyncCOR
+                copy sync_service.py v2.11 → C:\\sync_cor\\
+                sc start SyncCOR
+              Backup mantido em C:\\sync_cor\\sync_service_v2_10_backup.py
+              Banner confirmado no log: "SYNC COR v2.11 [PRODUCAO]"
+
+              ## RESUMO COMBINADO v2.10 + v2.11
+
+              Os 2 fixes COMPLEMENTARES fecham todas as portas do bug
+              "INDICACAO vazia":
+                v2.10: fix de grafia (Augusto Tatsch vs Augusto C. Tatsch)
+                       → usa firebird_id direto, não busca por nome
+                v2.11: fix de timing (dentista novo + atendimento < 3s)
+                       → garante dentista criado antes do atendimento
+              Bug não pode mais ocorrer em condições normais. Mesmo se
+              dentista_fb_id for NULL temporariamente, o fallback de
+              busca por nome ainda existe como rede de segurança.
 
               ## INCIDENTE SOFIA CAFFARATE SARTURI (SEQ 214891)
               
