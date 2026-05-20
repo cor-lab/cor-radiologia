@@ -208,7 +208,79 @@
   
   ───────── HISTÓRICO ─────────
   
-  2026-05-20: Caso SOFIA 214891 + auditoria FXARQ031 (108 cadastros preventivos).
+  2026-05-20: 3 incidentes + auditoria FXARQ031 + sync_service v2.9 → v2.10.
+
+              ## INCIDENTE CLEYDE WEIMAR DOS SANTOS HENRIQUES (SEQ 214899)
+              
+              Sintoma: atendimento "Tomografia 1 Região" do dentista
+              Augusto Tatsch apareceu no DigitalS com coluna INDICAÇÃO
+              vazia. Outros campos (paciente, serviço, convênio) OK.
+
+              Investigação forense:
+                Supabase: agendamentos.dentista_id=1914 (Augusto Tatsch),
+                         dentistas.firebird_id=1753, dentistas.nome="Augusto Tatsch"
+                Firebird FXARQ005.ID=1753 → nome real "Augusto C. Tatsch"
+                                            (com "C." que não bate)
+                FXARQ039.INDICACAO da CLEYDE = 0 (deveria ser 1753)
+
+              SMOKING GUN nos logs (17:47:00):
+                [!] Dentista 'Augusto Tatsch' nao encontrado na FXARQ005, mantido
+
+              Causa raiz (mapeada no código sync_service v2.9):
+                Linhas 1010-1030 (propagar_edicoes) e 1212-1271 (sincronizar):
+                  - sync busca dentista pelo NOME ("Augusto Tatsch" do Supa)
+                  - tenta match exato: UPPER='AUGUSTO TATSCH' → falha
+                                       (FB tem "Augusto C. Tatsch")
+                  - tenta LIKE '%AUGUSTO TATSCH%' → falha
+                                       (sem string contínua "AUGUSTO TATSCH")
+                  - retorna 0, INDICACAO fica 0
+
+              Comparação: SILVANA SEQ 214550 (06/05) MESMO dentista ficou
+              OK com INDICACAO=1753. Provavelmente correção manual no
+              passado. Bug latente desde sempre, raro porque maioria dos
+              nomes Supa/FB são idênticos.
+
+              Auditoria geral:
+                FXARQ039 com INDICACAO=0 OR NULL: 1053 registros
+                Destes COM SEQATEND (realmente realizados): 0
+                → CLEYDE foi único caso realizado afetado
+
+              ## CORREÇÃO 1: pontual (UPDATE manual)
+                UPDATE FXARQ039 SET INDICACAO=1753 WHERE ID=224885;
+
+              ## CORREÇÃO 2: sync_service v2.10 (fix definitivo)
+              
+              Modificado em 2 lugares pra usar firebird_id DIRETO em vez
+              de buscar por nome (frágil):
+
+              Linha 1019 (propagar_edicoes):
+                dents = supa_get("dentistas?select=nome,firebird_id&id=eq.X")
+                dentista_fb_id_supa = dents[0].get("firebird_id")
+                indicacao_id = dentista_fb_id_supa or buscar_indicacao_por_nome(...)
+
+              Linha 1214 (sincronizar_agendamentos): mesma lógica.
+
+              Log novo identifica fonte:
+                [~] FXARQ039: INDICACAO=1753 (Augusto Tatsch, via fb_id_supa)
+              Fallback ainda usa busca por nome quando firebird_id NULL.
+
+              ## TESTE DE VALIDAÇÃO PÓS-DEPLOY (20:09:03)
+              
+                [INFO] 1 edicao(oes) para propagar: 0 recentes + 1 forcadas
+                --- Propagando edicao [FORCADA] ag=99172 fb_atend=224885 ---
+                  [~] FXARQ039: INDICACAO=1753 (Augusto Tatsch, via fb_id_supa) ✅
+                  [~] Paciente atualizado no Firebird: ID=2958
+                  [OK] Edicao propagada!
+
+              Bug ELIMINADO. Não pode mais ocorrer porque o código usa
+              identificador numérico direto. Compatível retroativamente
+              com dentistas sem firebird_id (fallback pra busca por nome).
+
+              Deploy aplicado via NSSM:
+                sc stop SyncCOR
+                copy sync_service.py v2.10 → C:\\sync_cor\\
+                sc start SyncCOR
+              Backup mantido em C:\\sync_cor\\sync_service_v2_9_backup.py
 
               ## INCIDENTE SOFIA CAFFARATE SARTURI (SEQ 214891)
               
@@ -229,9 +301,7 @@
               convênio TABELA 2025 (fb_13). Quando o sync_service
               chamou resolver_fb_servico_id(fb_424, fb_13), ele
               não achou nada em FXARQ031 e caiu no fallback
-              retornando FXARQ028.ID=424 direto.
-
-              Correção da SOFIA:
+              retornando FXARQ028.ID=424 direto.              Correção da SOFIA:
               1. INSERT FXARQ031 (20880, conv=13, servico=424, valor=535)
               2. UPDATE FXARQ041 SET SERVICO=20880 WHERE ID=280727
 
