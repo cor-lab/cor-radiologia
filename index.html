@@ -185,13 +185,18 @@
   Apps standalone rodando em PCs específicos da clínica que se
   comunicam com o servidor via JSON feed em \\192.168.0.200\dados\.
   
-  - TomografoCopy v1.0 — PC XP do iCATVision (tomógrafo). Python
+  - TomografoCopy v1.1 — PC XP do iCATVision (tomógrafo). Python
     3.4.4 32-bit. Lê agendamentos_hoje.json gerado pelo servidor
     (tomografo_feed.py v1.0, NSSM "TomografoFeed", 30s) e auto-
     preenche cadastro do paciente no iCATVision via Win32 SendInput
-    (ctypes). SEQ + TAB×2 sequencial pra 3 campos do nome. DN com
-    seta_direita entre dia/mês/ano. Modal countdown 3s antes de
-    disparar. Refresh manual (mais estável no XP).
+    (ctypes). v1.1 (18/05): novo botão "AUTO TUDO" (roxo) dispara
+    pipeline completo em 1 click:
+      TAB (campo branco inicial) → PRIMEIRO → TAB → MEIO → TAB →
+      SOBRENOME → TAB → (sufixo vazio) TAB → SEQ → TAB →
+      DIA → seta → MES → seta → ANO
+    Botões antigos AUTO NOME e AUTO DN mantidos pra uso parcial.
+    Modal countdown 3s no canto sup. direito + minimização via
+    ShowWindow(SW_MINIMIZE). Refresh manual (mais estável no XP).
   
   - ThreeShapeCopy v1.0 — PC Win10/11 do 3Shape Trios. Python 3.10+.
     Lê agendamentos_semana.json gerado pelo servidor (threeshape_feed.py
@@ -203,6 +208,121 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-20: Caso SOFIA 214891 + auditoria FXARQ031 (108 cadastros preventivos).
+
+              ## INCIDENTE SOFIA CAFFARATE SARTURI (SEQ 214891)
+              
+              Sintoma: atendimento de "Documentação Simplificada Digital
+              com Modelo e Escaneamento" + "Impressão de Pasta" no
+              convênio TABELA 2025 apareceu no DigitalS com 1ª linha
+              SEM nome do serviço (qtd=1, serviço em branco, convênio
+              TABELA 2025) e 2ª linha OK (Impressão de Pasta). App COR
+              mostrava tudo certo, R$460 (com desconto à vista).
+
+              Causa raiz: FXARQ041.SERVICO=424 estava apontando DIRETO
+              pra FXARQ028.ID=424 (sem passar pela FXARQ031). Bug
+              clássico SERVICO_APONTA_DIRETO_FXARQ028 que o
+              auditar_divergencias deveria pegar mas escapou.
+
+              Causa raiz mais profunda: NÃO existia cadastro em
+              FXARQ031 (preço por convênio) pro exame fb_424 no
+              convênio TABELA 2025 (fb_13). Quando o sync_service
+              chamou resolver_fb_servico_id(fb_424, fb_13), ele
+              não achou nada em FXARQ031 e caiu no fallback
+              retornando FXARQ028.ID=424 direto.
+
+              Correção da SOFIA:
+              1. INSERT FXARQ031 (20880, conv=13, servico=424, valor=535)
+              2. UPDATE FXARQ041 SET SERVICO=20880 WHERE ID=280727
+
+              ## AUDITORIA PREVENTIVA — auditar_fxarq031_faltando.py v1.0
+              
+              Novo script em C:\\sync_cor\\ que cruza dados Supabase ↔
+              Firebird pra detectar bugs latentes do mesmo tipo. Pega
+              todos os pares (exame, convenio) que têm preço cadastrado
+              em convenio_precos do Supabase mas NÃO existem em FXARQ031
+              do Firebird.
+
+              Resultado da primeira execução:
+                Supabase: 334 pares ativos com fb_id
+                Firebird: 199 combos em FXARQ031
+                Faltantes: 108
+
+              Distribuição dos faltantes:
+                TABELA 2025 (fb_13):    29 pares
+                CONVENIO 2025 (fb_85787): 38 pares
+                SYNS (fb_123890):       39 pares
+                UNIMED (fb_97352):        2 pares
+
+              Tipos de exames faltantes:
+                ~30 Documentação Digital / Modelos (alto risco - já usado)
+                ~24 Reimpressões (médio risco - segunda via)
+                ~30 TELE ENTREGA / SEDEX (baixo risco - logística avulsa)
+                ~22 Outros (carpograma, Waters, ATM Bilateral, etc)
+                2   UNIMED específicos
+
+              Execução em produção (20/05):
+                Backup: Max ID FXARQ031 = 20880 (ponto de restauração)
+                Modo: --cadastrar
+                Cadastrados: 108 OK, 0 ERR
+                IDs criados: 20881 → 20988
+                Preços: copiados do Supabase (fonte de verdade do App COR)
+
+              Como reverter se necessário:
+                DELETE FROM FXARQ031 WHERE ID > 20880;
+
+              ⚠️ LIÇÃO: convenio_precos no Supabase deve ser fonte
+              autoritativa. Quando novo exame for cadastrado lá,
+              alguém também precisa cadastrar a linha equivalente
+              em FXARQ031 no Foton. Esse script preventivo deveria
+              rodar 1x/semana via Task Scheduler em modo DRY-RUN
+              gerando alerta, e ser executado manualmente quando
+              alertas aparecerem.
+
+              Pendência futura: revisar preços manualmente (alguns
+              podem estar desatualizados ou ser "preço fantasma" pra
+              serviços que o convênio não oferece - ex: TELE ENTREGA
+              em SYNS).
+
+  2026-05-18: TomografoCopy v1.0 → v1.1.
+
+              Novo botão "AUTO TUDO" (roxo) no card de cada paciente
+              do TomografoCopy. Dispara pipeline completo do iCATVision
+              em 1 click, complementando os botões existentes AUTO NOME
+              e AUTO DN (que continuam funcionando pra uso parcial).
+
+              Pipeline v1.1:
+                TAB (campo branco inicial) → PRIMEIRO → TAB → MEIO →
+                TAB → SOBRENOME → TAB → (sufixo vazio) TAB → SEQ →
+                TAB → DIA → seta → MES → seta → ANO
+
+              Layout do iCATVision mapeado:
+                campo 0: Campo em branco no inicio (descoberto 18/05
+                         no teste real - precisa TAB inicial p/ pular)
+                campo 1-3: Primeiro nome / Meio / Sobrenome
+                campo 4: Sufixo (Jr, III...) - deixar vazio
+                campo 5: Codigo do paciente (SEQATEND)
+                campo 6: DateTimePicker da DN (dia/mes/ano com setas)
+
+              Implementação:
+              - Nova função enviar_tudo_pipeline() no módulo SendInput
+                que chama enviar_tab(), enviar_texto() e enviar_seta_direita()
+                em sequência.
+              - Novo método auto_preencher_tudo() na classe principal
+                que monta valores compostos e chama auto_preencher_3campos
+                (genérico) com tipo_envio="tudo".
+              - auto_preencher_3campos() ganhou parâmetro
+                preview_override pra mostrar "nome cod:SEQ dn:DD/MM/AAAA"
+                no modal (preview de 3 campos genéricos não cabia).
+              - _executar_envio() ampliado com novo branch
+                "tipo_envio == tudo" que desempacota tuplas e chama
+                enviar_tudo_pipeline.
+
+              Servidor não precisou de mudança - feed JSON já enviava
+              firebird_seq_atend desde v1.0. Só o app cliente XP foi
+              atualizado. Deploy: copiar tomografo_app.py pra
+              C:\\tomografo_copy\\ no PC XP, fechar e reabrir o app.
+
   2026-05-17: Sessão de continuidade. 3 fixes pequenos + 1 incidente:
 
               (1) FotonWeb COR — remoção do prefixo "COR_" hardcoded
