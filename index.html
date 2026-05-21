@@ -208,6 +208,15 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-21: Revisão preventiva do index.html.
+              FIX: botão "Realizado" da lista Exames agora delega para
+              atMarkRealizado(), preservando bloqueio de data_nascimento,
+              token FotonWeb e aviso WhatsApp ao dentista.
+              FIX: handlers inline com nomes/logons/senhas usam jsArg()
+              para não quebrar quando textos vindos do banco têm aspas.
+              SEGURANÇA: tokens FotonWeb gerados não são mais impressos
+              no console; log mostra apenas a SEQ do atendimento.
+  
   2026-05-20: 3 incidentes + auditoria FXARQ031 + sync_service v2.9 → v2.10 → v2.11.
 
               ## INCIDENTE CLEYDE WEIMAR DOS SANTOS HENRIQUES (SEQ 214899)
@@ -2452,8 +2461,8 @@ async function marcarRealizadoEEmitir(agendamentoId){
     // FotonWeb COR: gera token de acesso do paciente (silencioso, não bloqueia)
     try {
       if (ag.firebird_seq_atend) {
-        var tokenGerado = await gerarTokenAcessoPaciente(ag);
-        console.log("[FotonWeb] Token gerado:", tokenGerado, "SEQ:", ag.firebird_seq_atend);
+        await gerarTokenAcessoPaciente(ag);
+        console.log("[FotonWeb] Token gerado para SEQ:", ag.firebird_seq_atend);
       } else {
         console.log("[FotonWeb] Agendamento sem firebird_seq_atend ainda — token será gerado quando sync rodar.");
       }
@@ -4055,7 +4064,8 @@ function iniciarAutoRefresh(){
 var _doLoginSupaOriginal = doLoginSupa;
 
 // ══ HELPERS ══
-function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+function jsArg(s) { return esc(JSON.stringify(String(s == null ? "" : s))); }
 function pad(n) { return String(n).padStart(2,"0"); }
 function fmtN(n) { return Number(n).toLocaleString("pt-BR"); }
 function fex(id) { return exT.find(function(e){return e.id===id;}) || {n:id,ico:"🩻",pts:0,p:0}; }
@@ -4253,7 +4263,7 @@ function renderHistBuscaResultados() {
   h += "<div class='hist-result-info'>" + histResultados.length + " pacientes encontrados</div>";
 
   histResultados.forEach(function(pac) {
-    h += "<div class='hist-pac-card' style='cursor:pointer' onclick='selecionarHistPaciente(" + (pac.id || 0) + ",\"" + esc(pac.nome || '') + "\",\"" + esc(pac.cpf || '') + "\")'>";
+    h += "<div class='hist-pac-card' style='cursor:pointer' onclick='selecionarHistPaciente(" + (pac.id || 0) + "," + jsArg(pac.nome || "") + "," + jsArg(pac.cpf || "") + ")'>";
     h += "<div style='flex:1'>";
     h += "<div class='hist-pac-name'>" + esc(pac.nome || '—') + "</div>";
     h += "<div class='hist-pac-info'>";
@@ -4899,8 +4909,8 @@ async function atMarkRealizado(id) {
       // FotonWeb COR: gera token de acesso do paciente (silencioso)
       try {
         if (a.firebird_seq_atend) {
-          var tok = await gerarTokenAcessoPaciente(a);
-          console.log("[FotonWeb] Token gerado:", tok, "SEQ:", a.firebird_seq_atend);
+          await gerarTokenAcessoPaciente(a);
+          console.log("[FotonWeb] Token gerado para SEQ:", a.firebird_seq_atend);
         }
       } catch(e) {
         console.error("[FotonWeb] Falha ao gerar token (não bloqueante):", e);
@@ -6517,7 +6527,24 @@ function atualizarValorNota(){
 }
 function filtEx(v){exSrch=v.toLowerCase();bldExRows();}
 function setFlt(el,f){document.querySelectorAll(".ftab").forEach(function(x){x.classList.remove("active");});el.classList.add("active");exFlt=f;bldExRows();}
-function chSt(id,s){var a=ags.find(function(x){return x.id===id;});if(a){a.st=s;dbUpdAgSt(id,s);bldExRows();toast("✅","Status: "+s);}}
+async function chSt(id,s){
+  var a=ags.find(function(x){return x.id===id;});
+  if(!a) return;
+
+  if(s==="realizado"){
+    await atMarkRealizado(id);
+    bldExRows();
+    return;
+  }
+
+  var ok = await dbUpdAgSt(id,s);
+  if(ok){
+    bldExRows();
+    toast("✅","Status: "+s);
+  } else {
+    toast("Erro","Falha ao atualizar status.");
+  }
+}
 
 function sWAi(id){
   var a = ags.find(function(x){ return x.id === id; });
@@ -7666,7 +7693,7 @@ function dentAuthRender(firebirdId, dentNome, cred){
         "</label>"+
       "</div>"+
       "<div style='display:flex;gap:6px'>"+
-        "<button type='button' class='btn btng bsm' onclick='dentAuthCreateBtn("+firebirdId+",\""+esc(dentNome||"")+"\")' style='font-size:11px;padding:6px 12px'>✓ Criar credencial</button>"+
+        "<button type='button' class='btn btng bsm' onclick='dentAuthCreateBtn("+firebirdId+","+jsArg(dentNome||"")+")' style='font-size:11px;padding:6px 12px'>✓ Criar credencial</button>"+
       "</div>"+
       "</div>";
   } else {
@@ -7729,8 +7756,8 @@ function dentAuthRender(firebirdId, dentNome, cred){
           "</div>"+
         "</div>"+
         "<div style='display:flex;gap:6px'>"+
-          "<button type='button' class='btn btnt bsm' onclick='dentAuthResetBtn("+firebirdId+",\""+esc(dentNome||"")+"\")' style='font-size:11px;padding:6px 10px'>🔑 Resetar senha</button>"+
-          "<button type='button' class='btn btnr bsm' onclick='dentAuthDeleteBtn("+firebirdId+",\""+esc(cred.logon)+"\",\""+esc(dentNome||"")+"\")' style='font-size:11px;padding:6px 10px;margin-left:auto'>🗑 Remover acesso</button>"+
+          "<button type='button' class='btn btnt bsm' onclick='dentAuthResetBtn("+firebirdId+","+jsArg(dentNome||"")+")' style='font-size:11px;padding:6px 10px'>🔑 Resetar senha</button>"+
+          "<button type='button' class='btn btnr bsm' onclick='dentAuthDeleteBtn("+firebirdId+","+jsArg(cred.logon)+","+jsArg(dentNome||"")+")' style='font-size:11px;padding:6px 10px;margin-left:auto'>🗑 Remover acesso</button>"+
         "</div>"+
       "</div>"+
       "</div>";
@@ -7849,7 +7876,7 @@ function dentAuthShowSenhaModal(senha, logon, dentNome, acao){
       "<div style='margin-bottom:4px'><span style='color:#6ee7b7;font-size:10px'>LOGON:</span> <strong>"+esc(logon)+"</strong></div>"+
       "<div><span style='color:#6ee7b7;font-size:10px'>SENHA:</span> <strong id='daSenhaShow'>"+esc(senha)+"</strong></div>"+
     "</div>"+
-    "<button class='btn btng bsm' onclick='dentAuthCopiarSenha(\""+esc(logon)+"\",\""+esc(senha)+"\")' style='font-size:12px;padding:6px 12px'>📋 Copiar logon + senha</button>"+
+    "<button class='btn btng bsm' onclick='dentAuthCopiarSenha("+jsArg(logon)+","+jsArg(senha)+")' style='font-size:12px;padding:6px 12px'>📋 Copiar logon + senha</button>"+
     "</div>"+
     "<div style='background:#78350f;border:1px solid #f59e0b;border-radius:8px;padding:10px;color:#fde68a;font-size:11px'>"+
     "<strong>⚠️ IMPORTANTE:</strong> Esta é a <strong>única vez</strong> que esta senha será exibida. Copie e envie ao dentista via WhatsApp/email. Depois de fechar, só será possível resetar para uma nova senha.<br><br>"+
