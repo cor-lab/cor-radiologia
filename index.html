@@ -277,6 +277,31 @@
               ordem diferente — antes: fg2(CEP, Numero) > Logradouro >
               Complemento. Agora: CEP > Logradouro > Numero > Complemento
               (mesmo fluxo natural, agora consistente nos 2 formularios).
+              UX (v3.6): formulario de edicao de usuario — campo de senha
+              ESCONDIDO quando isNew=false. Antes: aparecia campo com
+              label "Senha (deixe em branco para manter)" que era ignorado
+              silenciosamente no UPDATE — usuario achava que tinha trocado
+              a senha mas nada acontecia. Agora: campo so aparece em
+              cadastro novo (com label "Senha (obrigatoria)"); na edicao,
+              aparece um aviso amarelo informando que pra resetar senha
+              precisa usar o Dashboard do Supabase ou contatar admin.
+              Pendente proxima sessao: RPC admin_reset_password + tela
+              "Trocar Minha Senha" pra fluxo completo via app.
+              SENHA (v3.7): RPC admin_reset_password criada (SECURITY
+              DEFINER, valida que caller tem role=admin em
+              public.usuarios via auth.uid). Atualiza encrypted_password
+              em auth.users usando extensions.crypt + gen_salt('bf', 10)
+              (formato $2a$10$ identico ao Supabase nativo). Botao 🔑
+              adicionado na lista de usuarios (so aparece pra usuarios
+              que NAO sao o admin logado). Modal mostra senha gerada
+              aleatoriamente (12 chars via crypto.getRandomValues, pool
+              sem caracteres ambiguos), permite editar antes de confirmar,
+              gera outra com 1 clique. Apos resetar, mostra senha em
+              modal copy-friendly (cursor:text, user-select:all) pra
+              admin repassar pra funcionaria via WhatsApp. Atualizado
+              aviso no form de edicao apontando pro botao novo. Pendente
+              proxima sessao: tela "Trocar Minha Senha" pra cada user
+              trocar a propria senha (supa.auth.updateUser).
               FIX: percentual de cashback (pontos de dentista) passa a
               carregar/salvar em configuracoes.cashback_pct. Linha
               criada com valor padrao 5 pra parar de dar 406 no console.
@@ -1388,6 +1413,8 @@ nav button.active{color:var(--g);background:rgba(74,184,72,.1);font-weight:600}
 .btno:hover{background:rgba(255,255,255,.1)}
 .btnr{background:rgba(224,82,82,.12);border:1px solid rgba(224,82,82,.22);color:#f87171}
 .btnr:hover{background:rgba(224,82,82,.2)}
+.btnp{background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.28);color:#c4b5fd}
+.btnp:hover{background:rgba(167,139,250,.22)}
 .btnt{background:rgba(45,212,191,.14);border:1px solid rgba(45,212,191,.28);color:var(--tl)}
 .bsm{padding:5px 11px;font-size:.76rem}
 .bico{width:32px;height:32px;padding:0;justify-content:center;border-radius:7px}
@@ -1878,7 +1905,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.5 - 2026-05-23";
+var APP_VERSION = "v3.7 - 2026-05-23";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8036,6 +8063,7 @@ function rusrs(){
         h+="<button class='btn btno bsm bico' data-email='"+esc(u.email)+"' onclick='openUM(this.dataset.email)' title='Editar'>✏️</button>";
 
         if(!isCurrent){
+          h+="<button class='btn btnp bsm bico' data-email='"+esc(u.email)+"' onclick='resetSenhaUser(this.dataset.email)' title='Resetar senha'>🔑</button>";
           h+="<button class='btn "+(u.ativo?"btnr":"btng")+" bsm bico' data-email='"+esc(u.email)+"' onclick='togU(this.dataset.email)' title='"+(u.ativo?"Desativar":"Ativar")+"'>"+(u.ativo?"🔒":"🔓")+"</button>";
           h+="<button class='btn btnr bsm bico' data-email='"+esc(u.email)+"' onclick='remU(this.dataset.email)' title='Remover'>🗑️</button>";
         }
@@ -8053,6 +8081,80 @@ function rusrs(){
   document.getElementById("pgUs").innerHTML=h;
 }
 function togU(email){var u=USERS.find(function(x){return x.email===email||String(x.id)===String(email);});if(!u)return;u.ativo=!u.ativo;dbToggleUser(u.email,u.ativo);rusrs();toast(u.ativo?"🔓":"🔒",u.nome+(u.ativo?" ativado":" desativado"));}
+
+// ⚡ v3.7 (2026-05-23) — RESET DE SENHA POR ADMIN ─────────────────────────
+// Admin reseta a senha de outro usuário via RPC admin_reset_password
+// (SECURITY DEFINER no banco, valida que caller é admin via auth.uid).
+
+function gerarSenhaAleatoria(len){
+  len = len || 12;
+  // Pool sem caracteres ambíguos: removidos 0 O o, 1 l I i
+  var pool = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*+=";
+  var buffer = new Uint32Array(len);
+  crypto.getRandomValues(buffer);
+  var s = "";
+  for (var i = 0; i < len; i++) {
+    s += pool[buffer[i] % pool.length];
+  }
+  return s;
+}
+
+async function dbResetUserPassword(email, novaSenha){
+  try {
+    var r = await supa.rpc("admin_reset_password", {
+      target_email: email,
+      new_password: novaSenha
+    });
+    if (r.error) {
+      console.error("admin_reset_password error:", r.error);
+      return { ok: false, error: r.error.message || "Erro desconhecido" };
+    }
+    return { ok: true, data: r.data };
+  } catch (e) {
+    console.error("admin_reset_password fatal:", e);
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+function resetSenhaUser(email){
+  var u = USERS.find(function(x){return x.email===email;});
+  if (!u) return;
+  if (CU && u.email === CU.email) {
+    toast("⚠️", "Use 'Trocar Minha Senha' pra trocar sua propria senha");
+    return;
+  }
+  var nova = gerarSenhaAleatoria(12);
+  var body = "<div style='display:flex;flex-direction:column;gap:12px'>";
+  body += "<p style='color:var(--gr);font-size:.86rem'>Resetar senha de <strong>"+esc(u.nome)+"</strong><br><span style='font-size:.78rem'>"+esc(u.email)+"</span></p>";
+  body += "<div class='field'><label>Nova senha (minimo 8 caracteres)</label>";
+  body += "<input type='text' id='rsNovaSn' value='"+esc(nova)+"' style='font-family:DM Mono,monospace;font-size:1rem;letter-spacing:.5px'></div>";
+  body += "<div style='font-size:.74rem;color:var(--gr);line-height:1.4'>💡 Senha gerada automaticamente. Pode editar antes de confirmar.<br>🔁 Clique <a href='#' onclick='event.preventDefault();document.getElementById(\"rsNovaSn\").value=gerarSenhaAleatoria(12);' style='color:var(--tl);text-decoration:underline'>aqui</a> pra gerar outra.</div>";
+  body += "</div>";
+  openM("🔑 Resetar Senha", body, [
+    {lbl: "Cancelar", cls: "btno", fn: closeM},
+    {lbl: "Resetar", cls: "btng", fn: async function(){
+      var sn = (document.getElementById("rsNovaSn").value || "").trim();
+      if (sn.length < 8) {
+        toast("⚠️", "Senha precisa ter pelo menos 8 caracteres");
+        return;
+      }
+      var r = await dbResetUserPassword(email, sn);
+      if (r.ok) {
+        closeM();
+        var copyBody = "<div style='display:flex;flex-direction:column;gap:14px'>";
+        copyBody += "<p style='color:#4ab848;font-weight:600'>✅ Senha resetada com sucesso!</p>";
+        copyBody += "<p style='font-size:.88rem'>Repasse esta senha para <strong>"+esc(u.nome)+"</strong>:</p>";
+        copyBody += "<div style='background:rgba(45,212,191,.12);border:1px solid rgba(45,212,191,.4);border-radius:8px;padding:16px;font-family:DM Mono,monospace;font-size:1.15rem;text-align:center;letter-spacing:1.5px;user-select:all;cursor:text;color:#5eead4'>"+esc(sn)+"</div>";
+        copyBody += "<div style='font-size:.78rem;color:var(--gr);line-height:1.4'>💡 Clique na senha (acima) pra selecionar, depois Ctrl+C pra copiar.<br>⚠️ Esta senha nao sera mostrada novamente. Anote ou envie agora.</div>";
+        copyBody += "</div>";
+        openM("🔑 Senha Nova de " + u.nome.split(" ")[0], copyBody, [{lbl:"Fechar", cls:"btng", fn:closeM}]);
+        toast("🔑", "Senha resetada");
+      } else {
+        toast("❌", r.error || "Falha ao resetar");
+      }
+    }}
+  ]);
+}
 function openUM(eid) {
   var ed = eid ? USERS.find(function(u){ return u.email === eid || String(u.id) === String(eid); }) : null;
   var bgm = {
@@ -8066,14 +8168,31 @@ function openUM(eid) {
   b += "<div class='field'><label>Nome completo</label><input id='usrNm' value='"+(ed?esc(ed.nome):"")+"' placeholder='Nome do usuario'></div>";
   b += "<div class='field'><label>Email (login)</label><input id='usrEm' type='email' value='"+(ed?esc(ed.email):"")+"' placeholder='usuario@cor.com.br'"+(ed?" readonly style='opacity:.6'":"")+" ></div>";
 
-  b += "<div class='fg2'>";
-  b += "<div class='field'><label>Senha "+(ed?"(deixe em branco para manter)":"")+"</label><input id='usrSn' type='password' placeholder='"+(ed?"••••••••":"Nova senha")+"'></div>";
-  b += "<div class='field'><label>Perfil de Acesso</label><select id='usrRl' onchange='toggleUsrDentWrap()'>";
-  Object.keys(RL).forEach(function(r){
-    b += "<option value='"+r+"'"+(ed ? (ed.role===r?" selected":"") : (r==="agenda"?" selected":""))+">"+RE[r]+" "+RL[r]+"</option>";
-  });
-  b += "</select></div>";
-  b += "</div>";
+  // ⚡ v3.6 — Em edição, esconde o campo de senha pra não dar a falsa impressão
+  // de que dá pra trocar a senha por aqui. O UPDATE de dbSaveUser não atualiza
+  // a senha (precisaria do service_role, que não pode ficar no frontend).
+  // Pra trocar senha de outro user, use o Dashboard do Supabase ou peça pra
+  // gente criar a RPC admin_reset_password (próxima sessão).
+  if (ed) {
+    b += "<div class='field'><label>Perfil de Acesso</label><select id='usrRl' onchange='toggleUsrDentWrap()'>";
+    Object.keys(RL).forEach(function(r){
+      b += "<option value='"+r+"'"+(ed.role===r?" selected":"")+">"+RE[r]+" "+RL[r]+"</option>";
+    });
+    b += "</select></div>";
+    b += "<div style='background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.3);border-radius:8px;padding:10px 12px;font-size:.78rem;color:#c4b5fd;line-height:1.4'>";
+    b += "<strong>🔑 Senha:</strong> nao pode ser alterada por aqui. ";
+    b += "Para resetar a senha desta funcionaria, feche este modal e clique no botao <strong>🔑</strong> ao lado do nome dela na lista.";
+    b += "</div>";
+  } else {
+    b += "<div class='fg2'>";
+    b += "<div class='field'><label>Senha</label><input id='usrSn' type='password' placeholder='Nova senha (obrigatória)'></div>";
+    b += "<div class='field'><label>Perfil de Acesso</label><select id='usrRl' onchange='toggleUsrDentWrap()'>";
+    Object.keys(RL).forEach(function(r){
+      b += "<option value='"+r+"'"+(r==="agenda"?" selected":"")+">"+RE[r]+" "+RL[r]+"</option>";
+    });
+    b += "</select></div>";
+    b += "</div>";
+  }
 
   b += "<div class='field' id='usrDentWrap' style='display:"+((ed && ed.role==="dentista") ? "flex" : "none")+";flex-direction:column'>";
   b += "<label>Dentista vinculado</label>";
