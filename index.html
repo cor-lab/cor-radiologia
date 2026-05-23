@@ -208,6 +208,24 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-23: Blindagem operacional sem refatorar o app.
+              SEGURANCA: fluxo legado de ajuste de cashback nao usa mais
+              senha fixa "1234"; agora delega para a validacao da senha do
+              usuario logado.
+              SEGURANCA: doLogin() legado foi neutralizado e delega para
+              doLoginSupa(), evitando reativacao acidental do login antigo.
+              ROBUSTEZ: dbSaveAg tenta usar RPC atomica
+              salvar_agendamento_com_exames antes do fluxo legado
+              UPDATE/DELETE/INSERT. Se a RPC ainda nao existir, desativa
+              esse caminho na sessao e mantem o fallback atual.
+              FIX: percentual de cashback passa a carregar/salvar em
+              configuracoes.cashback_pct.
+              FIX: endereco do dentista agora usa textContent em vez de
+              innerHTML no preview do agendamento.
+              PENDENTE BACKEND: criar/deployar a RPC
+              salvar_agendamento_com_exames no Supabase para ativar a
+              gravacao transacional de agendamento + exames.
+
   2026-05-21: Revisão preventiva do index.html.
               FIX: botão "Realizado" da lista Exames agora delega para
               atMarkRealizado(), preservando bloqueio de data_nascimento,
@@ -2899,6 +2917,14 @@ async function loadAllData(){
     }
 
     AJUSTES_CB = ajR.data || [];
+
+    try{
+      var cbCfg = await supa.from("configuracoes").select("valor").eq("chave","cashback_pct").single();
+      if(!cbCfg.error && cbCfg.data && cbCfg.data.valor != null){
+        var cbPct = parseInt(cbCfg.data.valor, 10);
+        if(cbPct > 0 && cbPct <= 50) CASHBACK_PCT = cbPct;
+      }
+    }catch(_){}
     
     if(exR.data && exR.data.length){
       exT = exR.data.map(function(e){
@@ -3150,6 +3176,59 @@ async function dbSavePrem(p,isNew){
 async function dbDelPrem(id){return !(await supa.from("premios").update({ativo:false}).eq("id",id)).error;}
 
 // ── AGENDAMENTOS ──
+var RPC_SAVE_AG_DISABLED = false;
+function rpcAgendamentoNaoExiste(err){
+  var code = err && err.code ? String(err.code) : "";
+  var msg = err && err.message ? String(err.message).toLowerCase() : String(err || "").toLowerCase();
+  return code === "PGRST202" ||
+    (msg.indexOf("salvar_agendamento_com_exames") >= 0 &&
+     (msg.indexOf("not found") >= 0 || msg.indexOf("does not exist") >= 0 || msg.indexOf("schema cache") >= 0));
+}
+function agExRowsForSave(ag, agendamentoId){
+  if(!Array.isArray(ag.exames)) return [];
+  return ag.exames.map(function(it, idx){
+    var ex = fex(it.exame_id);
+    return {
+      agendamento_id: agendamentoId || null,
+      exame_id: it.exame_id,
+      convenio_id: it.convenio_id || null,
+      preco: Number(it.preco || 0),
+      nome_exame: ex ? ex.n : it.exame_id,
+      ordem: idx + 1
+    };
+  });
+}
+async function dbSaveAgRpc(ag, payload, rows){
+  if(RPC_SAVE_AG_DISABLED || !supa || !supa.rpc) return {used:false};
+  try{
+    var r = await supa.rpc("salvar_agendamento_com_exames", {
+      p_agendamento: payload,
+      p_exames: rows || [],
+      p_is_new: ag._new === true
+    });
+    if(r.error){
+      if(rpcAgendamentoNaoExiste(r.error)){
+        RPC_SAVE_AG_DISABLED = true;
+        console.warn("RPC salvar_agendamento_com_exames indisponivel; usando fallback legado nesta sessao.");
+        return {used:false};
+      }
+      console.error("dbSaveAg RPC:", r.error);
+      return {used:true, ok:false};
+    }
+    var data = Array.isArray(r.data) ? r.data[0] : r.data;
+    var novoId = data && (data.id || data.agendamento_id);
+    if(ag._new && novoId) ag.id = novoId;
+    return {used:true, ok:true};
+  }catch(e){
+    if(rpcAgendamentoNaoExiste(e)){
+      RPC_SAVE_AG_DISABLED = true;
+      console.warn("RPC salvar_agendamento_com_exames indisponivel; usando fallback legado nesta sessao.");
+      return {used:false};
+    }
+    console.error("dbSaveAg RPC fatal:", e);
+    return {used:true, ok:false};
+  }
+}
 async function dbSaveAg(ag){
   // ⚡ FIX 18/05/2026 — repropagação forçada em edição de exame antigo (v3.0)
   // O sync_service.py só varre edições com data_exame >= 7 dias atrás (otimização).
@@ -3219,6 +3298,11 @@ async function dbSaveAg(ag){
     d.firebird_repropagar = true;
   }
 
+  var rpcRows = agExRowsForSave(ag, ag.id || null);
+  var rpcPayload = Object.assign({}, d, {id: ag.id || null});
+  var rpcSave = await dbSaveAgRpc(ag, rpcPayload, rpcRows);
+  if(rpcSave.used) return rpcSave.ok;
+
   var r = ag._new
     ? await supa.from("agendamentos").insert(d).select().single()
     : await supa.from("agendamentos").update(d).eq("id", ag.id).select().single();
@@ -3243,17 +3327,7 @@ async function dbSaveAg(ag){
 
     // insere os exames atuais
     if (ag.exames.length) {
-      var rows = ag.exames.map(function(it, idx){
-        var ex = fex(it.exame_id);
-        return {
-          agendamento_id: ag.id,
-          exame_id: it.exame_id,
-          convenio_id: it.convenio_id || null,
-          preco: Number(it.preco || 0),
-          nome_exame: ex ? ex.n : it.exame_id,
-          ordem: idx + 1
-        };
-      });
+      var rows = agExRowsForSave(ag, ag.id);
 
       var ins = await supa.from("agendamento_exames").insert(rows);
 
@@ -3266,7 +3340,6 @@ async function dbSaveAg(ag){
 
   return true;
 }
-dbUpdAgSt
 
 async function creditarCashbackSeElegivel(agendamentoId){
   try{
@@ -3771,36 +3844,7 @@ var CU = null;
 
 
 function doLogin() {
-  var email = document.getElementById("lEmail").value.trim().toLowerCase();
-  var senha = document.getElementById("lPass").value;
-  var btn = document.getElementById("lBtn");
-  var err = document.getElementById("lErr");
-  err.classList.remove("show");
-  btn.disabled = true;
-  btn.textContent = "Verificando...";
-  setTimeout(function() {
-    var u = null;
-    for (var i = 0; i < USERS.length; i++) {
-      if (USERS[i].email.toLowerCase() === email && USERS[i].senha === senha && USERS[i].ativo) {
-        u = USERS[i]; break;
-      }
-    }
-    btn.disabled = false;
-    btn.textContent = "Entrar";
-    if (!u) { err.classList.add("show"); return; }
-    CU = u;
-    document.getElementById("LS").style.display = "none";
-    document.getElementById("AS").style.display = "block";
-    applyNav();
-    var fp = "dashboard";
-    if (u.role === "dentista") fp = "cashback";
-    else {
-      var pk = Object.keys(PERMS[u.role] || {});
-      for (var j = 0; j < pk.length; j++) { if (PERMS[u.role][pk[j]]) { fp = pk[j]; break; } }
-    }
-    navTo(fp);
-    toast("👋", "Bem-vindo(a), " + u.nome.split(" ")[0] + "!");
-  }, 500);
+  return doLoginSupa();
 }
 
 function doLogout() {
@@ -7015,7 +7059,8 @@ async function aplicarAjusteCashbackAdmin(){
   var dentId = parseInt((document.getElementById("cbAjDent").value || "0"), 10);
   var tipo = document.getElementById("cbAjTipo").value;
   var pontos = parseInt(document.getElementById("cbAjPts").value || 0, 10);
-  var motivo = document.getElementById("cbAjMotivo").value.trim();
+  var motivoEl = document.getElementById("cbAjMotivo") || document.getElementById("cbAjMot");
+  var motivo = motivoEl ? motivoEl.value.trim() : "";
   var senha = document.getElementById("cbAjSenha").value;
 
   if(!dentId){
@@ -7231,114 +7276,7 @@ async function validarSenhaUsuarioAtual(senha){
 }
 
 async function aplicarAjusteCashback(){
-  var dentId = document.getElementById("cbAjDent").value;
-  var tipo = document.getElementById("cbAjTipo").value;
-  var pontos = Number(document.getElementById("cbAjPts").value || 0);
-  var motivo = document.getElementById("cbAjMot").value.trim();
-
-  if(!dentId){
-    toast("Atenção", "Selecione um dentista.");
-    return;
-  }
-
-  if(!pontos || pontos <= 0){
-    toast("Atenção", "Informe uma quantidade de pontos válida.");
-    return;
-  }
-
-  var d = fdent(dentId);
-  if(!d){
-    toast("Erro", "Dentista não encontrado.");
-    return;
-  }
-
-  if(tipo === "debito" && Number(d.pts || 0) < pontos){
-    toast("Atenção", "O dentista não possui pontos suficientes.");
-    return;
-  }
-
-  openM(
-    "Confirmar ajuste de cashback",
-    ""
-    + "<div class='field'>"
-    +   "<label>Senha de autorização</label>"
-    +   "<input id='cbAjSenha' type='password' placeholder='Digite a senha'>"
-    + "</div>"
-    + "<div style='margin-top:12px;font-size:.84rem;color:var(--gr)'>"
-    +   "Dentista: <strong>" + esc(d.n) + "</strong><br>"
-    +   "Tipo: <strong>" + (tipo === "credito" ? "Adicionar" : "Remover") + "</strong><br>"
-    +   "Pontos: <strong>" + fmtN(pontos) + "</strong><br>"
-    +   "Motivo: <strong>" + esc(motivo || "Ajuste manual") + "</strong>"
-    + "</div>",
-    [
-      {
-        lbl: "Cancelar",
-        cls: "btno",
-        fn: function(){ closeM(); }
-      },
-      {
-        lbl: "Confirmar ajuste",
-        cls: "btng",
-        fn: async function(){
-          var senha = (document.getElementById("cbAjSenha").value || "").trim();
-
-          // TROQUE A SENHA AQUI
-          if(senha !== "1234"){
-            toast("Atenção", "Senha incorreta.");
-            return;
-          }
-
-          var novoSaldo = tipo === "credito"
-            ? Number(d.pts || 0) + pontos
-            : Number(d.pts || 0) - pontos;
-
-          var payload = {
-            dentista_id: dentId,
-            tipo: tipo,
-            pontos: pontos,
-            motivo: motivo || "Ajuste manual"
-          };
-
-          try{
-            if(typeof supa !== "undefined"){
-              var ins = await supa.from("cashback_ajustes").insert(payload).select().single();
-              if(ins && !ins.error && ins.data){
-                AJUSTES_CB = AJUSTES_CB || [];
-                AJUSTES_CB.unshift(ins.data);
-              }
-            }else{
-              AJUSTES_CB = AJUSTES_CB || [];
-              AJUSTES_CB.unshift({
-                id: "aj_" + Date.now(),
-                dentista_id: dentId,
-                tipo: tipo,
-                pontos: pontos,
-                motivo: motivo || "Ajuste manual"
-              });
-            }
-
-            d.pts = novoSaldo;
-
-            if(typeof supa !== "undefined"){
-              var upd = await supa.from("dentistas").update({ pontos: novoSaldo }).eq("id", dentId);
-              if(upd.error){
-                console.error("Erro ao atualizar pontos:", upd.error);
-                toast("Erro", "Falha ao atualizar saldo do dentista.");
-                return;
-              }
-            }
-
-            closeM();
-            toast("Sucesso", "Ajuste aplicado.");
-            rcashAdmin();
-          }catch(e){
-            console.error("aplicarAjusteCashback:", e);
-            toast("Erro", "Falha ao aplicar ajuste.");
-          }
-        }
-      }
-    ]
-  );
+  return aplicarAjusteCashbackAdmin();
 }
 var AJUSTES_CB = [];
 
@@ -8296,12 +8234,33 @@ function loadWaTemplatesLocal(){
     console.error("Erro ao carregar templates WA local:", e);
   }
 }
-function openExM(eid){var ed=eid?exT.find(function(e){return e.id===eid;}):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='fg2'><div class='field'><label>Nome</label><input id='eNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Tomografia'></div><div class='field'><label>Icone</label><input id='eIco' value='"+(ed?ed.ico:"🩻")+"'></div></div><div class='fg2'><div class='field'><label>Preco Particular (R$)</label><input type='number' id='eP' value='"+(ed?ed.p:100)+"'></div><div class='field'><label>Pontos Fidelidade</label><input type='number' id='ePt' value='"+(ed?ed.pts:40)+"'></div></div></div>";openM(eid?"Editar Exame":"Novo Exame",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:eid?"Salvar":"Adicionar",cls:"btng",fn:function(){var nm=document.getElementById("eNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}if(ed){ed.n=nm;ed.ico=document.getElementById("eIco").value;ed.p=parseInt(document.getElementById("eP").value)||100;ed.pts=parseInt(document.getElementById("ePt").value)||40;}else{exT.push({id:"e"+Date.now(),n:nm,ico:document.getElementById("eIco").value,p:parseInt(document.getElementById("eP").value)||100,pts:parseInt(document.getElementById("ePt").value)||40});}var exObj=eid?exT.find(function(e){return e.id===eid;}):exT[exT.length-1];dbSaveEx(exObj,!eid).then(function(){});var prObj=eid?prems.find(function(p){return p.id===eid;}):prems[prems.length-1];dbSavePrem(prObj,!eid).then(function(){});closeM();rcfg();toast("✅",nm+(eid?" atualizado":" adicionado"));}}]);}
+function openExM(eid){var ed=eid?exT.find(function(e){return e.id===eid;}):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='fg2'><div class='field'><label>Nome</label><input id='eNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Tomografia'></div><div class='field'><label>Icone</label><input id='eIco' value='"+(ed?esc(ed.ico):"🩻")+"'></div></div><div class='fg2'><div class='field'><label>Preco Particular (R$)</label><input type='number' id='eP' value='"+(ed?ed.p:100)+"'></div><div class='field'><label>Pontos Fidelidade</label><input type='number' id='ePt' value='"+(ed?ed.pts:40)+"'></div></div></div>";openM(eid?"Editar Exame":"Novo Exame",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:eid?"Salvar":"Adicionar",cls:"btng",fn:function(){var nm=document.getElementById("eNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}if(ed){ed.n=nm;ed.ico=document.getElementById("eIco").value;ed.p=parseInt(document.getElementById("eP").value)||100;ed.pts=parseInt(document.getElementById("ePt").value)||40;}else{exT.push({id:"e"+Date.now(),n:nm,ico:document.getElementById("eIco").value,p:parseInt(document.getElementById("eP").value)||100,pts:parseInt(document.getElementById("ePt").value)||40});}var exObj=eid?exT.find(function(e){return e.id===eid;}):exT[exT.length-1];dbSaveEx(exObj,!eid).then(function(){});closeM();rcfg();toast("✅",nm+(eid?" atualizado":" adicionado"));}}]);}
 function delEx(id){var e=exT.find(function(x){return x.id===id;});openM("Remover Exame","<p style='color:var(--gr)'>Remover <strong>"+esc(e?e.n:id)+"</strong>?</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Remover",cls:"btnr",fn:function(){exT=exT.filter(function(x){return x.id!==id;});dbDelEx(id);closeM();rcfg();toast("🗑️","Removido");}}]);}
-function openPrM(eid){var ed=eid?prems.find(function(p){return p.id===eid;}):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='fg2'><div class='field'><label>Nome</label><input id='pNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Desconto 10%'></div><div class='field'><label>Icone</label><input id='pIco' value='"+(ed?ed.ico:"🎁")+"'></div></div><div class='field'><label>Descricao</label><input id='pDs' value='"+(ed?esc(ed.ds):"")+"'></div><div class='field'><label>Pontos necessarios</label><input type='number' id='pPt' value='"+(ed?ed.pts:500)+"'></div></div>";openM(eid?"Editar Premio":"Novo Premio",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:eid?"Salvar":"Adicionar",cls:"btng",fn:function(){var nm=document.getElementById("pNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}if(ed){ed.n=nm;ed.ico=document.getElementById("pIco").value;ed.ds=document.getElementById("pDs").value;ed.pts=parseInt(document.getElementById("pPt").value)||500;}else{var nid=prems.length?Math.max.apply(null,prems.map(function(x){return x.id;}))+1:1;prems.push({id:nid,n:nm,ico:document.getElementById("pIco").value,ds:document.getElementById("pDs").value,pts:parseInt(document.getElementById("pPt").value)||500});}closeM();rcfg();toast("✅",nm+(eid?" atualizado":" adicionado"));}}]);}
+function openPrM(eid){var ed=eid?prems.find(function(p){return p.id===eid;}):null;var b="<div style='display:flex;flex-direction:column;gap:10px'><div class='fg2'><div class='field'><label>Nome</label><input id='pNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Desconto 10%'></div><div class='field'><label>Icone</label><input id='pIco' value='"+(ed?esc(ed.ico):"🎁")+"'></div></div><div class='field'><label>Descricao</label><input id='pDs' value='"+(ed?esc(ed.ds):"")+"'></div><div class='field'><label>Pontos necessarios</label><input type='number' id='pPt' value='"+(ed?ed.pts:500)+"'></div></div>";openM(eid?"Editar Premio":"Novo Premio",b,[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:eid?"Salvar":"Adicionar",cls:"btng",fn:function(){var nm=document.getElementById("pNm").value.trim();if(!nm){toast("⚠️","Informe o nome");return;}if(ed){ed.n=nm;ed.ico=document.getElementById("pIco").value;ed.ds=document.getElementById("pDs").value;ed.pts=parseInt(document.getElementById("pPt").value)||500;}else{var nid=prems.length?Math.max.apply(null,prems.map(function(x){return x.id;}))+1:1;prems.push({id:nid,n:nm,ico:document.getElementById("pIco").value,ds:document.getElementById("pDs").value,pts:parseInt(document.getElementById("pPt").value)||500});}var prObj=eid?prems.find(function(p){return p.id===eid;}):prems[prems.length-1];dbSavePrem(prObj,!eid).then(function(){});closeM();rcfg();toast("✅",nm+(eid?" atualizado":" adicionado"));}}]);}
 function delPr(id){var p=prems.find(function(x){return x.id===id;});openM("Remover","<p style='color:var(--gr)'>Remover <strong>"+esc(p?p.n:"")+"</strong>?</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Remover",cls:"btnr",fn:function(){prems=prems.filter(function(x){return x.id!==id;});dbDelPrem(id);closeM();rcfg();toast("🗑️","Removido");}}]);}
 
-function saveCbPct(){var v=parseInt(document.getElementById("cbPct").value)||5;CASHBACK_PCT=v;toast("💾","Pontos "+v+"% salvo!");}
+function saveCbPct(){
+  var v=parseInt(document.getElementById("cbPct").value)||5;
+  if(v < 1) v = 1;
+  if(v > 50) v = 50;
+  CASHBACK_PCT=v;
+  if(typeof supa !== "undefined"){
+    supa.from("configuracoes").upsert({
+      chave:"cashback_pct",
+      valor:v,
+      updated_at:new Date().toISOString()
+    }, {onConflict:"chave"}).then(function(res){
+      if(res.error){
+        console.error("saveCbPct:", res.error);
+        toast("⚠️","Erro ao salvar no servidor.");
+      }else{
+        toast("💾","Pontos "+v+"% salvo!");
+      }
+    });
+  }else{
+    toast("💾","Pontos "+v+"% salvo nesta sessão!");
+  }
+}
 
 function calcDiasUteis(dataBase, dias){
   var d = new Date(dataBase);
@@ -8446,9 +8405,9 @@ function mostrarEndDent(){
   var el = document.getElementById("dentEndInfo");
   if(!el) return;
   var dId = parseInt(document.getElementById("dSel").value) || 0;
-  if(!dId){ el.innerHTML = ""; return; }
+  if(!dId){ el.textContent = ""; return; }
   var d = fdent(dId);
-  if(d && d.end){ el.innerHTML = "📍 " + d.end; } else { el.innerHTML = ""; }
+  if(d && d.end){ el.textContent = "📍 " + d.end; } else { el.textContent = ""; }
 }
 function filtrarRankingDents(){
   var termo = (document.getElementById("cbDentBusca")?.value || "").toLowerCase();
