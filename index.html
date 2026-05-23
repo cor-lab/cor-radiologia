@@ -255,6 +255,19 @@
               created_by (e copia pra updated_by inicial), UPDATE toca
               apenas updated_by. Coluna agendamentos.updated_by criada
               (uuid FK pra usuarios.id, nullable pra historico antigo).
+              AUDITORIA (v3.2, ajuste): FK de created_by/updated_by foi
+              realinhada de public.usuarios.id pra auth.users.id depois
+              de teste real do front. App sempre salvou auth.users.id em
+              campos similares (ex: acesso_paciente_tokens.created_by);
+              o padrao oficial do Supabase tambem usa auth.uid() em
+              audits e RLS. Validado com criacao real (id=99243).
+              IDS ALINHADOS (v3.3): dbSaveUser reescrito pra criar
+              usuarios novos com auth.users.id == public.usuarios.id.
+              Estrategia: signUp PRIMEIRO (gera UUID em auth.users) e
+              INSERT em public.usuarios usando esse mesmo UUID como id.
+              Resolve a divergencia historica que afetava 3 dos 4
+              usuarios ativos (so a Fernanda tinha IDs iguais). A partir
+              dessa versao, todo cadastro novo nasce com IDs alinhados.
               FIX: percentual de cashback (pontos de dentista) passa a
               carregar/salvar em configuracoes.cashback_pct. Linha
               criada com valor padrao 5 pra parar de dar 406 no console.
@@ -1856,7 +1869,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.2 - 2026-05-23";
+var APP_VERSION = "v3.3 - 2026-05-23";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -3675,6 +3688,9 @@ async function dbSaveUser(u, senha, isNew) {
   var ini  = (u.ini || u.nome.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2)).toUpperCase();
   var bg   = bgMap[role] || bgMap["agenda"];
 
+  // ⚡ AUDITORIA 2026-05-23 (v3.2) — Cliente Supabase separado pra signUp.
+  // Usar persistSession=false evita que o signUp invalide a sessão do admin
+  // que está cadastrando (não troca o JWT do localStorage).
   var supaAuth = supabase.createClient(SUPA_URL, SUPA_KEY, {
     auth: {
       persistSession: false,
@@ -3690,7 +3706,36 @@ async function dbSaveUser(u, senha, isNew) {
 
   try {
     if (isNew) {
+      // ⚡ ID ALINHADO 2026-05-23 (v3.2) — auth.signUp PRIMEIRO.
+      // Estratégia anterior: INSERT em public.usuarios gerava um UUID, e
+      // depois signUp criava OUTRO UUID em auth.users. Resultado: 3 dos 4
+      // usuários históricos têm IDs desalinhados, dificultando JOINs e
+      // bloqueando FKs de auditoria que apontam pra public.usuarios.
+      //
+      // Agora: signUp cria o usuário em auth.users e retorna o UUID; esse
+      // mesmo UUID vai como id do INSERT em public.usuarios. Resultado:
+      // ambas as tabelas com o MESMO id pra cada usuário.
+      if (!senha) {
+        console.error("dbSaveUser: senha obrigatoria pra criar usuario novo");
+        return false;
+      }
+
+      var authRes = await supaAuth.auth.signUp({ email: email, password: senha });
+      console.log("AUTH signUp =>", authRes);
+
+      if (authRes.error) {
+        console.error("AUTH signUp error =>", authRes.error);
+        return false;
+      }
+      if (!authRes.data || !authRes.data.user || !authRes.data.user.id) {
+        console.error("AUTH signUp sem user.id na resposta =>", authRes);
+        return false;
+      }
+
+      var authUserId = authRes.data.user.id;
+
       var perfil = {
+        id: authUserId,            // mesmo UUID do auth.users
         nome: u.nome,
         email: email,
         role: role,
@@ -3706,8 +3751,11 @@ async function dbSaveUser(u, senha, isNew) {
 
       if (r.error) {
         console.error("PROFILE INSERT error =>", r.error);
+        // Fallback: pode ser que o email já exista em public.usuarios
+        // (usuário órfão de cadastro anterior). Faz UPDATE pra alinhar
+        // o id com o auth.users que acabamos de criar.
         var r2 = await supa.from("usuarios")
-          .update({ nome: u.nome, role: role, ini: ini, bg: bg, ativo: true, dent_id: u.dentId || null })
+          .update({ id: authUserId, nome: u.nome, role: role, ini: ini, bg: bg, ativo: true, dent_id: u.dentId || null })
           .eq("email", email)
           .select().single();
         console.log("PROFILE UPDATE fallback =>", r2);
@@ -3720,14 +3768,6 @@ async function dbSaveUser(u, senha, isNew) {
         u.id = r.data.id;
       }
 
-      if (senha) {
-        var authRes = await supaAuth.auth.signUp({ email: email, password: senha });
-        console.log("AUTH signUp =>", authRes);
-        if (authRes.error) {
-          console.error("AUTH signUp error =>", authRes.error);
-          return false;
-        }
-      }
       return true;
     } else {
       var upd = { nome: u.nome, role: role, ini: ini, bg: bg, ativo: u.ativo !== false, dent_id: u.dentId || null };
