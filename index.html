@@ -232,6 +232,21 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-26 (hotfix v3.8.1): maskPhone preserva posição do cursor.
+              BUG observado em produção: ao editar DDD de telefone
+              já formatado, o cursor saltava pro fim do número a
+              cada tecla. Causa: maskPhone reescrevia el.value sem
+              restaurar selectionStart, e o navegador joga o cursor
+              pra ponta por padrão.
+              FIX: antes de reformatar, conta dígitos à esquerda do
+              cursor no valor ATUAL (com máscara). Depois de reescrever
+              el.value, varre o novo valor formatado avançando até
+              encontrar o N-ésimo dígito e chama setSelectionRange.
+              Funciona pra qualquer posição de edição (DDD, meio do
+              número, etc) e independe da regex de formatação.
+              Sem efeito colateral: try/catch em selectionStart e
+              setSelectionRange pra inputs que não suportam.
+
   2026-05-26: Propagação completa de paciente vinculado + bloqueio de
               desconto em itens terceirizados (v3.8).
 
@@ -2076,7 +2091,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.8 - 2026-05-26";
+var APP_VERSION = "v3.8.1 - 2026-05-26";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -6992,7 +7007,28 @@ function limparFormNovoAg(modoAtendimento){
 }
 function maskPhone(el){
   if(!el) return;
-  var v = String(el.value || "").replace(/\D/g, "").slice(0, 11);
+
+  // v3.8.1 (2026-05-26): preservar posição do cursor ao reformatar.
+  // Bug observado: editar DDD de telefone já formatado fazia o cursor
+  // saltar pro fim do número a cada tecla. Causa: el.value reescrito
+  // sem chamar setSelectionRange, navegador joga cursor pra ponta.
+  // Solução: contar dígitos à esquerda do cursor ANTES da reformatação;
+  // depois posicionar o cursor no mesmo dígito do novo valor formatado.
+  var prevSelStart = null;
+  try {
+    if (typeof el.selectionStart === "number") prevSelStart = el.selectionStart;
+  } catch(e) { /* alguns tipos de input não suportam selectionStart */ }
+
+  var raw = String(el.value || "");
+  // Conta dígitos à esquerda do cursor no valor ATUAL (com máscara)
+  var digitsBeforeCursor = 0;
+  if (prevSelStart !== null) {
+    for (var i = 0; i < prevSelStart && i < raw.length; i++) {
+      if (raw.charCodeAt(i) >= 48 && raw.charCodeAt(i) <= 57) digitsBeforeCursor++;
+    }
+  }
+
+  var v = raw.replace(/\D/g, "").slice(0, 11);
 
   if (v.length > 10) {
     v = v.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, "($1) $2-$3");
@@ -7005,6 +7041,17 @@ function maskPhone(el){
   }
 
   el.value = v;
+
+  // Recoloca cursor no mesmo "dígito" do novo valor formatado
+  if (prevSelStart !== null) {
+    var newPos = 0;
+    var seen = 0;
+    while (newPos < v.length && seen < digitsBeforeCursor) {
+      if (v.charCodeAt(newPos) >= 48 && v.charCodeAt(newPos) <= 57) seen++;
+      newPos++;
+    }
+    try { el.setSelectionRange(newPos, newPos); } catch(e) { /* ignora */ }
+  }
 }
 function obterDescontoPagamento(formaPagamento){
   if(formaPagamento === "avista") return 20;
