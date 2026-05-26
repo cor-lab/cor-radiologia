@@ -232,6 +232,161 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-26: Propagação completa de paciente vinculado + bloqueio de
+              desconto em itens terceirizados (v3.8).
+
+              ## FIX 1: Propagação de paciente vinculado
+              BUG: paciente vinculado a um agendamento NAO recebia
+              atualizacoes de campos quando recepcionista digitava
+              dados novos (CPF, email, CEP, logradouro, telefone, etc.)
+              numa CRIACAO ou EDICAO. Sintoma observado: paciente
+              MANUELA NAIDON (id=96449, ag=99252, seq=214987) ficou
+              com cpf=NULL e email=NULL no cadastro mestre mesmo
+              apos a recepcionista preencher os 2 campos no
+              agendamento de 25/05. Bug afeta dezenas de pacientes
+              recorrentes (varredura em 26/05 achou 18+ casos nos
+              ultimos 14 dias).
+              CAUSA: 3 falhas combinadas:
+                (1) pacientes_busca.js confAgComPaciente atualizava
+                    SO o CPF do paciente vinculado (linhas 459-468);
+                (2) bloco de edicao no index.html (linhas 6038-6057,
+                    fix de 05/05 caso GABRIEL VESTENA) usava
+                    update({campo: ag.x || null}) que APAGAVA dados
+                    antigos do paciente quando o form vinha em branco;
+                (3) confAg (criacao) nao tinha propagacao alem do CPF.
+              FIX: helper unico propagarPacienteVinculado(pacId, form)
+              criado antes do dbSaveAg. Regras unificadas:
+                - so propaga se paciente_id existe (paciente vinculado);
+                - faz DIFF: so atualiza campos NAO-VAZIOS no form E
+                  DIFERENTES do paciente atual (vazio no form = preserva);
+                - normaliza CPF e telefone pra so digitos no paciente;
+                - PATCH unico apenas se houver diff (idempotente).
+              Chamado em 2 lugares: (a) bloco Salvar da edicao
+              substituiu o update bruto pelo helper; (b)
+              pacientes_busca.js confAgComPaciente substituiu o
+              bloco "so CPF" pelo helper (cobre criacao). Edições
+              futuras de dbSaveAg podem chamar o helper diretamente.
+
+              ## FIX 2: Bloqueio de desconto em itens terceirizados
+              BUG: itens "SEDEX *" e "TELE ENTREGA *" recebiam o
+              desconto de pagamento a vista / 3x / 4x quando o
+              agendamento era marcado como Particular ou Tabela 2025.
+              Esses sao servicos de terceiros (correios e motoboy)
+              cobrados em valor fechado: aplicar desconto sobre eles
+              significa que a COR esta absorvendo o desconto enquanto
+              repassa o valor cheio ao terceirizado.
+              FIX: helper isItemTerceirizado(it) detecta por prefixo
+              do nome do exame (case/acento-insensitive). Constante
+              TERCEIRIZADOS_PREFIXOS = ["SEDEX", "TELE ENTREGA"]
+              (adicionar prefixo aqui pra incluir novos terceirizados
+              no futuro). itemTemDesconto() retorna false logo no
+              inicio se o item for terceirizado, independente do
+              convenio. Resolucao do nome do item via it.nome_exame
+              -> it.nome -> fex(it.exame_id).n.
+
+              ## FIX 3: P1 da revisão — vínculo seguro e Novo Atendimento
+              BUG (a): confAgComPaciente em pacientes_busca.js (wrapper
+              do confAg) chamava _confAgOriginal() sem args e depois
+              pegava ags[ags.length-1] pra fazer PATCH paciente_id.
+              Se o confAg falhasse por validacao (toast "Selecione
+              exame", "Informe nome", etc.) OU por erro de dbSaveAg,
+              ags[length-1] era um ag anterior — paciente_id era
+              gravado no agendamento ERRADO.
+              BUG (b): "Novo Atendimento" chama confAg(true). Como o
+              wrapper nao aceitava args nem repassava, isAtendimento
+              chegava undefined no confAg original — status nao virava
+              "realizado" e WhatsApp era aberto (atendimento ao vivo
+              nao deve abrir WhatsApp).
+              FIX: contrato do confAg mudou. Agora retorna o ag salvo
+              em caso de sucesso e null em qualquer falha (early
+              _agSaving, validacao, ou dbSaveAg). O wrapper passou a
+              ter assinatura confAgComPaciente(isAtendimento), repassa
+              pro _confAgOriginal e usa o retorno (agSalvo) pra decidir
+              se faz o PATCH de paciente_id. Se agSalvo for null, nao
+              faz PATCH e loga "paciente_id NAO vinculado".
+              ## FIX 4: P2 da revisão — calcValoresAg ignora desconto legado
+              BUG: ag antigos de Sedex/Tele/Convênio com desconto_valor
+              ou desconto_percentual salvos no banco (pre-v3.8 ou erro
+              de digitação) continuavam aparecendo COM desconto no
+              relatório de caixa, no modal NFS-e e em qualquer lugar
+              que chamasse calcValoresAg. Exemplo: ag SÓ Sedex R$30
+              com desconto_valor=6 salvo → calcValoresAg cai no else
+              if(desconto > 0) e devolve faturado=24.
+              FIX: guarda no início do bloco de cálculo de desconto.
+              Se itens.length>0 E somaComDesc===0 E somaSemDesc>0 →
+              retorna imediatamente faturado=bruto, desconto=0,
+              descontoPct=0. Caso misto (Tomografia Particular +
+              Sedex) NÃO é afetado: somaComDesc>0, fluxo normal
+              aplica desconto só sobre a parte descontável. Testado
+              com 7 cenários reais (ag puro/misto/SUS/Particular).
+
+              ## FIX 5: P3 da revisão — paciente não-solto
+              BUG: o wrapper confAgComPaciente criava/atualizava o
+              paciente ANTES de chamar o confAg original. Se a
+              validação do agendamento falhasse (faltou exame, data,
+              hora ou dentista), o paciente já tinha sido
+              criado/atualizado sem nenhum agendamento associado.
+              Resultado: pacientes "soltos" no banco e dados antigos
+              alterados sem motivo válido.
+              FIX: pacientes_busca.js v5 reordena o fluxo em 3 etapas
+              explícitas. Etapa 1: BUSCA read-only (nome+datanasc →
+              CPF), sem criar. Etapa 2: chama _confAgOriginal e
+              captura agSalvo. Etapa 3: SÓ SE agSalvo (truthy +
+              tem .id) — propaga (paciente existente) OU cria
+              (paciente novo) E faz PATCH paciente_id. Se agSalvo
+              for null, zero mutação em pacientes.
+
+              ## FIX 6: P3 restante — preview do modal NFS-e
+              BUG: abrirModalEmitirNota e atualizarValorNota
+              (onchange da forma de pagamento) aplicavam desconto
+              sobre ag.valor_bruto INTEIRO, incluindo Sedex/Tele/
+              Convenio. Resultado: preview mostrava valor com
+              desconto errado pra ag com terceirizados. Não era
+              bug fiscal (confirmarEmissaoNota recalculava certo
+              antes do UPDATE), mas confundia o operador.
+              FIX: novo helper calcNotaPorItens(ag, formaPg)
+              encapsula a separação CD/SD que estava inline em
+              confirmarEmissaoNota. Os 3 pontos (abrir, onchange,
+              confirmar) agora usam o mesmo helper. Fallback: se
+              ag.exames vazio, helper cai no calcularValorFinalCom
+              Desconto(ag.valor_bruto) (comportamento legado).
+
+              ## FIX 7: P3 sutil — seleção preservada em retry
+              BUG: o wrapper limpava _pacSelecionado e o badge no
+              fim da função, INCONDICIONALMENTE. Se o usuário tinha
+              selecionado um paciente do dropdown, esquecesse de
+              preencher exame/dentista/data e clicasse Confirmar
+              (validação do confAg gera toast e retorna null), a
+              seleção manual era apagada. Na retry corrigida, o
+              usuário teria que clicar de novo no paciente — pior:
+              se ele não clicasse, a busca automática refazia o
+              trabalho e podia até criar duplicata caso o paciente
+              não tivesse data_nascimento cadastrada.
+              FIX: pacientes_busca.js v5.1 — a limpeza de
+              _pacSelecionado e remoção do badge foram movidas pra
+              dentro do ramo de sucesso (agSalvo && agSalvo.id).
+              No ramo de falha: log informativo e seleção preservada.
+
+              ## FIX 8: P3 sutil — badge órfão após limpar formulário
+              BUG: limparFormNovoAg removia document.getElementById(
+              "pacVinculadoInd"), mas o badge criado pelo
+              pacientes_busca.js tem id "pacSelBadge". Resultado:
+              ao iniciar um novo agendamento (ou Novo Atendimento)
+              após uma seleção prévia, _pacSelecionado era zerado
+              corretamente, mas o badge visual continuava na tela
+              mostrando "Paciente vinculado: NOME" — recepção
+              confusa pensando que o vínculo persistia.
+              FIX: limparFormNovoAg agora remove os DOIS ids
+              ("pacSelBadge" como ID atual e "pacVinculadoInd"
+              como ID legado, mantido por compatibilidade caso
+              alguma versão tenha deixado órfão).
+
+              Único achado residual da revisão (NÃO bloqueante):
+                - calcularValorFinalComDesconto definida 3 vezes
+                  (linhas ~6838, ~6852, ~7014). Hoje idênticas, mas
+                  armadilha de manutenção — consolidar em sessão
+                  futura.
+
   2026-05-23: Blindagem operacional sem refatorar o app.
               SEGURANCA: fluxo legado de ajuste de cashback nao usa mais
               senha fixa "1234"; agora delega para a validacao da senha do
@@ -1780,6 +1935,22 @@ window.calcValoresAg = function(ag){
   var vfSalvo = Number(ag.valor_faturado || 0);
   var faturado;
 
+  // ⚡ FIX v3.8 P2 (2026-05-26) — Se há itens E nenhum deles é descontável
+  // (todos terceirizados ou todos de convênio sem desconto), o desconto
+  // histórico salvo (desconto_pct / desconto_valor) deve ser IGNORADO.
+  // Sem essa guarda, ag antigos de Sedex/Tele/Convenio com desconto_valor
+  // bugado salvo no banco continuavam mostrando desconto no relatório de
+  // caixa, modal NFS-e, etc.
+  if(itens.length > 0 && somaComDesc === 0 && somaSemDesc > 0){
+    return {
+      bruto: Number(bruto.toFixed(2)),
+      faturado: Number(bruto.toFixed(2)),
+      desconto: 0,
+      descontoPct: 0,
+      naoFaturavel: Number(naoFaturavel.toFixed(2))
+    };
+  }
+
   // desc_valor cacheado pode estar STALE. Quando desc_pct > 0, desc_pct é fonte
   // de verdade (vem da forma de pagamento) e desc_valor é recalculado a partir
   // da soma DOS ITENS COM DESCONTO atual (somaComDesc). Caso desc_pct=0 e
@@ -1905,7 +2076,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.7 - 2026-05-23";
+var APP_VERSION = "v3.8 - 2026-05-26";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -2273,6 +2444,54 @@ function updPreco(idBase, exId, valor, onChangeFn){
     window[onChangeFn]();
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// CÁLCULO DE NOTA POR ITENS (v3.8 P3 - 2026-05-26)
+// ═══════════════════════════════════════════════════════════════
+// Encapsula a regra: desconto só vale pra itens descontáveis
+// (Particular/Tabela e não terceirizados). Itens sem desconto
+// (Convenio, Sedex, Tele Entrega) entram com valor cheio.
+//
+// Usado em 3 pontos do modal de emissão NFS-e:
+//   - abrirModalEmitirNota (preenchimento inicial)
+//   - atualizarValorNota (onchange da forma de pagamento)
+//   - confirmarEmissaoNota (cálculo final antes do UPDATE)
+//
+// Antes: abrirModalEmitirNota e atualizarValorNota usavam
+// calcularValorFinalComDesconto(ag.valor_bruto, ...) — aplicavam
+// desconto sobre o bruto INTEIRO, incluindo Sedex/Tele/Convenio.
+// Preview do modal mostrava valor errado pra ag com terceirizados.
+// confirmarEmissaoNota fazia a separação inline, então o valor
+// final emitido estava correto — só o preview era enganoso.
+//
+// Fallback: se ag.exames estiver vazio, usa ag.valor_bruto direto
+// (mantém comportamento legado pra ag sem itens em memória).
+function calcNotaPorItens(ag, formaPg){
+  if(!ag) return { valor_bruto:0, valor_faturado:0, desconto_percentual:0, desconto_valor:0 };
+  var itens = ag.exames || [];
+  // Sem itens em memória: fallback no valor_bruto salvo (comportamento legado)
+  if(!itens.length){
+    return calcularValorFinalComDesconto(Number(ag.valor_bruto || ag.vl || 0), formaPg);
+  }
+  var itensFaturaveis = (typeof getItensFaturaveisPaciente === "function")
+    ? getItensFaturaveisPaciente(itens)
+    : itens;
+  var temComDesc = (typeof itemTemDesconto === "function");
+  var itensCD = itensFaturaveis.filter(function(it){ return temComDesc ? itemTemDesconto(it) : true; });
+  var itensSD = itensFaturaveis.filter(function(it){ return temComDesc ? !itemTemDesconto(it) : false; });
+  var totalSD = (typeof somarItens === "function") ? somarItens(itensSD) : 0;
+  var calc = calcularValorFinalComDesconto(
+    (typeof somarItens === "function") ? somarItens(itensCD) : 0,
+    formaPg
+  );
+  calc.valor_bruto += totalSD;
+  calc.valor_faturado += totalSD;
+  // Arredonda pra evitar drift de centavo após soma
+  calc.valor_bruto = Number(Number(calc.valor_bruto).toFixed(2));
+  calc.valor_faturado = Number(Number(calc.valor_faturado).toFixed(2));
+  return calc;
+}
+
 function abrirModalEmitirNota(agendamentoId){
   var ag = (ags || []).find(function(x){ return x.id === agendamentoId; });
   if(!ag){
@@ -2283,10 +2502,10 @@ function abrirModalEmitirNota(agendamentoId){
   AG_EMISSAO_ATUAL = ag;
 
   var formaPgFinal = ag.forma_pagamento_final || ag.forma_pagamento_prevista || "avista";
-  var calcPgFinal = calcularValorFinalComDesconto(
-    Number(ag.valor_bruto || ag.vl || 0),
-    formaPgFinal
-  );
+  // v3.8 P3 fix: usa helper que separa itens com/sem desconto.
+  // Antes: aplicava desconto sobre ag.valor_bruto inteiro → preview
+  // errado pra ag com Sedex/Tele/Convenio.
+  var calcPgFinal = calcNotaPorItens(ag, formaPgFinal);
 
   document.getElementById("nfPaciente").value = ag.pac || "";
   document.getElementById("nfDentistaId").value = ag.dId || "";
@@ -2360,12 +2579,10 @@ async function confirmarEmissaoNota() {
       ag.forma_pagamento_prevista ||
       "avista";
 
-    var itensFaturaveis = getItensFaturaveisPaciente(ag.exames || []);
-    var itensCD = itensFaturaveis.filter(function(it){ return itemTemDesconto(it); });
-    var itensSD = itensFaturaveis.filter(function(it){ return !itemTemDesconto(it); });
-    var calcPgFinal = calcularValorFinalComDesconto(somarItens(itensCD), formaPagamentoFinal);
-    calcPgFinal.valor_bruto += somarItens(itensSD);
-    calcPgFinal.valor_faturado += somarItens(itensSD);
+    // v3.8 P3 fix: mesma lógica do preview (helper único).
+    // Antes: cálculo inline aqui, separado do preview — preview ficou
+    // com fórmula bugada quando havia terceirizados. Agora helper único.
+    var calcPgFinal = calcNotaPorItens(ag, formaPagamentoFinal);
     var valorServico = calcPgFinal.valor_faturado;
 
     if (valorServico <= 0) {
@@ -3329,6 +3546,116 @@ async function dbSaveAgRpc(ag, payload, rows){
     return {used:true, ok:false};
   }
 }
+// ═══════════════════════════════════════════════════════════════
+// PROPAGAÇÃO DE PACIENTE VINCULADO (v3.8 - 2026-05-26)
+// ═══════════════════════════════════════════════════════════════
+// Sincroniza o cadastro mestre `pacientes` com os dados do form
+// quando há paciente_id vinculado. Regra unificada para criação
+// (via confAgComPaciente em pacientes_busca.js) E edição.
+//
+// Princípios:
+//   - Só roda se houver paciente vinculado (paciente_id truthy).
+//     Criação de paciente novo é feita por confAgComPaciente.
+//   - DIFF: só atualiza campos NÃO-VAZIOS no form E DIFERENTES do
+//     paciente atual. Vazio no form = preserva valor do paciente.
+//   - CPF e telefone normalizados pra só dígitos no `pacientes`
+//     (no `agendamentos` ficam como o usuário digitou — formatados).
+//   - PATCH único, idempotente. Se não houver diff, retorna sem
+//     bater no Supabase.
+//   - Falha não propaga: try/catch e retorna false (não bloqueia
+//     o save do agendamento que veio antes).
+//
+// Campos compartilhados pacientes <-> agendamentos.paciente_*:
+//   cpf, telefone, email, data_nascimento, sexo, cep, logradouro,
+//   numero, complemento, bairro, municipio, uf
+//
+// Exemplo de uso (na edição):
+//   await propagarPacienteVinculado(a.pId, {
+//     cpf: a.paciente_cpf, telefone: a.tel, email: a.paciente_email,
+//     ...
+//   });
+async function propagarPacienteVinculado(pacienteId, form){
+  if(!pacienteId) return false;
+  if(!form || typeof form !== "object") return false;
+
+  // Normalização: CPF e telefone só dígitos no cadastro mestre
+  var formCpfNorm = (form.cpf || "").replace(/\D/g, "");
+  var formTelNorm = (form.telefone || "").replace(/\D/g, "");
+
+  // Campos a considerar e valores normalizados/trimados do form
+  var camposForm = {
+    cpf:              formCpfNorm,
+    telefone:         formTelNorm,
+    email:            (form.email || "").trim(),
+    data_nascimento:  (form.data_nascimento || "").trim() || null,
+    sexo:             (form.sexo || "").trim(),
+    cep:              (form.cep || "").trim(),
+    logradouro:       (form.logradouro || "").trim(),
+    numero:           (form.numero || "").trim(),
+    complemento:      (form.complemento || "").trim(),
+    bairro:           (form.bairro || "").trim(),
+    municipio:        (form.municipio || "").trim(),
+    uf:               (form.uf || "").trim().toUpperCase()
+  };
+
+  try{
+    // 1. Lê estado atual do paciente
+    var r = await supaFetch("/rest/v1/pacientes?id=eq." + encodeURIComponent(pacienteId) + "&select=*");
+    var arr = await r.json();
+    if(!Array.isArray(arr) || arr.length === 0){
+      console.warn("[COR] propagarPacienteVinculado: paciente nao encontrado:", pacienteId);
+      return false;
+    }
+    var pac = arr[0];
+
+    // 2. DIFF: só campos NÃO-VAZIOS e DIFERENTES
+    var patch = {};
+    Object.keys(camposForm).forEach(function(k){
+      var v = camposForm[k];
+      // Regra "vazio preserva": pula campo vazio do form (não apaga paciente)
+      if(v === null || v === "" || typeof v === "undefined") return;
+      var atual = pac[k];
+      // Normaliza pra comparar
+      var atualStr = (atual === null || typeof atual === "undefined") ? "" : String(atual);
+      var formStr = String(v);
+      if(atualStr !== formStr){
+        patch[k] = v;
+      }
+    });
+
+    // 3. Sem diff, nada a fazer
+    if(Object.keys(patch).length === 0){
+      return true;
+    }
+
+    patch.updated_at = new Date().toISOString();
+
+    // 4. PATCH no Supabase
+    var rUp = await supaFetch(
+      "/rest/v1/pacientes?id=eq." + encodeURIComponent(pacienteId),
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Prefer": "return=minimal"
+        },
+        body: JSON.stringify(patch)
+      }
+    );
+
+    if(!rUp.ok){
+      console.error("[COR] propagarPacienteVinculado: PATCH falhou", rUp.status);
+      return false;
+    }
+
+    console.log("[COR] paciente " + pacienteId + " atualizado:", Object.keys(patch).filter(function(k){return k !== "updated_at";}).join(", "));
+    return true;
+  }catch(e){
+    console.error("[COR] propagarPacienteVinculado erro:", e);
+    return false;
+  }
+}
+
 async function dbSaveAg(ag){
   // ⚡ FIX 18/05/2026 — repropagação forçada em edição de exame antigo (v3.0)
   // O sync_service.py só varre edições com data_exame >= 7 dias atrás (otimização).
@@ -6028,32 +6355,28 @@ function openEditAg(id) {
         return;
       }
 
-      // ⚡ FIX 05/05/2026 — propaga edição do paciente pra tabela `pacientes`
-      // Antes: dbSaveAg só atualizava `agendamentos.paciente_*`. O cadastro
-      // mestre `pacientes` ficava desatualizado. Caso GABRIEL VESTENA
-      // (paciente 141721): editou DOB no agendamento, salvou em
-      // agendamentos.paciente_data_nascimento mas pacientes.data_nascimento
-      // continuava NULL — abrir cadastro do paciente mostrava DOB vazia.
-      // Não bloqueia o save do agendamento se este UPDATE falhar.
+      // ⚡ FIX v3.8 — propagação completa de paciente vinculado.
+      // Antes (fix 05/05/2026 caso GABRIEL VESTENA): update bruto
+      // que apagava dados antigos quando form vinha vazio. Agora
+      // usa helper propagarPacienteVinculado() com DIFF: só atualiza
+      // campos NÃO-VAZIOS no form E DIFERENTES do paciente atual.
+      // Vazio no form preserva valor do paciente. Falha não bloqueia
+      // o save do agendamento.
       if (a.pId) {
-        try {
-          await supa.from("pacientes").update({
-            cpf: a.paciente_cpf || null,
-            data_nascimento: a.paciente_data_nascimento || null,
-            sexo: a.paciente_sexo || null,
-            telefone: a.tel || null,
-            email: a.paciente_email || null,
-            cep: a.paciente_cep || null,
-            logradouro: a.paciente_logradouro || null,
-            numero: a.paciente_numero || null,
-            complemento: a.paciente_complemento || null,
-            bairro: a.paciente_bairro || null,
-            municipio: a.paciente_municipio || null,
-            uf: a.paciente_uf || null
-          }).eq("id", a.pId);
-        } catch (e) {
-          console.error("Propagação paciente:", e);
-        }
+        await propagarPacienteVinculado(a.pId, {
+          cpf:              a.paciente_cpf,
+          telefone:         a.tel,
+          email:            a.paciente_email,
+          data_nascimento:  a.paciente_data_nascimento,
+          sexo:             a.paciente_sexo,
+          cep:              a.paciente_cep,
+          logradouro:       a.paciente_logradouro,
+          numero:           a.paciente_numero,
+          complemento:      a.paciente_complemento,
+          bairro:           a.paciente_bairro,
+          municipio:        a.paciente_municipio,
+          uf:               a.paciente_uf
+        });
       }
 
       lastAg = a; // 🔥 ESSENCIAL
@@ -6201,7 +6524,10 @@ function updAgSumEdit(){
     "</div>";
 }
 async function confAg(isAtendimento) {
-  if (_agSaving) return;
+  // v3.8: retorna o agendamento criado em caso de sucesso, ou null em falha
+  // (validação ou erro de save). Usado pelo wrapper confAgComPaciente em
+  // pacientes_busca.js pra vincular paciente_id APENAS quando ag foi salvo.
+  if (_agSaving) return null;
   _agSaving = true;
   setTimeout(function(){ _agSaving = false; }, 3000);
 
@@ -6234,16 +6560,16 @@ async function confAg(isAtendimento) {
 
   if (!itens.length) {
     toast("⚠️", "Selecione ao menos um exame");
-    return;
+    return null;
   }
 
   var dur = parseInt(document.getElementById("pDur").value) || 30;
   var dId = parseInt(document.getElementById("dSel").value) || 0;
 
-  if (!nm) { toast("!", "Informe o nome do paciente"); return; }
-  if (!dtR) { toast("!", "Selecione uma data"); return; }
-  if (!hr) { toast("!", "Informe o horario"); return; }
-  if (!dId) { toast("!", "Selecione o dentista"); return; }
+  if (!nm) { toast("!", "Informe o nome do paciente"); return null; }
+  if (!dtR) { toast("!", "Selecione uma data"); return null; }
+  if (!hr) { toast("!", "Informe o horario"); return null; }
+  if (!dId) { toast("!", "Selecione o dentista"); return null; }
 
   var pts3 = dtR.split("-");
   var df4 = pts3[2] + "/" + pts3[1] + "/" + pts3[0];
@@ -6322,7 +6648,7 @@ async function confAg(isAtendimento) {
   if (!ok) {
     ags = (ags || []).filter(function(x){ return x !== ag; });
     toast("⚠️", "Erro ao salvar agendamento");
-    return;
+    return null;
   }
 
   agBase = new Date(parseInt(pts3[0]), parseInt(pts3[1]) - 1, parseInt(pts3[2]));
@@ -6393,6 +6719,10 @@ async function confAg(isAtendimento) {
       console.error("Erro ao abrir WhatsApp:", e);
     }
   }, 300);
+
+  // v3.8: contrato de retorno — sucesso devolve o ag criado pra que o wrapper
+  // confAgComPaciente saiba que o save foi confirmado e possa vincular paciente_id.
+  return ag;
 }
 function rexames() {
   if(!canAcc("exames")){deny(document.getElementById("pgEx"));return;}
@@ -6594,6 +6924,13 @@ function limparFormNovoAg(modoAtendimento){
   if(pFormaEntrega) pFormaEntrega.value = "digital";
   // Limpar paciente vinculado
   if (typeof _pacSelecionado !== "undefined") _pacSelecionado = null;
+  // v3.8 fix: o badge ATUAL tem id "pacSelBadge" (criado em pacientes_busca.js).
+  // O "pacVinculadoInd" é nome legado que ainda removemos por compat (caso
+  // alguma versão antiga tenha deixado órfão na tela). Sem remover o
+  // pacSelBadge, o badge sobreviveria à limpeza do form e confundiria
+  // a recepção mostrando vínculo de paciente inexistente.
+  var indNovo = document.getElementById("pacSelBadge");
+  if(indNovo) indNovo.remove();
   var ind = document.getElementById("pacVinculadoInd");
   if(ind) ind.remove();
   // Limpar dentista
@@ -6709,8 +7046,8 @@ function atualizarValorNota(){
 
   var ag = AG_EMISSAO_ATUAL;
   var formaPg = document.getElementById("nfFormaPg")?.value || "avista";
-  var valorBase = Number(ag.valor_bruto || ag.vl || 0);
-  var calc = calcularValorFinalComDesconto(valorBase, formaPg);
+  // v3.8 P3 fix: usa helper que separa itens com/sem desconto.
+  var calc = calcNotaPorItens(ag, formaPg);
 
   document.getElementById("nfValorServico").value = calc.valor_faturado.toFixed(2);
 }
@@ -8702,7 +9039,42 @@ function itemEhConvenioForaDoFaturamento(it){
   return nomeConvenio.indexOf("unimed") >= 0 || nomeConvenio.indexOf("syns") >= 0;
 }
 
+// ════════════════════════════════════════════════════════════
+// ITENS TERCEIRIZADOS — sem desconto (v3.8 - 2026-05-26)
+// ════════════════════════════════════════════════════════════
+// Sedex e Tele Entrega são serviços de terceiros (correios e
+// motoboy). Não cabe aplicar desconto a vista / 3x / 4x sobre o
+// que o serviço cobra. Detecção por PREFIXO do nome do exame
+// (case-insensitive, sem acentos). Adicione novos prefixos aqui
+// quando surgir outro serviço terceirizado:
+var TERCEIRIZADOS_PREFIXOS = ["SEDEX", "TELE ENTREGA"];
+
+function isItemTerceirizado(it){
+  if(!it) return false;
+  // Tenta pegar nome via campos do próprio item; senão resolve via fex(id)
+  var nm = "";
+  if(typeof it.nome_exame === "string" && it.nome_exame) nm = it.nome_exame;
+  else if(typeof it.nome === "string" && it.nome) nm = it.nome;
+  else if(it.exame_id && typeof fex === "function"){
+    var ex = fex(it.exame_id);
+    nm = (ex && ex.n) ? ex.n : "";
+  }
+  if(!nm) return false;
+  // Normaliza: maiúsculas, sem acentos, trim
+  var nmNorm = nm.toUpperCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .trim();
+  for(var i = 0; i < TERCEIRIZADOS_PREFIXOS.length; i++){
+    if(nmNorm.indexOf(TERCEIRIZADOS_PREFIXOS[i]) === 0) return true;
+  }
+  return false;
+}
+
 function itemTemDesconto(it){
+  // BLOQUEIO v3.8: itens terceirizados (Sedex/Tele Entrega) nunca recebem
+  // desconto independente do convênio — são serviços de terceiros.
+  if(isItemTerceirizado(it)) return false;
+
   // Particular e Tabela 2025 têm desconto à vista/parcelamento
   // Convenio 2025, SUS e outros convênios: preço fixo, sem desconto
   var cvId = (it && it.convenio_id) ? String(it.convenio_id).trim() : "";

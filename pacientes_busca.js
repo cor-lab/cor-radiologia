@@ -49,14 +49,48 @@
 //
 //   ───────── HISTÓRICO ─────────
 //
+//   v5.1 — 2026-05-26 — Fix sutil de UX: seleção do paciente
+//        preservada quando confAg retorna null. Antes: a limpeza
+//        de _pacSelecionado e do badge acontecia sempre, mesmo em
+//        falha de validação. Cenário ruim: usuário escolhe paciente
+//        no dropdown, esquece de selecionar exame, clica Confirmar
+//        (toast de erro), corrige e clica de novo — mas a vinculação
+//        manual já tinha sido perdida; a busca automática refazia o
+//        trabalho e podia até criar duplicata se o paciente não
+//        tivesse data_nascimento cadastrada. Agora limpa só dentro
+//        do ramo de sucesso (agSalvo && agSalvo.id).
+//   v5 — 2026-05-26 — P3 fix: criação de paciente movida pra DEPOIS
+//        do confAg confirmar o save. Antes: se a validação do
+//        agendamento falhasse (faltou exame/data/dentista), o
+//        paciente já tinha sido criado e atualizado — ficava
+//        "solto" no banco. Agora: na etapa 1 só faz BUSCA
+//        read-only por nome+datanasc → CPF; na etapa 2 chama o
+//        confAg; só na etapa 3 (com agSalvo confirmado) aplica
+//        propagação (paciente existente) ou criação (paciente
+//        novo). Se confAg retornar null, zero mutação em pacientes.
+//        Inclui também os fixes anteriores da v4.
+//   v4 — 2026-05-26 — Propagação COMPLETA do paciente vinculado.
+//        Antes: atualizava só CPF (linhas 459-468) ignorando tel,
+//        email, CEP, logradouro, numero, complemento, bairro,
+//        municipio, UF, data_nascimento, sexo. Caso real corrigido:
+//        MANUELA NAIDON (paciente 96449, ag 99252, seq 214987) —
+//        recepcionista digitou CPF e email no agendamento e ficaram
+//        apenas em agendamentos.paciente_*, nunca subiram pro
+//        cadastro mestre. Agora usa helper global
+//        propagarPacienteVinculado() (definido em index.html) com
+//        DIFF: só campos não-vazios e diferentes. Regra "vazio no
+//        form preserva valor do paciente".
 //   v3 — RLS authenticated fix (migração fetch → supa.from)
 //   v2 — Vinculação Nome+DataNasc com atualização de CPF divergente
 //   v1 — Busca simples por nome/CPF
 //
 // ═══════════════════════════════════════════════════════════════════════════
-// MODULO BUSCA DE PACIENTES - COR v3 (RLS authenticated fix)
+// MODULO BUSCA DE PACIENTES - COR v5.1 (preserva seleção em retry)
 // Busca inteligente com vinculação por Nome + Data Nascimento
 // CPF diferente com mesmo nome+datanasc = mesmo paciente (atualiza CPF)
+// Propagação completa do paciente vinculado ao salvar agendamento
+// Criação de paciente novo apenas APÓS confirmação do save do agendamento
+// Seleção manual preservada quando confAg falha (retry sem perder vínculo)
 // Incluir no index.html antes do </body>
 // <script src="pacientes_busca.js"></script>
 // ============================================================
@@ -374,7 +408,18 @@ function initBuscaCpf(inputId) {
 var _confAgOriginal = typeof confAg === "function" ? confAg : null;
 
 // Sobrescrever confAg para incluir paciente_id e logica de vinculação
-async function confAgComPaciente() {
+// v5 (2026-05-26 P3 fix): reordena o fluxo para evitar paciente "solto":
+// 1. lê dados do form
+// 2. BUSCA (read-only) por nome+datanasc → CPF; NÃO cria nada ainda
+// 3. chama _confAgOriginal(isAtendimento) e captura agSalvo
+// 4. SÓ SE agSalvo:
+//    a) se _pacSelecionado já existe (vinculação prévia ou auto), propaga
+//       campos não-vazios pro cadastro mestre (helper propagarPacienteVinculado)
+//    b) se _pacSelecionado NÃO existe, cria paciente novo agora com os
+//       dados do form
+//    c) PATCH paciente_id no ag
+// 5. se !agSalvo: nada acontece em pacientes (zero efeito colateral)
+async function confAgComPaciente(isAtendimento) {
     var prefix = "p";
     var nm = (document.getElementById(prefix + "Nome")?.value || "").trim().toUpperCase();
     var cpfForm = (document.getElementById(prefix + "Cpf")?.value || "").replace(/\D/g, "");
@@ -390,9 +435,10 @@ async function confAgComPaciente() {
     var municipio = (document.getElementById(prefix + "Municipio")?.value || "").trim();
     var uf = (document.getElementById(prefix + "Uf")?.value || "").trim().toUpperCase();
 
-    // --- LOGICA DE VINCULAÇÃO ---
+    // ─── ETAPA 1: BUSCA READ-ONLY (sem mutar nada) ────────────────────────
+    // Tenta achar paciente existente por nome+datanasc, depois por CPF+nome+datanasc.
+    // NÃO cria paciente novo aqui — adiado pra depois do confAg confirmar o save.
     if (!_pacSelecionado && nm) {
-        // Tentar encontrar paciente por nome exato
         var candidatos = [];
         try {
             var rNome = await supaFetch(
@@ -404,20 +450,16 @@ async function confAgComPaciente() {
             candidatos = [];
         }
 
-        // Se achou candidatos com mesmo nome, verificar data nascimento
         if (candidatos.length > 0 && dataNascForm) {
             var match = candidatos.find(function (c) {
                 return c.data_nascimento === dataNascForm;
             });
-
             if (match) {
-                // Mesmo paciente! Nome + data nascimento batem
                 _pacSelecionado = match;
                 console.log("[COR] Vinculado auto por nome+datanasc:", match.id, match.nome);
             }
         }
 
-        // Se ainda não vinculou, buscar por CPF
         if (!_pacSelecionado && cpfForm && cpfForm.length >= 6) {
             try {
                 var rCpf = await supaFetch(
@@ -425,7 +467,6 @@ async function confAgComPaciente() {
                 );
                 var porCpf = await rCpf.json();
                 if (Array.isArray(porCpf) && porCpf.length > 0) {
-                    // Verificar se nome + data nasc batem com algum
                     var matchCpf = porCpf.find(function (c) {
                         return c.nome === nm && c.data_nascimento === dataNascForm;
                     });
@@ -433,72 +474,97 @@ async function confAgComPaciente() {
                         _pacSelecionado = matchCpf;
                         console.log("[COR] Vinculado por CPF+nome+datanasc:", matchCpf.id);
                     }
-                    // Se CPF existe mas nome/datanasc diferentes = paciente diferente, cria novo
                 }
             } catch (e) {
                 console.error("Busca CPF:", e);
             }
         }
+        // NB: criação de paciente novo foi MOVIDA pra etapa 3.b abaixo
+    }
 
-        // Se não encontrou ninguém, criar paciente novo
-        if (!_pacSelecionado) {
-            var novoPac = await criarPacienteSupa({
-                nome: nm, cpf: cpfForm, telefone: tel, email: email,
-                data_nascimento: dataNascForm, sexo: sexo,
-                cep: cep, logradouro: logradouro, numero: numero,
-                complemento: complemento, bairro: bairro,
-                municipio: municipio, uf: uf
-            });
-            if (novoPac) {
-                _pacSelecionado = novoPac;
-                console.log("[COR] Paciente NOVO criado:", novoPac.id, novoPac.nome);
+    // ─── ETAPA 2: SALVAR AGENDAMENTO ──────────────────────────────────────
+    // confAg retorna o ag salvo em sucesso, ou null em falha de validação ou save.
+    var agSalvo = null;
+    if (_confAgOriginal) {
+        agSalvo = await _confAgOriginal(isAtendimento);
+    }
+
+    // ─── ETAPA 3: MUTAÇÕES (só se save confirmou) ─────────────────────────
+    if (agSalvo && agSalvo.id) {
+        // 3.a) Paciente existente: propaga dados não-vazios do form
+        if (_pacSelecionado && _pacSelecionado.id) {
+            if (typeof propagarPacienteVinculado === "function") {
+                try {
+                    await propagarPacienteVinculado(_pacSelecionado.id, {
+                        cpf:              cpfForm,
+                        telefone:         tel,
+                        email:            email,
+                        data_nascimento:  dataNascForm,
+                        sexo:             sexo,
+                        cep:              cep,
+                        logradouro:       logradouro,
+                        numero:           numero,
+                        complemento:      complemento,
+                        bairro:           bairro,
+                        municipio:        municipio,
+                        uf:               uf
+                    });
+                    if (cpfForm) _pacSelecionado.cpf = cpfForm;
+                } catch (e) {
+                    console.error("[COR] propagar paciente vinculado:", e);
+                }
+            }
+        } else if (nm) {
+            // 3.b) Sem paciente vinculado e nome preenchido: cria novo agora
+            //      (após ag salvo, evitando paciente solto se validação falhasse)
+            try {
+                var novoPac = await criarPacienteSupa({
+                    nome: nm, cpf: cpfForm, telefone: tel, email: email,
+                    data_nascimento: dataNascForm, sexo: sexo,
+                    cep: cep, logradouro: logradouro, numero: numero,
+                    complemento: complemento, bairro: bairro,
+                    municipio: municipio, uf: uf
+                });
+                if (novoPac) {
+                    _pacSelecionado = novoPac;
+                    console.log("[COR] Paciente NOVO criado:", novoPac.id, novoPac.nome);
+                }
+            } catch (e) {
+                console.error("[COR] criar paciente novo (pós-save):", e);
             }
         }
-    }
 
-    // Sempre salva o CPF do formulário no cadastro do paciente vinculado
-    // A regra é: nome + data nasc batem = mesmo paciente, CPF do form é o que vale
-    if (_pacSelecionado && cpfForm) {
-        var cpfCadastrado = (_pacSelecionado.cpf || "").replace(/\D/g, "");
-        if (cpfForm !== cpfCadastrado) {
-            console.log("[COR] Atualizando CPF do paciente", _pacSelecionado.id, "de", cpfCadastrado || "(vazio)", "para", cpfForm);
-            await atualizarCpfPaciente(_pacSelecionado.id, cpfForm);
-            _pacSelecionado.cpf = cpfForm;
-        }
-    }
-
-    // Chamar funcao original (confAg do index.html)
-    if (_confAgOriginal) {
-        await _confAgOriginal();
-    }
-
-    // Depois de salvar, vincular paciente_id no agendamento
-    if (_pacSelecionado && _pacSelecionado.id) {
-        var ultimoAg = ags[ags.length - 1];
-        if (ultimoAg && ultimoAg.id) {
+        // 3.c) PATCH paciente_id no ag salvo
+        if (_pacSelecionado && _pacSelecionado.id) {
             try {
                 await supaFetch(
-                    "/rest/v1/agendamentos?id=eq." + ultimoAg.id,
+                    "/rest/v1/agendamentos?id=eq." + agSalvo.id,
                     {
                         method: "PATCH",
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
+                        headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ paciente_id: _pacSelecionado.id })
                     }
                 );
-                ultimoAg.paciente_id = _pacSelecionado.id;
-                console.log("[COR] paciente_id vinculado:", _pacSelecionado.id, "-> ag:", ultimoAg.id);
+                agSalvo.paciente_id = _pacSelecionado.id;
+                console.log("[COR] paciente_id vinculado:", _pacSelecionado.id, "-> ag:", agSalvo.id);
             } catch (e) {
                 console.error("Vincular paciente_id:", e);
             }
         }
-    }
 
-    // Limpar selecao
-    _pacSelecionado = null;
-    var badge = document.getElementById("pacSelBadge");
-    if (badge) badge.remove();
+        // v5.1 fix (2026-05-26): limpar seleção SÓ em caso de sucesso.
+        // Antes: limpava sempre, e numa retry após falha de validação
+        // o usuário perdia a vinculação manual feita no dropdown.
+        _pacSelecionado = null;
+        var badge = document.getElementById("pacSelBadge");
+        if (badge) badge.remove();
+    } else {
+        // Save falhou (toast já mostrado pelo confAg original).
+        // Não cria paciente, não propaga, não faz PATCH — zero efeito colateral.
+        // E PRESERVA _pacSelecionado + badge: numa retry após o usuário
+        // corrigir os campos faltantes, a vinculação manual continua válida.
+        console.log("[COR] confAg retornou null — nenhuma mutação em pacientes; seleção preservada pra retry.");
+    }
 }
 
 // ============================================================
@@ -537,4 +603,4 @@ if (typeof confAg === "function" && !confAg._pacWrapped) {
     console.log("[COR] confAg sobrescrito com vinculação de paciente");
 }
 
-console.log("[COR] Modulo busca de pacientes v2 carregado");
+console.log("[COR] Modulo busca de pacientes v5.1 carregado");
