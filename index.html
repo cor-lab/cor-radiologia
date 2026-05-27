@@ -232,6 +232,69 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-27 (v3.8.6): Code review da v3.8.5 - 3 fixes.
+              P1 (grave): botão "🔑 Acesso FotonWeb" no menu de
+                ações do agendamento quase nunca aparecia porque os
+                mapeadores principais (loadAllData e auto-refresh)
+                NÃO preenchiam `pId` a partir de `a.paciente_id`.
+                Apenas 3 callers isolados (busca, atendimento)
+                preenchiam pId. FIX: adicionar `pId:a.paciente_id||null`
+                nos 2 mapeadores principais. Agora botão aparece
+                em todo ag que tenha paciente vinculado no banco.
+              P2: botão na ficha do paciente (renderHistPaciente)
+                aparecia mesmo quando pac.id era null/0 (histResultados
+                pode ter d.paciente_id vazio em casos legados).
+                Clicar abria modal que fechava com "Paciente
+                inválido". FIX: só renderiza o botão se pac.id
+                truthy.
+              P3: botão "🖨️ Cartão" tinha 2 problemas: (1) usava
+                setTimeout + window.open, navegadores bloqueavam o
+                pop-up porque o open() ficou async (não-síncrono ao
+                click handler); (2) chamava afwCopiar() como
+                "atalho" pra carregar a senha, copiando senha
+                indevidamente pro clipboard como efeito colateral.
+                FIX:
+                  * Refatorado afwImprimirCartao em 2 funções:
+                    a primeira (async) carrega a senha em memória,
+                    a segunda (_afwGerarJanelaImpressao) é síncrona
+                    e abre o pop-up. Quando senha já está em memória,
+                    open() é instantâneo e síncrono.
+                  * Senha agora pré-carregada no abrir do modal (em
+                    _afwCarregar), sem revelar visualmente. Resultado:
+                    Cartão/Copiar/WhatsApp são instantâneos sem hop
+                    async. Senha continua mascarada até "Revelar".
+                  * Toast claro quando pop-up é bloqueado pelo navegador.
+
+  2026-05-27 (v3.8.5): Tela "Acesso FotonWeb" (Etapa 4.4 do plano).
+              Recepcionista pode gerar/visualizar/distribuir a senha
+              permanente de acesso ao FotonWeb (login CPF + senha
+              fixa 8 chars). Coexiste com "📲 Exames Online" antigo
+              (link tokenizado por exame).
+              ADIÇÕES:
+                * Modal #mAcessoFotonweb com 4 estados (loading,
+                  sem_cpf, sem_senha, tem_senha)
+                * Botão "🔑 Acesso FotonWeb" no menu de ações do
+                  agendamento (aparece se ag tem paciente_id)
+                * Botão "🔑 Acesso FotonWeb" no card do paciente
+                  na ficha do Histórico (renderHistPaciente)
+                * Funções: abrirModalAcessoFotonweb,
+                  afwGerarSenha, afwToggleRevelar (mascarado por
+                  padrão), afwCopiar, afwImprimirCartao (PDF A4
+                  com layout COR), afwEnviarWhatsapp (mensagem
+                  pronta com CPF/senha/link), afwRegenerarConfirmar
+              BACKEND:
+                * Chama RPCs criadas na Etapa 4.1:
+                  gerar_senha_paciente_fotonweb (admin/agenda)
+                  recuperar_senha_paciente_fotonweb (admin/agenda)
+                * Busca pacientes_acesso_fotonweb pra mostrar stats
+                  (último login, total de logins, ativo/inativo)
+              PENDENTE:
+                * Botão "📧 Email" desabilitado (Etapa 4.5 vai
+                  implementar via Edge Function tipo=fotonweb_senha)
+                * Paciente logado v2 ainda não consegue baixar
+                  arquivos (Etapa 4.3 vai criar rota
+                  /api/paciente/meus-exames + middleware)
+
   2026-05-26 (v3.8.4): Fix final do P2 da revisão (segurança).
               ANTES (v3.8.3): se cliente não tinha sessão, helper
                 caia pra anon key como fallback. Edge Function v3
@@ -2160,7 +2223,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.8.4 - 2026-05-26";
+var APP_VERSION = "v3.8.6 - 2026-05-27";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -2668,6 +2731,467 @@ async function enviarNFSePorEmail(nfseId, modo, emailOverride){
     return { ok:false, error:e.message || String(e) };
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// MODAL "ACESSO FOTONWEB" (v3.8.5 - 2026-05-27 / Etapa 4.4)
+// ═══════════════════════════════════════════════════════════════
+// Tela pra gerar/recuperar/distribuir a senha de acesso do paciente
+// ao FotonWeb (login CPF + senha permanente). Chamada de:
+//   - Menu de ações do agendamento (botão "🔑 Acesso FotonWeb")
+//   - Ficha do paciente no Histórico (botão "🔑 Acesso FotonWeb")
+//
+// Estados do modal:
+//   1. Loading — durante consultas
+//   2. Sem CPF — bloqueia geração (precisa cadastrar CPF antes)
+//   3. Sem senha — primeira geração
+//   4. Tem senha — visualizar/copiar/imprimir/whatsapp/regenerar
+//
+// Senha vem mascarada por padrão; botão "Revelar" mostra/oculta.
+
+var _afwPacienteAtual = null; // {id, nome, cpf}
+var _afwSenhaAtual = null;    // senha em claro (só quando revelada/gerada)
+var _afwDadosAtual = null;    // {ultimo_login_em, total_logins, created_at, updated_at, ativo}
+var _afwRevelado = false;
+
+function abrirModalAcessoFotonweb(pacienteId, pacienteNome, pacienteCpf){
+  // Aceita {id, nome, cpf} OU id solto + nome/cpf como string
+  if(typeof pacienteId === "object" && pacienteId !== null){
+    _afwPacienteAtual = {
+      id: pacienteId.id || pacienteId.paciente_id || pacienteId.pId,
+      nome: pacienteId.nome || pacienteId.paciente_nome || pacienteId.pac || "",
+      cpf: pacienteId.cpf || pacienteId.paciente_cpf || ""
+    };
+  } else {
+    _afwPacienteAtual = {
+      id: pacienteId,
+      nome: pacienteNome || "",
+      cpf: pacienteCpf || ""
+    };
+  }
+  _afwSenhaAtual = null;
+  _afwDadosAtual = null;
+  _afwRevelado = false;
+
+  var modal = document.getElementById("mAcessoFotonweb");
+  if(!modal){ toast("Erro", "Modal não encontrado"); return; }
+  modal.style.display = "flex";
+  _afwSetEstado("loading");
+  _afwCarregar();
+}
+
+function fecharModalAcessoFotonweb(){
+  var m = document.getElementById("mAcessoFotonweb");
+  if(m) m.style.display = "none";
+  _afwPacienteAtual = null;
+  _afwSenhaAtual = null;
+  _afwDadosAtual = null;
+  _afwRevelado = false;
+}
+
+function _afwSetEstado(estado){
+  // Esconde todos
+  ["afwLoading","afwSemCpf","afwSemSenha","afwTemSenha"].forEach(function(id){
+    var el = document.getElementById(id);
+    if(el) el.style.display = "none";
+  });
+  // Mostra o pedido
+  var alvo = {
+    "loading":"afwLoading",
+    "sem_cpf":"afwSemCpf",
+    "sem_senha":"afwSemSenha",
+    "tem_senha":"afwTemSenha"
+  }[estado];
+  if(alvo){
+    var el = document.getElementById(alvo);
+    if(el) el.style.display = "block";
+  }
+}
+
+async function _afwCarregar(){
+  var pac = _afwPacienteAtual;
+  if(!pac || !pac.id){
+    toast("Erro", "Paciente inválido");
+    fecharModalAcessoFotonweb();
+    return;
+  }
+
+  try{
+    // 1. Busca dados completos do paciente (precisa do CPF real do banco, não
+    //    do que veio em memória — pode estar stale)
+    var rPac = await supaFetch("/rest/v1/pacientes?select=id,nome,cpf,telefone,celular,email&id=eq."+pac.id);
+    if(!rPac.ok) throw new Error("Falha ao buscar paciente");
+    var arr = await rPac.json();
+    if(!arr || !arr.length) throw new Error("Paciente não encontrado");
+    var pacDb = arr[0];
+
+    // Atualiza com dados frescos do banco
+    _afwPacienteAtual.nome = pacDb.nome || pac.nome;
+    _afwPacienteAtual.cpf = pacDb.cpf || "";
+    _afwPacienteAtual.telefone = pacDb.telefone || pacDb.celular || "";
+    _afwPacienteAtual.email = pacDb.email || "";
+
+    var cpfLimpo = String(_afwPacienteAtual.cpf || "").replace(/\D/g, "");
+    if(cpfLimpo.length !== 11){
+      _afwSetEstado("sem_cpf");
+      return;
+    }
+
+    // 2. Verifica se já tem senha gerada
+    var rAcc = await supaFetch("/rest/v1/pacientes_acesso_fotonweb?select=*&paciente_id=eq."+pac.id);
+    if(!rAcc.ok && rAcc.status !== 404){
+      throw new Error("Falha ao consultar acesso: "+rAcc.status);
+    }
+    var accArr = rAcc.ok ? await rAcc.json() : [];
+
+    if(!accArr || !accArr.length){
+      // Não tem senha — mostra tela de "Gerar"
+      var info = document.getElementById("afwPacInfoNew");
+      if(info){
+        info.innerHTML = "<div style='font-weight:700;font-size:1.05rem'>"+esc(_afwPacienteAtual.nome)+"</div>"+
+                         "<div style='color:var(--gr);font-size:.85rem;margin-top:4px'>CPF: "+formatarCPF(cpfLimpo)+"</div>";
+      }
+      _afwSetEstado("sem_senha");
+      return;
+    }
+
+    _afwDadosAtual = accArr[0];
+
+    // v3.8.6 — Pré-carrega senha em memória ANTES de mostrar a tela.
+    // Assim, cliques em Copiar/Cartão/WhatsApp são síncronos no handler
+    // (não bloqueia pop-up de impressão) e mais rápidos. A senha continua
+    // MASCARADA visualmente até clicar em "Revelar".
+    try{
+      var rSenha = await supa.rpc("recuperar_senha_paciente_fotonweb", { p_paciente_id: pac.id });
+      if(!rSenha.error && rSenha.data && rSenha.data.length){
+        _afwSenhaAtual = rSenha.data[0].out_senha;
+      }
+    }catch(e){
+      // Se falhar, _afwSenhaAtual fica null e ações carregam sob demanda
+      console.warn("Pré-carga de senha falhou:", e);
+    }
+
+    _afwMostrarSenha();
+  }catch(e){
+    console.error("AFW carregar:", e);
+    toast("Erro", "Falha ao carregar: "+(e.message || "desconhecido"));
+    fecharModalAcessoFotonweb();
+  }
+}
+
+function _afwMostrarSenha(){
+  var pac = _afwPacienteAtual;
+  var dados = _afwDadosAtual;
+  var cpfLimpo = String(pac.cpf || "").replace(/\D/g, "");
+
+  // Header com info do paciente
+  var info = document.getElementById("afwPacInfo");
+  if(info){
+    info.innerHTML = "<div style='font-weight:700;font-size:1.05rem'>"+esc(pac.nome)+"</div>"+
+                     "<div style='color:var(--gr);font-size:.85rem;margin-top:4px'>CPF: "+formatarCPF(cpfLimpo)+"</div>";
+  }
+
+  // Senha (mascarada por padrão)
+  var displ = document.getElementById("afwSenhaDisplay");
+  if(displ) displ.value = _afwRevelado && _afwSenhaAtual ? _afwSenhaAtual : "••••••••";
+  var btnRev = document.getElementById("afwBtnRevelar");
+  if(btnRev) btnRev.innerHTML = _afwRevelado ? "🙈 Ocultar" : "👁️ Revelar";
+
+  // Info debaixo do campo senha
+  var senhaInfo = document.getElementById("afwSenhaInfo");
+  if(senhaInfo){
+    var msg = "";
+    if(dados.created_at){
+      msg += "Criada em "+_afwFormatarData(dados.created_at);
+    }
+    if(dados.updated_at && dados.updated_at !== dados.created_at){
+      msg += " · Atualizada em "+_afwFormatarData(dados.updated_at);
+    }
+    senhaInfo.textContent = msg;
+  }
+
+  // Stats
+  var stats = document.getElementById("afwStats");
+  if(stats){
+    var s = [];
+    s.push("<div>Total de logins: <strong>"+(dados.total_logins || 0)+"</strong></div>");
+    if(dados.ultimo_login_em){
+      s.push("<div>Último login: <strong>"+_afwFormatarData(dados.ultimo_login_em)+"</strong>"+
+             (dados.ultimo_login_ip ? " (IP "+dados.ultimo_login_ip+")" : "")+"</div>");
+    } else {
+      s.push("<div>Último login: <em>nunca acessou</em></div>");
+    }
+    s.push("<div>Status: <strong style='color:"+(dados.ativo ? "var(--g)" : "var(--r)")+"'>"+
+           (dados.ativo ? "ATIVO" : "INATIVO")+"</strong></div>");
+    stats.innerHTML = s.join("");
+  }
+
+  // Habilita/desabilita botões de distribuição
+  var btnWa = document.getElementById("afwBtnWhatsapp");
+  if(btnWa){
+    var tem_tel = !!(_afwPacienteAtual.telefone);
+    btnWa.disabled = !tem_tel;
+    btnWa.title = tem_tel ? "Enviar senha por WhatsApp" : "Paciente sem telefone cadastrado";
+  }
+  // Email fica desabilitado por enquanto (etapa 4.5 vai implementar)
+
+  _afwSetEstado("tem_senha");
+}
+
+function _afwFormatarData(iso){
+  if(!iso) return "";
+  try{
+    var d = new Date(iso);
+    var dia = String(d.getDate()).padStart(2,"0");
+    var mes = String(d.getMonth()+1).padStart(2,"0");
+    var ano = d.getFullYear();
+    var h = String(d.getHours()).padStart(2,"0");
+    var m = String(d.getMinutes()).padStart(2,"0");
+    return dia+"/"+mes+"/"+ano+" "+h+":"+m;
+  }catch(e){ return iso; }
+}
+
+async function afwGerarSenha(isRegenerar){
+  var pac = _afwPacienteAtual;
+  if(!pac || !pac.id){ toast("Erro", "Paciente inválido"); return; }
+
+  _afwSetEstado("loading");
+  try{
+    var r = await supa.rpc("gerar_senha_paciente_fotonweb", { p_paciente_id: pac.id });
+    if(r.error){
+      console.error("Erro gerar_senha:", r.error);
+      toast("Erro", r.error.message || "Falha ao gerar senha");
+      // Volta pro estado anterior
+      if(_afwDadosAtual) _afwMostrarSenha();
+      else _afwSetEstado("sem_senha");
+      return;
+    }
+    if(!r.data || !r.data.length){
+      toast("Erro", "Resposta vazia da função");
+      _afwSetEstado(_afwDadosAtual ? "tem_senha" : "sem_senha");
+      return;
+    }
+
+    var resp = r.data[0];
+    _afwSenhaAtual = resp.out_senha;
+    _afwRevelado = true; // Recém-gerada — mostra sempre revelada
+
+    // Recarrega os dados (ultimo_login, stats) do banco
+    var rAcc = await supaFetch("/rest/v1/pacientes_acesso_fotonweb?select=*&paciente_id=eq."+pac.id);
+    if(rAcc.ok){
+      var arr = await rAcc.json();
+      if(arr && arr.length) _afwDadosAtual = arr[0];
+    }
+
+    _afwMostrarSenha();
+
+    var msg = isRegenerar ? "Senha regerada!" : "Senha gerada com sucesso!";
+    toast("🔑", msg);
+  }catch(e){
+    console.error("afwGerarSenha:", e);
+    toast("Erro", "Falha: "+(e.message || "desconhecida"));
+    _afwSetEstado(_afwDadosAtual ? "tem_senha" : "sem_senha");
+  }
+}
+
+async function afwToggleRevelar(){
+  if(_afwRevelado){
+    // Apenas oculta
+    _afwRevelado = false;
+    var displ = document.getElementById("afwSenhaDisplay");
+    if(displ) displ.value = "••••••••";
+    var btnRev = document.getElementById("afwBtnRevelar");
+    if(btnRev) btnRev.innerHTML = "👁️ Revelar";
+    return;
+  }
+
+  // Revelar: se já tem em memória, mostra. Senão, recupera do banco.
+  if(!_afwSenhaAtual){
+    var pac = _afwPacienteAtual;
+    try{
+      var r = await supa.rpc("recuperar_senha_paciente_fotonweb", { p_paciente_id: pac.id });
+      if(r.error){
+        console.error("Erro recuperar_senha:", r.error);
+        toast("Erro", r.error.message || "Falha ao recuperar senha");
+        return;
+      }
+      if(!r.data || !r.data.length){
+        toast("Erro", "Senha não encontrada");
+        return;
+      }
+      _afwSenhaAtual = r.data[0].out_senha;
+    }catch(e){
+      console.error("afwToggleRevelar:", e);
+      toast("Erro", "Falha: "+(e.message || "desconhecida"));
+      return;
+    }
+  }
+
+  _afwRevelado = true;
+  var displ = document.getElementById("afwSenhaDisplay");
+  if(displ) displ.value = _afwSenhaAtual;
+  var btnRev = document.getElementById("afwBtnRevelar");
+  if(btnRev) btnRev.innerHTML = "🙈 Ocultar";
+}
+
+async function afwCopiar(){
+  // Se a senha não está em memória, busca primeiro
+  if(!_afwSenhaAtual){
+    var pac = _afwPacienteAtual;
+    try{
+      var r = await supa.rpc("recuperar_senha_paciente_fotonweb", { p_paciente_id: pac.id });
+      if(r.error || !r.data || !r.data.length){ toast("Erro","Senha não disponível"); return; }
+      _afwSenhaAtual = r.data[0].out_senha;
+    }catch(e){ toast("Erro", "Falha: "+(e.message || "")); return; }
+  }
+  try{
+    await navigator.clipboard.writeText(_afwSenhaAtual);
+    toast("📋", "Senha copiada");
+  }catch(e){
+    // Fallback: seleciona o input
+    var displ = document.getElementById("afwSenhaDisplay");
+    if(displ){
+      displ.value = _afwSenhaAtual;
+      _afwRevelado = true;
+      displ.select();
+      try{ document.execCommand("copy"); toast("📋","Senha copiada"); }
+      catch(e2){ toast("Erro","Use Ctrl+C pra copiar"); }
+    }
+  }
+}
+
+async function afwImprimirCartao(){
+  // Garante que tem a senha em memória ANTES de window.open.
+  // P3 fix v3.8.6: o setTimeout anterior bloqueava pop-up no Chrome/Firefox
+  // (window.open precisa ser síncrono no click handler). E chamar afwCopiar
+  // como side effect copiava senha indevidamente. Agora carrega direto.
+  if(!_afwSenhaAtual){
+    var pac = _afwPacienteAtual;
+    if(!pac || !pac.id){ toast("Erro","Paciente inválido"); return; }
+    toast("⏳", "Carregando senha...");
+    try{
+      var r = await supa.rpc("recuperar_senha_paciente_fotonweb", { p_paciente_id: pac.id });
+      if(r.error || !r.data || !r.data.length){
+        toast("Erro","Senha não disponível: "+((r.error && r.error.message) || ""));
+        return;
+      }
+      _afwSenhaAtual = r.data[0].out_senha;
+    }catch(e){
+      toast("Erro", "Falha ao carregar senha: "+(e.message || ""));
+      return;
+    }
+    // Aviso: o pop-up VAI ser bloqueado neste caso porque já passou async.
+    // Pedimos pra clicar de novo agora que a senha está em memória.
+    toast("📋", "Senha carregada! Clique em 🖨️ Cartão novamente pra imprimir.");
+    return;
+  }
+
+  // Senha em memória — window.open é síncrono no click handler
+  _afwGerarJanelaImpressao();
+}
+
+function _afwGerarJanelaImpressao(){
+  var pac = _afwPacienteAtual;
+  if(!pac || !_afwSenhaAtual){ toast("Erro","Dados incompletos"); return; }
+  var cpfLimpo = String(pac.cpf || "").replace(/\D/g, "");
+  var fotonwebUrl = "https://exames.corsm.com.br";
+
+  var w = window.open("", "_blank", "width=600,height=700");
+  if(!w){ toast("Erro","Bloqueador de pop-up impediu a impressão. Permita pop-ups deste site e tente novamente."); return; }
+  w.document.write(
+    "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Cartão de Acesso — "+esc(pac.nome)+"</title>"+
+    "<style>"+
+    "@page{size:A4;margin:20mm}"+
+    "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1a1a1a;padding:0;margin:0}"+
+    ".cartao{max-width:480px;margin:30px auto;border:2px solid #0d7a6e;border-radius:12px;padding:32px;background:#fff}"+
+    ".header{text-align:center;border-bottom:1px solid #e0e0e0;padding-bottom:16px;margin-bottom:24px}"+
+    ".header h1{color:#0d7a6e;margin:0;font-size:24px;letter-spacing:.5px}"+
+    ".header p{color:#666;margin:4px 0 0;font-size:13px}"+
+    ".row{margin:14px 0;font-size:15px}"+
+    ".row strong{color:#666;font-size:12px;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px}"+
+    ".row span{display:block;font-size:16px;color:#1a1a1a}"+
+    ".credenciais{background:#f5f9f8;border:2px solid #0d7a6e;border-radius:8px;padding:20px;margin:24px 0;text-align:center}"+
+    ".cred-label{color:#0d7a6e;font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:600}"+
+    ".cred-valor{font-family:'Courier New',monospace;font-size:24px;font-weight:700;letter-spacing:3px;color:#0a5a52;margin:8px 0}"+
+    ".instrucoes{background:#fffbeb;border-left:4px solid #f59e0b;padding:14px;margin-top:24px;font-size:13px;line-height:1.7;color:#333}"+
+    ".instrucoes ol{margin:8px 0 0;padding-left:20px}"+
+    ".footer{margin-top:24px;text-align:center;font-size:11px;color:#999;line-height:1.6}"+
+    "@media print{.cartao{border:2px solid #0d7a6e;box-shadow:none}body{padding:0}}"+
+    "</style></head><body>"+
+    "<div class='cartao'>"+
+    "<div class='header'>"+
+    "<h1>COR Radiologia</h1>"+
+    "<p>Cartão de Acesso ao FotonWeb</p>"+
+    "</div>"+
+    "<div class='row'><strong>Paciente</strong><span>"+esc(pac.nome)+"</span></div>"+
+    "<div class='credenciais'>"+
+    "<div class='cred-label'>Seu Login (CPF)</div>"+
+    "<div class='cred-valor'>"+formatarCPF(cpfLimpo)+"</div>"+
+    "<div class='cred-label' style='margin-top:14px'>Sua Senha</div>"+
+    "<div class='cred-valor'>"+esc(_afwSenhaAtual)+"</div>"+
+    "</div>"+
+    "<div class='instrucoes'>"+
+    "<strong>Como acessar:</strong>"+
+    "<ol>"+
+    "<li>Abra o navegador e acesse: <strong>"+esc(fotonwebUrl)+"</strong></li>"+
+    "<li>Digite seu CPF e senha acima</li>"+
+    "<li>Visualize e baixe seus exames online</li>"+
+    "</ol>"+
+    "</div>"+
+    "<div class='footer'>"+
+    "<strong>COR — Centro Odontológico de Radiologia</strong><br>"+
+    "Santa Maria/RS · CNPJ 06.948.603/0001-04<br>"+
+    "Guarde este cartão em local seguro."+
+    "</div>"+
+    "</div>"+
+    "<script>setTimeout(function(){window.print()},300);</"+"script>"+
+    "</body></html>"
+  );
+  w.document.close();
+}
+
+async function afwEnviarWhatsapp(){
+  var pac = _afwPacienteAtual;
+  if(!pac.telefone){ toast("Atenção","Paciente sem telefone"); return; }
+  // Garante senha em memória
+  if(!_afwSenhaAtual){
+    try{
+      var r = await supa.rpc("recuperar_senha_paciente_fotonweb", { p_paciente_id: pac.id });
+      if(r.error || !r.data || !r.data.length){ toast("Erro","Senha não disponível"); return; }
+      _afwSenhaAtual = r.data[0].out_senha;
+    }catch(e){ toast("Erro", e.message || ""); return; }
+  }
+  var cpfLimpo = String(pac.cpf || "").replace(/\D/g, "");
+  var fotonwebUrl = (typeof FOTONWEB_URL !== "undefined" && FOTONWEB_URL) ? FOTONWEB_URL : "https://exames.corsm.com.br";
+
+  var msg =
+    "Olá, "+(pac.nome || "")+"!\n\n"+
+    "🦷 Seu acesso ao FotonWeb COR está pronto!\n\n"+
+    "🔗 Link: "+fotonwebUrl+"\n"+
+    "👤 CPF: "+formatarCPF(cpfLimpo)+"\n"+
+    "🔑 Senha: "+_afwSenhaAtual+"\n\n"+
+    "Guarde esses dados — eles servem pra todos os seus exames online conosco.\n\n"+
+    "COR — Centro Odontológico de Radiologia";
+
+  var tel = String(pac.telefone).replace(/\D/g, "");
+  if(typeof abrirWhatsApp === "function"){
+    abrirWhatsApp(tel, msg);
+  } else {
+    window.open("https://wa.me/55"+tel+"?text="+encodeURIComponent(msg), "_blank");
+  }
+}
+
+function afwEnviarEmail(){
+  // Implementado na Etapa 4.5
+  toast("Em breve", "Envio por email será implementado na Etapa 4.5");
+}
+
+function afwRegenerarConfirmar(){
+  if(!confirm("Regenerar a senha?\n\nA senha atual ficará inválida e o paciente terá que usar a nova.")){
+    return;
+  }
+  afwGerarSenha(true);
+}
+
 
 function abrirModalEmitirNota(agendamentoId){
   var ag = (ags || []).find(function(x){ return x.id === agendamentoId; });
@@ -3550,6 +4074,7 @@ async function loadAllData(){
         return {
           id: a.id,
           pac: a.paciente_nome,
+          pId: a.paciente_id || null,
           tel: a.paciente_tel || "",
           paciente_cpf: a.paciente_cpf || "",
           paciente_cnpj: a.paciente_cnpj || "",
@@ -4420,6 +4945,86 @@ async function dbResgatar(dentId,premId,pts){
   </div>
 </div>
 
+<!-- Modal Acesso FotonWeb (v3.8.5 — Etapa 4.4 do plano FotonWeb) -->
+<div class="mo" id="mAcessoFotonweb">
+  <div class="mb" style="max-width:520px">
+    <div class="mh">
+      <div class="mt">🔑 Acesso FotonWeb</div>
+      <button class="mx" onclick="fecharModalAcessoFotonweb()">×</button>
+    </div>
+
+    <!-- Estado de carregamento -->
+    <div id="afwLoading" style="display:none;padding:24px;text-align:center;color:var(--gr)">
+      <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>
+      <div>Carregando...</div>
+    </div>
+
+    <!-- Estado: paciente sem CPF -->
+    <div id="afwSemCpf" style="display:none">
+      <div style="background:rgba(255,180,0,.1);border:1px solid rgba(255,180,0,.3);border-radius:8px;padding:16px;margin:16px 0">
+        <div style="font-weight:700;color:#ffb400;margin-bottom:6px">⚠️ Paciente sem CPF cadastrado</div>
+        <div style="font-size:.85rem;color:var(--gr);line-height:1.5">
+          Pra gerar uma senha de acesso ao FotonWeb, o paciente precisa ter CPF cadastrado.
+          Edite o cadastro do paciente primeiro e depois volte aqui.
+        </div>
+      </div>
+      <div class="mf">
+        <button class="btn btno" onclick="fecharModalAcessoFotonweb()">Fechar</button>
+      </div>
+    </div>
+
+    <!-- Estado: paciente AINDA não tem senha -->
+    <div id="afwSemSenha" style="display:none">
+      <div style="padding:16px 0">
+        <div id="afwPacInfoNew" style="margin-bottom:12px"></div>
+        <div style="background:rgba(74,184,72,.08);border:1px solid rgba(74,184,72,.25);border-radius:8px;padding:14px;margin-bottom:16px;font-size:.85rem;line-height:1.6;color:var(--gr)">
+          <strong style="color:var(--g)">Como funciona:</strong> uma senha fixa de 8 caracteres
+          será gerada para este paciente. Combinada com o CPF, ela permite acesso permanente
+          ao FotonWeb pra ver todos os exames online.
+        </div>
+      </div>
+      <div class="mf">
+        <button class="btn btno" onclick="fecharModalAcessoFotonweb()">Cancelar</button>
+        <button class="btn btng" onclick="afwGerarSenha(false)">🔑 Gerar senha</button>
+      </div>
+    </div>
+
+    <!-- Estado: paciente JÁ tem senha (modo ver) -->
+    <div id="afwTemSenha" style="display:none">
+      <div id="afwPacInfo" style="padding:12px 0 16px"></div>
+
+      <div class="field">
+        <label>Senha de acesso</label>
+        <div style="display:flex;gap:8px;align-items:stretch">
+          <input id="afwSenhaDisplay" type="text" readonly
+                 style="flex:1;font-family:'DM Mono',monospace;font-size:1.3rem;letter-spacing:.18em;text-align:center;font-weight:700;color:var(--g)"
+                 value="••••••••">
+          <button id="afwBtnRevelar" class="btn btno" onclick="afwToggleRevelar()" style="white-space:nowrap" title="Mostrar/ocultar senha">👁️ Revelar</button>
+        </div>
+        <div id="afwSenhaInfo" style="font-size:.75rem;color:var(--gr);margin-top:6px"></div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button class="btn btno bsm" onclick="afwCopiar()">📋 Copiar</button>
+        <button class="btn btno bsm" onclick="afwImprimirCartao()">🖨️ Cartão</button>
+        <button id="afwBtnWhatsapp" class="btn btnt bsm" onclick="afwEnviarWhatsapp()">💬 WhatsApp</button>
+        <button id="afwBtnEmail" class="btn btnp bsm" onclick="afwEnviarEmail()" disabled title="Disponível na Etapa 4.5">📧 Email</button>
+      </div>
+
+      <div style="margin-top:20px;padding:14px;background:rgba(255,255,255,.03);border-radius:8px;font-size:.78rem;line-height:1.7">
+        <div style="font-weight:600;color:var(--tl);margin-bottom:6px">Estatísticas</div>
+        <div id="afwStats" style="color:var(--gr)"></div>
+      </div>
+
+      <div class="mf">
+        <button class="btn btno" onclick="fecharModalAcessoFotonweb()">Fechar</button>
+        <button class="btn btnr" onclick="afwRegenerarConfirmar()">🔄 Regenerar senha</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <!-- Modal emitir nota -->
 <div class="mo" id="mEmitirNota">
   <div class="mb">
@@ -4708,7 +5313,7 @@ function iniciarAutoRefresh(){
 
           var _antigo = _agsAntigosMap[a.id];
           var novo = {
-            id:a.id, pac:a.paciente_nome, tel:a.paciente_tel||"",
+            id:a.id, pac:a.paciente_nome, pId:a.paciente_id||null, tel:a.paciente_tel||"",
             paciente_cpf:a.paciente_cpf||"", paciente_cnpj:a.paciente_cnpj||"",
             paciente_email:a.paciente_email||"",
             paciente_cep:a.paciente_cep||"", paciente_logradouro:a.paciente_logradouro||"",
@@ -5099,7 +5704,15 @@ function renderHistPaciente() {
   if (pac.id) h += "<span>ID: " + pac.id + "</span>";
   h += "</div>";
   h += "</div>";
+  // v3.8.5 (Etapa 4.4) — Acesso FotonWeb
+  // Só renderiza o botão se realmente tem paciente.id válido (corrige P2:
+  // histResultados pode ter d.paciente_id vazio em casos legados).
+  h += "<div style='display:flex;gap:6px;align-items:center'>";
+  if (pac.id) {
+    h += "<button class='btn btng bsm' onclick='abrirModalAcessoFotonweb(" + pac.id + "," + jsArg(pac.nome || "") + "," + jsArg(pac.cpf || "") + ")' title='Gerar/visualizar senha de acesso ao FotonWeb'>🔑 Acesso FotonWeb</button>";
+  }
   h += "<button class='btn btno bsm' onclick='histVoltarBusca()'>Voltar</button>";
+  h += "</div>";
   h += "</div>";
 
   if (histLoading) {
@@ -6174,12 +6787,14 @@ function agEV(ev, id) {
       });
     })(a);
 
-    // ⚡ v3.8.3 (2026-05-26) — Enviar NFS-e por Email (Etapa 2 plano email)
+    // ⚡ v3.8.4 (2026-05-26) — Enviar NFS-e por Email (Etapa 2 plano email)
     // Substitui/complementa o botão WhatsApp. Funciona como envio E reenvio.
     // Edge Function é fonte de verdade do email: cliente não checa
     // ag.paciente_email (pode estar stale). Se sem email, função volta
     // motivo:"sem_email" e mostramos toast pedindo pra cadastrar.
     // Audit log em nfse_envios_email permite saber quem mandou e quando.
+    // v3.8.4: requer sessão autenticada — toasts diferenciados pra
+    // sem_email / sem_pdf / auth_required / erro genérico.
     (function(ag){
       btns.push({
         lbl:"📧 Enviar NFS-e Email",
@@ -6264,6 +6879,23 @@ function agEV(ev, id) {
     });
   })(a);
 }
+
+  // ⚡ v3.8.5 (2026-05-27) — Botão "Acesso FotonWeb" (Etapa 4.4)
+  // Gera/visualiza a senha PERMANENTE do paciente (CPF + senha fixa).
+  // Diferente de "📲 Exames Online" (acima), que gera token descartável
+  // por exame. Este aqui dá acesso a TODOS os exames do paciente.
+  if(a.pId){
+    (function(ag){
+      btns.push({
+        lbl:"🔑 Acesso FotonWeb",
+        cls:"btng",
+        fn:function(){
+          closeM();
+          abrirModalAcessoFotonweb(ag.pId, ag.pac || "", ag.paciente_cpf || "");
+        }
+      });
+    })(a);
+  }
 
   if((a.status_clinico || a.st)=="realizado"){
   (function(ag){
