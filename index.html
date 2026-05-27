@@ -231,7 +231,80 @@
     feed-servidor (mesma arquitetura do TomografoCopy).
   
   ───────── HISTÓRICO ─────────
-  
+
+  2026-05-27 (v3.10.3): Fix DE VERDADE do pop-up bloqueado em fcImprimir.
+              O histórico da v3.10.1 dizia que o check `if (!win)` foi
+              aplicado, mas o código real continuava sem ele (Vine
+              pegou no code review pós-deploy da v3.10.2). Aplicado
+              agora o mesmo padrão de imprimirRelatorioDia: se
+              window.open retornar null, toast "Pop-up bloqueado" e
+              return antes de tocar em win.document.
+
+  2026-05-27 (v3.10.2): Caso GRAZIELA — modal "Acesso FotonWeb" dizia
+              "Paciente sem CPF" mas o agendamento tinha CPF. Causa raiz:
+              agendamento estava vinculado a paciente DUPLICADO sem CPF
+              (recepção criou cadastro novo sem buscar). Edge buscava CPF
+              no cadastro mestre via paciente_id e respondia sem_cpf
+              corretamente, mas a UI não explicava o problema real.
+              Análise do Vine pegou que o fluxo é:
+                1. openAcessoFotonweb usa dados do ag em memória (pId, pac, cpf)
+                2. _afwCarregar busca o cadastro mestre via pId e SOBRESCREVE
+                   o cpf com o do banco — descartando o cpf que veio do ag.
+              FIX duplo:
+                * No call site do menu de ag (linha 7155): chama
+                  `await recarregarAgFresh(ag.id)` ANTES de abrir o modal.
+                  Garante pId atualizado se fusão/edição aconteceu fora
+                  da tela. Usa snapshot pós-recarregamento (agFresh).
+                * Em _afwCarregar: guarda cpfContexto (CPF que veio do ag/
+                  histórico) ANTES da sobrescrita. Se cadastro mestre vier
+                  sem CPF mas cpfContexto tiver 11 dígitos, chama nova
+                  função _afwClassificarSemCpf que busca em `pacientes`
+                  por CPF e classifica em 3 cenários:
+                    A) CPF pertence a OUTRO paciente ativo → "Provável
+                       duplicata — fundir antes de gerar senha"
+                    B) CPF não existe no banco → "Falta no cadastro
+                       mestre — edite o paciente"
+                    C) CPF pertence a paciente inativo → "Vínculo errado"
+                  Cada cenário renderiza msg específica no estado sem_cpf
+                  preservando o HTML original (cache em _afwSemCpfHtmlOrig).
+              NÃO usa o CPF do ag silenciosamente — esconderia o vínculo
+              errado.
+
+  2026-05-27 (v3.10.1): Versão que tentou fixar pop-up em fcImprimir mas
+              o fix nao foi aplicado de fato no codigo (so no historico).
+              Corrigido de fato em v3.10.3.
+
+  2026-05-27 (v3.10.0): Code review do Vine (rodada 2) — 4 fixes.
+              FIX #1: Alias `paciente_cpf` no _mapAgFromRow. 17 call sites
+                no app (OS, NFS-e, FotonWeb, edição) leem ag.paciente_cpf
+                mas o helper só populava `cpf` → CPF vazio silencioso em
+                vários fluxos.
+              FIX #2: recarregarAgFresh refatorado pra usar _mapAgFromRow
+                em vez de atualizar só exames/valores/status. Antes,
+                cadastro do paciente ficava stale após realizar exame.
+                Preserva campos temporários (_statusOriginal,
+                _examesOriginais, status_clinico_original,
+                _forcarRepropagacao).
+              FIX #3: pop-up blocker check em imprimirRelatorioDia.
+                window.open retornava null e quebrava com TypeError.
+              FIX #4: validação r.error de cada query do Promise.all em
+                loadAllData. Toast "⚠️ Carregamento parcial" se alguma
+                falhar (continua mas avisa o usuário).
+
+  2026-05-27 (v3.9.1): Bug duplicação de agendamentos editados —
+              `_new` flag persistia em memória após save bem-sucedido,
+              fazendo edição subsequente disparar INSERT novo via RPC
+              salvar_agendamento_com_exames em vez de UPDATE. Casos
+              confirmados: LUCAS CAGLIARI 28/05 (99332/99333), NELI
+              MARCONATO 01/06 (99300/99301), HEITOR DONICHT 27/05
+              (99283/99284). Gap 16-18s entre original e duplicado,
+              todos pela Cláudia Vargas, duplicado perdia paciente_id.
+              FIX em 3 lugares (belt-and-suspenders):
+                * dbSaveAgRpc: `if(ag._new) ag._new = false` após save
+                * dbSaveAg (fallback legado): mesmo fix
+                * openEditAg: `if(a && a.id) a._new = false` antes de
+                  chamar dbSaveAg como defesa adicional.
+
   2026-05-27 (v3.9.0): Code review do Vine — fixes P2 #4 e P3 #5.
               P2 #4 — MAPEAMENTO ERRADO em 3 lugares:
                 * `tel:a.paciente_telefone` → coluna real é
@@ -2312,7 +2385,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.10.1 - 2026-05-27";
+var APP_VERSION = "v3.10.3 - 2026-05-27";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -2896,6 +2969,113 @@ function _afwSetEstado(estado){
   }
 }
 
+// ⚡ NOVO v3.10.2 (27/05/2026) — Cache do HTML padrão do estado sem_cpf,
+// capturado lazy na primeira chamada de _afwMostrarSemCpf. Permite
+// sobrescrever a mensagem com diagnóstico específico (caso GRAZIELA:
+// duplicata, CPF faltando no cadastro, vínculo errado) e depois
+// restaurar pra mensagem genérica quando o cenário não justifica.
+var _afwSemCpfHtmlOriginal = null;
+
+function _afwMostrarSemCpf(msgHtmlEspecifico){
+  // Renderiza o estado "sem CPF". Se msgHtmlEspecifico vier, substitui a
+  // mensagem padrão. Senão, restaura a mensagem original.
+  var box = document.getElementById("afwSemCpf");
+  if(box){
+    if(_afwSemCpfHtmlOriginal === null){
+      // Captura uma única vez, na primeira chamada
+      _afwSemCpfHtmlOriginal = box.innerHTML;
+    }
+    box.innerHTML = msgHtmlEspecifico || _afwSemCpfHtmlOriginal;
+  }
+  _afwSetEstado("sem_cpf");
+}
+
+async function _afwClassificarSemCpf(cpfContexto, pacIdAtual){
+  // Cadastro mestre veio sem CPF mas o contexto (ag/histórico) tinha CPF
+  // de 11 dígitos. Busca em `pacientes` pelo CPF do contexto e classifica
+  // em 1 de 3 cenários, renderizando mensagem específica.
+  try{
+    var r = await supaFetch("/rest/v1/pacientes?select=id,nome,ativo&cpf=eq."+cpfContexto);
+    var arr = r.ok ? await r.json() : [];
+
+    var cpfFmt = formatarCPF(cpfContexto);
+    var msgHtml = "";
+
+    if(!arr.length){
+      // Cenário B — CPF do ag não existe no cadastro de nenhum paciente
+      msgHtml =
+        '<div style="background:rgba(255,180,0,.1);border:1px solid rgba(255,180,0,.3);border-radius:8px;padding:16px;margin:16px 0">' +
+          '<div style="font-weight:700;color:#ffb400;margin-bottom:6px">⚠️ CPF falta no cadastro mestre</div>' +
+          '<div style="font-size:.85rem;color:var(--gr);line-height:1.5">' +
+            'O agendamento tem o CPF <strong>'+esc(cpfFmt)+'</strong>, mas o cadastro do ' +
+            'paciente vinculado está sem CPF. Edite o cadastro do paciente, cole o CPF ' +
+            'e depois volte aqui pra gerar a senha.' +
+          '</div>' +
+        '</div>' +
+        '<div class="mf">' +
+          '<button class="btn btno" onclick="fecharModalAcessoFotonweb()">Fechar</button>' +
+        '</div>';
+    } else {
+      var ativosOutros = arr.filter(function(p){ return p.ativo && p.id !== pacIdAtual; });
+      var inativos = arr.filter(function(p){ return !p.ativo; });
+
+      if(ativosOutros.length){
+        // Cenário A — CPF pertence a outro paciente ATIVO (provável duplicata)
+        var outro = ativosOutros[0];
+        msgHtml =
+          '<div style="background:rgba(255,180,0,.1);border:1px solid rgba(255,180,0,.3);border-radius:8px;padding:16px;margin:16px 0">' +
+            '<div style="font-weight:700;color:#ffb400;margin-bottom:6px">⚠️ Cadastro duplicado detectado</div>' +
+            '<div style="font-size:.85rem;color:var(--gr);line-height:1.5">' +
+              'O CPF <strong>'+esc(cpfFmt)+'</strong> do agendamento pertence a outro ' +
+              'paciente ativo: <strong>'+esc(outro.nome || '')+'</strong> (ID '+outro.id+').' +
+              '<br><br>' +
+              'Provável duplicata de cadastro — o agendamento está vinculado ao paciente ' +
+              'errado. Peça pra fundir os 2 cadastros antes de gerar a senha do FotonWeb, ' +
+              'senão a senha será gerada pra um cadastro fantasma.' +
+            '</div>' +
+          '</div>' +
+          '<div class="mf">' +
+            '<button class="btn btno" onclick="fecharModalAcessoFotonweb()">Fechar</button>' +
+          '</div>';
+      } else if(inativos.length){
+        // Cenário C — CPF pertence a paciente inativo (vínculo errado)
+        var inat = inativos[0];
+        msgHtml =
+          '<div style="background:rgba(255,180,0,.1);border:1px solid rgba(255,180,0,.3);border-radius:8px;padding:16px;margin:16px 0">' +
+            '<div style="font-weight:700;color:#ffb400;margin-bottom:6px">⚠️ Vínculo possivelmente errado</div>' +
+            '<div style="font-size:.85rem;color:var(--gr);line-height:1.5">' +
+              'O CPF <strong>'+esc(cpfFmt)+'</strong> pertence ao paciente ' +
+              '<strong>'+esc(inat.nome || '')+'</strong> (ID '+inat.id+'), que está ' +
+              'INATIVO no sistema. Revise o cadastro antes de gerar senha.' +
+            '</div>' +
+          '</div>' +
+          '<div class="mf">' +
+            '<button class="btn btno" onclick="fecharModalAcessoFotonweb()">Fechar</button>' +
+          '</div>';
+      } else {
+        // Caso raro: encontrou só o próprio pacIdAtual? Não deveria acontecer
+        // (filtro de cpf=eq.<cpf> e pacIdAtual sem CPF), mas defensive.
+        msgHtml =
+          '<div style="background:rgba(255,180,0,.1);border:1px solid rgba(255,180,0,.3);border-radius:8px;padding:16px;margin:16px 0">' +
+            '<div style="font-weight:700;color:#ffb400;margin-bottom:6px">⚠️ CPF divergente</div>' +
+            '<div style="font-size:.85rem;color:var(--gr);line-height:1.5">' +
+              'O agendamento tem o CPF <strong>'+esc(cpfFmt)+'</strong>, mas o cadastro ' +
+              'do paciente está sem CPF. Edite o cadastro do paciente e cole o CPF.' +
+            '</div>' +
+          '</div>' +
+          '<div class="mf">' +
+            '<button class="btn btno" onclick="fecharModalAcessoFotonweb()">Fechar</button>' +
+          '</div>';
+      }
+    }
+
+    _afwMostrarSemCpf(msgHtml);
+  } catch(e){
+    console.error("_afwClassificarSemCpf:", e);
+    _afwMostrarSemCpf(); // fallback pra msg genérica em caso de erro
+  }
+}
+
 async function _afwCarregar(){
   var pac = _afwPacienteAtual;
   if(!pac || !pac.id){
@@ -2903,6 +3083,13 @@ async function _afwCarregar(){
     fecharModalAcessoFotonweb();
     return;
   }
+
+  // ⚡ FIX v3.10.2 (27/05/2026) — Guarda o CPF que veio do contexto
+  // (agendamento ou histórico) ANTES da sobrescrita pelo cadastro mestre.
+  // Usado pra mensagem detalhada quando cadastro mestre vier sem CPF mas
+  // o ag tinha. Caso GRAZIELA: ag tinha CPF, paciente_id apontava pra
+  // duplicata sem CPF → Edge retornava sem_cpf sem explicar por quê.
+  var cpfContexto = String(pac.cpf || "").replace(/\D/g, "");
 
   try{
     // 1. Busca dados completos do paciente (precisa do CPF real do banco, não
@@ -2921,7 +3108,14 @@ async function _afwCarregar(){
 
     var cpfLimpo = String(_afwPacienteAtual.cpf || "").replace(/\D/g, "");
     if(cpfLimpo.length !== 11){
-      _afwSetEstado("sem_cpf");
+      // ⚡ FIX v3.10.2 — Cadastro mestre sem CPF. Se o contexto (ag ou
+      // ficha) tinha CPF de 11 dígitos, investigar a divergência e
+      // mostrar mensagem específica em vez do alerta genérico.
+      if(cpfContexto.length === 11){
+        await _afwClassificarSemCpf(cpfContexto, pacDb.id);
+      } else {
+        _afwMostrarSemCpf(); // msg padrão
+      }
       return;
     }
 
@@ -7150,9 +7344,18 @@ function agEV(ev, id) {
       btns.push({
         lbl:"🔑 Acesso FotonWeb",
         cls:"btng",
-        fn:function(){
+        fn:async function(){
           closeM();
-          abrirModalAcessoFotonweb(ag.pId, ag.pac || "", ag.paciente_cpf || "");
+          // ⚡ FIX v3.10.2 (27/05/2026) — recarrega o ag fresco ANTES de
+          // abrir o modal. Se algum admin fundiu cadastros duplicados ou
+          // editou paciente_id em outra aba, o ag em memória pode ter
+          // pId obsoleto. recarregarAgFresh atualiza ags[idx] usando o
+          // _mapAgFromRow (que tem alias paciente_cpf desde v3.10.0).
+          // Não bloqueia em caso de falha — usa o ag em memória como
+          // fallback. Caso GRAZIELA 27/05.
+          try { await recarregarAgFresh(ag.id); } catch(e) {}
+          var agFresh = (ags || []).find(function(x){ return x.id === ag.id; }) || ag;
+          abrirModalAcessoFotonweb(agFresh.pId, agFresh.pac || "", agFresh.paciente_cpf || "");
         }
       });
     })(a);
@@ -10862,13 +11065,15 @@ function fcSetMode(mode) {
 function fcImprimir() {
   var box = document.querySelector(".fc-box");
   if (!box) return;
-  // ⚡ FIX v3.10.1 (27/05/2026) — Validar pop-up bloqueado.
-  // Mesmo motivo de imprimirRelatorioDia (v3.10.0): Chrome/Safari bloqueiam
-  // window.open quando ha awaits/timers entre o click e o open. Sem essa
-  // checagem, .document.write(...) lancava TypeError silencioso.
+  // ⚡ FIX v3.10.3 (27/05/2026) — Pop-up blocker pode retornar null.
+  // Fechamento de Caixa abre via clique direto sem awaits antes, mas
+  // por consistencia e defesa em profundidade aplicamos o mesmo check
+  // de imprimirRelatorioDia (que ja tinha o fix desde v3.10.0).
+  // Bug apontado pelo Vine em code review de 27/05/2026 — o historico
+  // mencionava o fix mas o codigo nao tinha sido alterado.
   var win = window.open("","_blank","width=600,height=800");
   if (!win) {
-    toast("Erro", "Pop-up bloqueado pelo navegador. Permita pop-ups deste site e tente novamente.");
+    toast("Erro", "Pop-up bloqueado pelo navegador. Permita pop-ups deste site (icone na barra de enderecos) e tente novamente.");
     return;
   }
   win.document.write("<html><head><title>Fechamento de Caixa</title>");
