@@ -232,6 +232,75 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-26 (v3.8.4): Fix final do P2 da revisão (segurança).
+              ANTES (v3.8.3): se cliente não tinha sessão, helper
+                caia pra anon key como fallback. Edge Function v3
+                aceitava anon e enviava email com enviado_por=null.
+                Qualquer um com URL pública + anon key + nfse_id
+                podia disparar/reenviar emails (spam vector).
+              AGORA (v3.8.4):
+                * Cliente: enviarNFSePorEmail sem sessão retorna
+                  imediatamente { ok:false, motivo:"auth_required" }
+                  sem fazer request.
+                * Edge Function v4: rejeita callers sem auth.uid()
+                  com HTTP 401. Defesa em profundidade — se cliente
+                  burlar a checagem, Edge bloqueia.
+                * Excecao: tipo='ping' continua aberto pra teste
+                  pelo dashboard (não envia email com dados reais).
+              UX: novo motivo "auth_required" tratado nos 2
+                callers. Botão manual: toast "Sessão expirada, faça
+                login novamente". Polling automático: só log no
+                console (não polui UX do paciente).
+
+  2026-05-26 (v3.8.3): Correções de code review da v3.8.2.
+              P1 SEGURANÇA: Authorization da chamada à Edge Function
+                "enviar-email-cor" agora usa o access_token do usuário
+                logado (supa.auth.getSession().access_token), não a
+                anon key. Edge Function v3 lê auth.uid() do JWT e
+                grava em nfse_envios_email.enviado_por de forma
+                confiável (antes, payload do cliente podia mentir o
+                user_id). Mantém anon como fallback se sem sessão.
+              P2 BUG: helper enviarNFSePorEmail agora checa data.ok
+                além do HTTP status. Antes: HTTP 200 com
+                { ok:false, motivo:"sem_email" } era tratado como
+                sucesso e botão mostrava "enviada para undefined".
+                Edge Function v3 agora retorna 200 + ok:false pra
+                casos de negócio (sem_email) e 4xx/5xx só pra erros
+                reais (parsing, NFS-e inexistente).
+              P3 CONSISTÊNCIA: removida checagem de
+                ag.paciente_email no cliente (polling E botão).
+                Edge Function é fonte de verdade — busca direto no
+                banco. Cache local stale não bloqueia mais envios
+                válidos (cenário: outro terminal acabou de cadastrar
+                o email e este terminal ainda não recarregou).
+              Edge Function "enviar-email-cor" v3 deployada com
+                estas 3 correções. Compatível com v2 — clientes que
+                ainda mandam enviado_por no payload têm o campo
+                ignorado (vence o JWT).
+
+  2026-05-26 (v3.8.2): NFS-e por email (Etapa 2 do plano de migração
+              WhatsApp→Email). Infraestrutura nova: Resend + domínio
+              corsm.com.br verificado (DKIM/MX/SPF no Cloudflare) +
+              Edge Function "enviar-email-cor" v2 (tipos: ping, nfse).
+              CHANGES no index.html:
+                1) Helper enviarNFSePorEmail(nfseId, modo, override?)
+                   chama a Edge Function e loga em nfse_envios_email.
+                2) Polling NFS-e (após status_mapeado="emitida"): se
+                   ag.paciente_email não vazio, dispara envio
+                   automático fire-and-forget. Toast no sucesso.
+                3) Novo botão "📧 Enviar NFS-e Email" no menu de
+                   ações do agendamento, ao lado do botão WhatsApp.
+                   Funciona como envio E reenvio (audit log permite
+                   acompanhar histórico).
+              Tabela nova: public.nfse_envios_email (audit log com
+                nfse_id, destinatario, status, resend_message_id,
+                modo, enviado_por, created_at). RLS authenticated.
+              Sem email cadastrado = toast pedindo cadastrar (não é
+                erro; é caso comum hoje pois só 0.2% dos pacientes
+                têm email — coleta vai aumentar com tempo).
+              Mantém todos os botões antigos (Imprimir nota, Enviar
+                WhatsApp, Cancelar). Email é OPÇÃO ADICIONAL.
+
   2026-05-26 (hotfix v3.8.1): maskPhone preserva posição do cursor.
               BUG observado em produção: ao editar DDD de telefone
               já formatado, o cursor saltava pro fim do número a
@@ -2091,7 +2160,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.8.1 - 2026-05-26";
+var APP_VERSION = "v3.8.4 - 2026-05-26";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -2507,6 +2576,99 @@ function calcNotaPorItens(ag, formaPg){
   return calc;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ENVIO DE NFS-e POR EMAIL (v3.8.4 - 2026-05-26 / Etapa 2 plano email)
+// ═══════════════════════════════════════════════════════════════
+// Chama a Edge Function "enviar-email-cor" pra enviar uma NFS-e
+// específica por email. Usado em 2 lugares:
+//   - Polling automático (após Focus confirmar emissão)
+//   - Botão manual "📧 Enviar NFS-e por email" no menu do agendamento
+//
+// CORREÇÕES v3.8.4 (revisão code review continuação):
+//   - P2 (segurança restante): REMOVIDO fallback pra anon key. Se
+//     não há sessão de usuário, retorna { ok:false, motivo:
+//     "auth_required" } imediatamente sem fazer request. Edge
+//     Function v4 também rejeita anon retornando 401, fechando o
+//     vetor mesmo se cliente burlar.
+//   - Anteriores (v3.8.3 mantidos):
+//     * Authorization usa access_token do usuário (auth.uid() real)
+//     * Respeita data.ok antes de declarar sucesso
+//     * Não bloqueia por ag.paciente_email local (Edge é fonte)
+//
+// Parâmetros:
+//   nfseId: UUID da nfse_emitidas
+//   modo: "automatico" | "manual" | "reenvio" (vai pro audit log)
+//   emailOverride (opcional): forçar email diferente do cadastrado
+//
+// Retorna: { ok, message_id?, destinatario?, error?, motivo? }
+//   motivo="sem_email"     paciente sem email no banco
+//   motivo="sem_pdf"       NFS-e ainda processando (PDF não disponível)
+//   motivo="auth_required" sem sessão de usuário
+async function enviarNFSePorEmail(nfseId, modo, emailOverride){
+  if(!nfseId) return { ok:false, error:"nfse_id obrigatório" };
+  modo = modo || "manual";
+
+  // P2 v3.8.4: exige sessão. SEM fallback pra anon.
+  var authBearer = null;
+  try{
+    if(typeof supa !== "undefined" && supa.auth){
+      var s = await supa.auth.getSession();
+      var tok = s && s.data && s.data.session && s.data.session.access_token;
+      if(tok) authBearer = tok;
+    }
+  }catch(e){ /* sem sessão */ }
+
+  if(!authBearer){
+    return {
+      ok:false,
+      error:"Usuário não autenticado. Faça login pra enviar emails.",
+      motivo:"auth_required"
+    };
+  }
+
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
+
+  var payload = { tipo:"nfse", nfse_id:nfseId, modo:modo };
+  if(emailOverride) payload.email_override = emailOverride;
+  // enviado_por NÃO é enviado no payload — vem do JWT na Edge.
+
+  try{
+    var r = await fetch(API_BASE + "/enviar-email-cor", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": "Bearer " + authBearer
+      },
+      body:JSON.stringify(payload)
+    });
+    var data = await r.json().catch(function(){ return {}; });
+
+    if(!r.ok){
+      return {
+        ok:false,
+        error:data.error || ("HTTP "+r.status),
+        motivo:data.motivo,
+        http:r.status
+      };
+    }
+    if(data.ok === false){
+      return {
+        ok:false,
+        error:data.error || "envio bloqueado",
+        motivo:data.motivo
+      };
+    }
+    return {
+      ok:true,
+      message_id:data.message_id,
+      destinatario:data.destinatario
+    };
+  }catch(e){
+    return { ok:false, error:e.message || String(e) };
+  }
+}
+
 function abrirModalEmitirNota(agendamentoId){
   var ag = (ags || []).find(function(x){ return x.id === agendamentoId; });
   if(!ag){
@@ -2724,6 +2886,36 @@ function iniciarPollingNfse(agId, nfseId, reference) {
         if(typeof rndAg==="function") rndAg();
         if(typeof renderAtendimento==="function") renderAtendimento();
         toast("🧾","Nota #"+(numNota||"?")+" autorizada!");
+
+        // ⚡ v3.8.4 (2026-05-26) — Email automático da NFS-e
+        // Dispara envio assim que a Focus confirma a emissão. A
+        // Edge Function é fonte de verdade: ela mesma busca o email
+        // no banco e retorna motivo:"sem_email" se vazio. Não
+        // depende de ag.paciente_email local (que pode estar stale
+        // se outro terminal acabou de atualizar).
+        // Fire-and-forget: erros não atrapalham o fluxo do polling.
+        if(ag && ag.nfse_id){
+          try{
+            enviarNFSePorEmail(ag.nfse_id, "automatico").then(function(r){
+              if(r && r.ok){
+                console.log("[COR] NFS-e #"+(numNota||"?")+" enviada por email pra "+r.destinatario);
+                toast("📧","NFS-e enviada por email pra "+r.destinatario);
+              } else if(r && r.motivo === "sem_email"){
+                // Caso esperado: paciente sem email. Sem toast pra não poluir.
+                console.log("[COR] NFS-e #"+(numNota||"?")+": paciente sem email cadastrado.");
+              } else if(r && r.motivo === "auth_required"){
+                // Sessão expirou entre login e polling — log só, sem toast
+                // (paciente vê o "Nota autorizada" e fica feliz, email volta
+                // via botão manual depois).
+                console.warn("[COR] Email automático pulado: sem sessão. Use botão manual.");
+              } else if(r){
+                console.warn("[COR] Email automático NFS-e falhou:", r.error);
+              }
+            }).catch(function(e){
+              console.warn("[COR] Email automático NFS-e exception:", e);
+            });
+          }catch(e){ console.warn("[COR] enviarNFSePorEmail erro:", e); }
+        }
       } else if(d.status_mapeado==="rejeitada"){
         clearInterval(_nfsePollings[agId]);
         delete _nfsePollings[agId];
@@ -5977,6 +6169,43 @@ function agEV(ev, id) {
           }catch(e){
             console.error("Enviar NFS-e WhatsApp:", e);
             toast("Erro","Falha: "+(e.message||"desconhecida"));
+          }
+        }
+      });
+    })(a);
+
+    // ⚡ v3.8.3 (2026-05-26) — Enviar NFS-e por Email (Etapa 2 plano email)
+    // Substitui/complementa o botão WhatsApp. Funciona como envio E reenvio.
+    // Edge Function é fonte de verdade do email: cliente não checa
+    // ag.paciente_email (pode estar stale). Se sem email, função volta
+    // motivo:"sem_email" e mostramos toast pedindo pra cadastrar.
+    // Audit log em nfse_envios_email permite saber quem mandou e quando.
+    (function(ag){
+      btns.push({
+        lbl:"📧 Enviar NFS-e Email",
+        cls:"btnp",
+        fn:async function(){
+          if(!ag.nfse_id){
+            toast("Erro", "NFS-e não encontrada nesse agendamento.");
+            return;
+          }
+          toast("⏳", "Enviando email...");
+          try{
+            var r = await enviarNFSePorEmail(ag.nfse_id, "manual");
+            if(r.ok && r.destinatario){
+              toast("✅", "NFS-e enviada para "+r.destinatario);
+            }else if(r.motivo === "sem_email"){
+              toast("Atenção", "Paciente sem email cadastrado. Edite o paciente pra adicionar.");
+            }else if(r.motivo === "auth_required"){
+              toast("Sessão expirada", "Faça login novamente pra enviar emails.");
+            }else if(r.motivo === "sem_pdf"){
+              toast("Aguarde", "PDF da NFS-e ainda processando na Focus.");
+            }else{
+              toast("Erro", "Falha: "+(r.error || "desconhecida"));
+            }
+          }catch(e){
+            console.error("Email NFS-e:", e);
+            toast("Erro", "Falha ao enviar: "+(e.message || "desconhecida"));
           }
         }
       });
