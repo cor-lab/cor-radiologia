@@ -232,6 +232,23 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-27 (v3.8.8): Segurança do cartão Acesso FotonWeb.
+              Demanda: CPF impresso no cartão + na mensagem WhatsApp
+                expõe dados sensíveis caso o cartão seja perdido,
+                fotografado, ou print do WhatsApp circule.
+              FIX: CPF mascarado em 2 lugares:
+                * afwImprimirCartao: "xxx.xxx.NNN-NN" (5 últimos
+                  dígitos visíveis). Adicionada nota explicativa
+                  no cartão: "Por segurança, o CPF impresso está
+                  parcialmente oculto. Use seu CPF completo no
+                  acesso."
+                * afwEnviarWhatsapp: mensagem agora diz
+                  "Login: seu CPF (final xxx.xxx.NNN-NN)" em vez
+                  do CPF completo.
+              Razão: paciente sabe o próprio CPF; o cartão/mensagem
+                serve só como lembrete do FINAL pra confirmar que
+                é dele (e da senha). Senha sozinha não loga sem CPF.
+
   2026-05-27 (v3.8.7): Hotfix da v3.8.6.
               BUG: ao clicar em "🔑 Acesso FotonWeb", erro
                 "Falha ao buscar paciente". Causa: o select
@@ -2237,7 +2254,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.8.7 - 2026-05-27";
+var APP_VERSION = "v3.8.8 - 2026-05-27";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -3139,7 +3156,9 @@ function _afwGerarJanelaImpressao(){
     "<div class='row'><strong>Paciente</strong><span>"+esc(pac.nome)+"</span></div>"+
     "<div class='credenciais'>"+
     "<div class='cred-label'>Seu Login (CPF)</div>"+
-    "<div class='cred-valor'>"+formatarCPF(cpfLimpo)+"</div>"+
+    // v3.8.8 — CPF mascarado por segurança (cartão pode ser perdido/fotografado).
+    // Mostra só os 5 últimos dígitos (XXX.XXX.NNN-NN); paciente confirma pelo final.
+    "<div class='cred-valor'>xxx.xxx."+esc(cpfLimpo.substring(6, 9))+"-"+esc(cpfLimpo.substring(9, 11))+"</div>"+
     "<div class='cred-label' style='margin-top:14px'>Sua Senha</div>"+
     "<div class='cred-valor'>"+esc(_afwSenhaAtual)+"</div>"+
     "</div>"+
@@ -3147,9 +3166,12 @@ function _afwGerarJanelaImpressao(){
     "<strong>Como acessar:</strong>"+
     "<ol>"+
     "<li>Abra o navegador e acesse: <strong>"+esc(fotonwebUrl)+"</strong></li>"+
-    "<li>Digite seu CPF e senha acima</li>"+
+    "<li>Digite seu CPF completo e a senha acima</li>"+
     "<li>Visualize e baixe seus exames online</li>"+
     "</ol>"+
+    "<p style='margin:10px 0 0;font-size:12px;color:#666;font-style:italic'>"+
+    "Por segurança, o CPF impresso está parcialmente oculto. Use seu CPF completo no acesso."+
+    "</p>"+
     "</div>"+
     "<div class='footer'>"+
     "<strong>COR — Centro Odontológico de Radiologia</strong><br>"+
@@ -3176,12 +3198,15 @@ async function afwEnviarWhatsapp(){
   }
   var cpfLimpo = String(pac.cpf || "").replace(/\D/g, "");
   var fotonwebUrl = (typeof FOTONWEB_URL !== "undefined" && FOTONWEB_URL) ? FOTONWEB_URL : "https://exames.corsm.com.br";
+  // v3.8.8 — CPF mascarado por segurança (WhatsApp pode ser printado, encaminhado, etc).
+  // Paciente sabe o próprio CPF; mostra só os 5 últimos como referência.
+  var cpfMasc = "xxx.xxx." + cpfLimpo.substring(6, 9) + "-" + cpfLimpo.substring(9, 11);
 
   var msg =
     "Olá, "+(pac.nome || "")+"!\n\n"+
     "🦷 Seu acesso ao FotonWeb COR está pronto!\n\n"+
     "🔗 Link: "+fotonwebUrl+"\n"+
-    "👤 CPF: "+formatarCPF(cpfLimpo)+"\n"+
+    "👤 Login: seu CPF (final "+cpfMasc+")\n"+
     "🔑 Senha: "+_afwSenhaAtual+"\n\n"+
     "Guarde esses dados — eles servem pra todos os seus exames online conosco.\n\n"+
     "COR — Centro Odontológico de Radiologia";
