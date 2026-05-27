@@ -29,6 +29,8 @@
 //       Marcadores: "entregaLabels", ".entrega-box"
 //
 //   HISTÓRICO
+//   v2.8 (2026-05-27): Validacao pop-up bloqueado em imprimirOS
+//                       Marcadores: "Pop-up bloqueado pelo navegador"
 //   v2.7 (2026-04-23): Grid corrigida (align-items:start + overflow-wrap)
 //   v2.6 (2026-04-19): Correção desconto em mistos + página única A4
 //   v2.5 (anterior)  : Base com setores técnicos
@@ -406,7 +408,19 @@ async function imprimirOS(agId) {
         "<script>window.onload=function(){window.print();}<\/script>" +
         "</body></html>";
 
+    // FIX v2.8 (27/05/2026) - Validar pop-up bloqueado. Chrome/Safari bloqueiam
+    // window.open quando ha awaits entre o click e o open (imprimirOS faz busca
+    // de exames/dentistas/enderecos antes); sem essa checagem win.document.write
+    // lancava TypeError silencioso.
     var win = window.open("", "_blank");
+    if (!win) {
+        if (typeof toast === "function") {
+            toast("Erro", "Pop-up bloqueado pelo navegador. Permita pop-ups deste site e tente novamente.");
+        } else {
+            alert("Pop-up bloqueado pelo navegador. Permita pop-ups deste site e tente novamente.");
+        }
+        return;
+    }
     win.document.write(html);
     win.document.close();
 }
@@ -435,4 +449,4 @@ function gerarBarcodeSvg(texto) {
     return "<svg width='" + (x + 8) + "' height='" + (height + 3) + "' xmlns='http://www.w3.org/2000/svg'>" + bars + "</svg>";
 }
 
-console.log("[COR] Modulo ordem de servico v2.7 carregado (desconto em mistos + A4 pagina unica)");
+console.log("[COR] Modulo ordem de servico v2.8 carregado (validacao pop-up bloqueado)");

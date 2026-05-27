@@ -55,6 +55,8 @@
 //
 //   ───────── HISTÓRICO ─────────
 //
+//   v10 — validacao pop-up bloqueado nos 3 geradores (envelope, protocolo, CD)
+//         Marcadores: "Pop-up bloqueado pelo navegador"
 //   v9 — logo monocromatica (grayscale 100%) no envelope e CD
 //   v8 — envelope: ajusta altura/fontes pra caber em 29mm sem precisar
 //        imprimir a 90%. info 7.5→6mm, dbox 8.5→8pt, line-height 1.2→1.15
@@ -270,7 +272,18 @@ function gerarEtiquetaHtml(a, dentNome, dataAtend, horaAtend, idade, endereco) {
     html += "</table></div></div>" +
         "<script>window.onload=function(){window.print();}<\/script></body></html>";
 
+    // FIX v10 (27/05/2026) - Validar pop-up bloqueado. Chrome/Safari bloqueiam
+    // window.open quando ha awaits entre o click e o open; sem essa checagem
+    // win.document.write(html) lancava TypeError silencioso.
     var win = window.open("", "_blank");
+    if (!win) {
+        if (typeof toast === "function") {
+            toast("Erro", "Pop-up bloqueado pelo navegador. Permita pop-ups deste site e tente novamente.");
+        } else {
+            alert("Pop-up bloqueado pelo navegador. Permita pop-ups deste site e tente novamente.");
+        }
+        return;
+    }
     win.document.write(html);
     win.document.close();
 }
@@ -334,7 +347,18 @@ function gerarEtiquetaProtocolo(a, dentNome, endereco) {
         "</div>" +
         "<script>window.onload=function(){window.print();}<\/script></body></html>";
 
+    // FIX v10 (27/05/2026) - Validar pop-up bloqueado. Chrome/Safari bloqueiam
+    // window.open quando ha awaits entre o click e o open; sem essa checagem
+    // win.document.write(html) lancava TypeError silencioso.
     var win = window.open("", "_blank");
+    if (!win) {
+        if (typeof toast === "function") {
+            toast("Erro", "Pop-up bloqueado pelo navegador. Permita pop-ups deste site e tente novamente.");
+        } else {
+            alert("Pop-up bloqueado pelo navegador. Permita pop-ups deste site e tente novamente.");
+        }
+        return;
+    }
     win.document.write(html);
     win.document.close();
 }
@@ -388,7 +412,18 @@ function gerarEtiquetaCD(a, dentNome, dataAtend, horaAtend) {
         "</div>" +
         "<script>window.onload=function(){window.print();}<\/script></body></html>";
 
+    // FIX v10 (27/05/2026) - Validar pop-up bloqueado. Chrome/Safari bloqueiam
+    // window.open quando ha awaits entre o click e o open; sem essa checagem
+    // win.document.write(html) lancava TypeError silencioso.
     var win = window.open("", "_blank");
+    if (!win) {
+        if (typeof toast === "function") {
+            toast("Erro", "Pop-up bloqueado pelo navegador. Permita pop-ups deste site e tente novamente.");
+        } else {
+            alert("Pop-up bloqueado pelo navegador. Permita pop-ups deste site e tente novamente.");
+        }
+        return;
+    }
     win.document.write(html);
     win.document.close();
 }
@@ -539,4 +574,4 @@ async function imprimirEtiquetaHist(histItem, tipo, paciente_id) {
     }
 }
 
-console.log("[COR] Modulo etiqueta v9 carregado (logo monocromatica envelope+CD)");
+console.log("[COR] Modulo etiqueta v10 carregado (validacao pop-up bloqueado nos 3 geradores)");

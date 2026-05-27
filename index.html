@@ -2312,7 +2312,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.9.0 - 2026-05-27";
+var APP_VERSION = "v3.10.1 - 2026-05-27";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -3636,17 +3636,27 @@ async function recarregarAgFresh(agendamentoId) {
     const agFresh = arrAg[0];
     const rEx = await supaFetch('/rest/v1/agendamento_exames?select=*&agendamento_id=eq.' + agendamentoId);
     const examesFresh = await rEx.json();
-    // Atualiza só os campos que podem ter mudado por reverter+editar+realizar
-    ags[idx].exames = examesFresh || [];
-    ags[idx].valor = parseFloat(agFresh.valor || 0);
-    ags[idx].vl = parseFloat(agFresh.valor || 0);
-    ags[idx].valor_bruto = parseFloat(agFresh.valor_bruto || agFresh.valor || 0);
-    ags[idx].valor_faturado = parseFloat(agFresh.valor_faturado || agFresh.valor || 0);
-    ags[idx].desconto_valor = Number(agFresh.desconto_valor || 0);
-    ags[idx].desconto_percentual = Number(agFresh.desconto_percentual || 0);
-    ags[idx].status = agFresh.status || ags[idx].status;
-    ags[idx].status_clinico = agFresh.status_clinico || ags[idx].status_clinico;
-    ags[idx].st = agFresh.status || ags[idx].st;
+
+    // ⚡ FIX v3.10.0 (27/05/2026) — Refresh COMPLETO via _mapAgFromRow.
+    // Antes: só atualizava exames/valores/status, deixando CPF/tel/endereco/
+    // email/paciente_id/firebird_seq_atend desatualizados na memoria. Como
+    // marcarRealizadoEEmitir chama isso e depois FotonWeb/NFS-e consomem o
+    // mesmo ag, mudanca recente de cadastro NAO refletia ate refresh manual.
+    // Bug reportado no code review do Vine em 27/05/2026.
+    //
+    // Preserva campos temporarios de sessao que NAO vem do banco:
+    //   _statusOriginal, _examesOriginais, status_clinico_original (snapshot
+    //   pre-edicao usado em bloqueios), _forcarRepropagacao (botao Forcar),
+    //   _new (flag de criacao - sempre false pra ag ja carregado).
+    var temp = {};
+    if (ags[idx]._statusOriginal !== undefined) temp._statusOriginal = ags[idx]._statusOriginal;
+    if (ags[idx]._examesOriginais !== undefined) temp._examesOriginais = ags[idx]._examesOriginais;
+    if (ags[idx].status_clinico_original !== undefined) temp.status_clinico_original = ags[idx].status_clinico_original;
+    if (ags[idx]._forcarRepropagacao !== undefined) temp._forcarRepropagacao = ags[idx]._forcarRepropagacao;
+
+    var fresh = _mapAgFromRow(agFresh, examesFresh || []);
+    // Overwrite com fresh, depois reaplica temps. _new fica false (default do mapper).
+    Object.assign(ags[idx], fresh, temp);
   } catch (e) {
     console.error('recarregarAgFresh:', e);
   }
@@ -4121,6 +4131,28 @@ async function loadAllData(){
 
     var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7], ajR = r[8], deR = r[9];
 
+    // ⚡ FIX v3.10.0 (27/05/2026) — Validar erros do Promise.all.
+    // Antes: queries falhadas por RLS/rede/schema viravam r.data=null,
+    // codigo usava r.data || [] e seguia silenciosamente -> app abria
+    // "vazio" sem aviso (ex: sem dentistas, sem agendamentos, sem exames).
+    // Agora: loga TODOS os erros no console e avisa o usuario com toast.
+    // Nao interrompe carregamento (UX: melhor app parcial que app travado)
+    // mas usuario sabe que algo falhou e pode recarregar.
+    var errosCarregamento = [];
+    if (exR && exR.error) errosCarregamento.push('exames_tipos: ' + exR.error.message);
+    if (cvR && cvR.error) errosCarregamento.push('convenios: ' + cvR.error.message);
+    if (cpR && cpR.error) errosCarregamento.push('convenio_precos: ' + cpR.error.message);
+    if (dR && dR.error) errosCarregamento.push('dentistas: ' + dR.error.message);
+    if (agR && agR.error) errosCarregamento.push('agendamentos: ' + agR.error.message);
+    if (prR && prR.error) errosCarregamento.push('premios: ' + prR.error.message);
+    if (usR && usR.error) errosCarregamento.push('usuarios: ' + usR.error.message);
+    if (ajR && ajR.error) errosCarregamento.push('cashback_ajustes: ' + ajR.error.message);
+    if (deR && deR.error) errosCarregamento.push('dentista_enderecos: ' + deR.error.message);
+    if (errosCarregamento.length > 0) {
+      console.error('[COR] loadAllData erros:', errosCarregamento);
+      toast('⚠️ Carregamento parcial', errosCarregamento.length + ' tabela(s) falharam. Detalhes no console (F12). Pode ser necessario recarregar a pagina.');
+    }
+
     // Buscar dentistas restantes (paginado)
     var allDents = dR.data || [];
     if(allDents.length >= 999){
@@ -4438,6 +4470,14 @@ async function dbSaveAgRpc(ag, payload, rows){
     var data = Array.isArray(r.data) ? r.data[0] : r.data;
     var novoId = data && (data.id || data.agendamento_id);
     if(ag._new && novoId) ag.id = novoId;
+    // ⚡ FIX v3.9.1 (27/05/2026) — limpar _new apos save bem-sucedido.
+    // Bug: ag criado por confAg ficava com _new=true PERPETUAMENTE em memoria;
+    // se a recepcao editava o mesmo ag SEM RECARREGAR (ex: ajustar duracao),
+    // dbSaveAg via _new=true ainda e fazia INSERT em vez de UPDATE -> duplicava
+    // o agendamento. Casos confirmados: LUCAS, NELI, HEITOR (Claudia 25-27/05).
+    // Fix: depois do INSERT a flag vai pra false; edicoes subsequentes do mesmo
+    // objeto em memoria vao caminhar pro UPDATE corretamente.
+    if(ag._new) ag._new = false;
     return {used:true, ok:true};
   }catch(e){
     if(rpcAgendamentoNaoExiste(e)){
@@ -4654,6 +4694,8 @@ async function dbSaveAg(ag){
     console.error("dbSaveAg:", r.error);
     return false;
   }
+  // ⚡ FIX v3.9.1 (27/05/2026) — mesmo fix do RPC; ver dbSaveAgRpc.
+  if (!r.error && ag._new) ag._new = false;
 
   // salva os múltiplos exames na tabela filha
   if (ag.id && Array.isArray(ag.exames)) {
@@ -6275,6 +6317,13 @@ function _mapAgFromRow(a, itens) {
     // P2 #4 fix: coluna real é paciente_tel (não paciente_telefone)
     tel: a.paciente_tel || "",
     cpf: a.paciente_cpf || "",
+    // ⚡ FIX v3.10.0 (27/05/2026) — Alias paciente_cpf. 17 call sites no app
+    // (OS, NFS-e, FotonWeb, edicao, busca por ID, etc) leem ag.paciente_cpf;
+    // antes da v3.10 esse campo ficava undefined quando o ag vinha pelo
+    // _mapAgFromRow (so tinha `cpf`), gerando CPF vazio silencioso nesses
+    // fluxos. Manter ambos os nomes evita regressao. Bug reportado no code
+    // review do Vine em 27/05/2026.
+    paciente_cpf: a.paciente_cpf || "",
     paciente_cnpj: a.paciente_cnpj || "",
     paciente_email: a.paciente_email || "",
     paciente_cep: a.paciente_cep || "",
@@ -7436,6 +7485,12 @@ function openEditAg(id) {
           return;
         }
       }
+
+      // ⚡ FIX v3.9.1 (27/05/2026) — defesa adicional: editar agendamento
+      // existente NUNCA e INSERT. Forca _new=false antes do save, mesmo se
+      // o objeto em memoria carregou _new=true de uma criacao anterior.
+      // Belt-and-suspenders com o fix em dbSaveAg/dbSaveAgRpc.
+      if (a && a.id) a._new = false;
 
       var ok = await dbSaveAg(a);
       if (!ok) {
@@ -10464,7 +10519,16 @@ async function imprimirRelatorioDia() {
     "<script>window.onload=function(){window.print();}<\/script>" +
     "</body></html>";
 
+  // ⚡ FIX v3.10.0 (27/05/2026) — Pop-up blocker pode retornar null.
+  // imprimirRelatorioDia tem varios awaits antes do open (busca ags do dia,
+  // exames, dentistas, ajustes), entao Chrome/Safari frequentemente nao
+  // associa o open ao gesto original do clique e bloqueia. Sem essa
+  // checagem, win.document.write(html) lancava TypeError silencioso.
   var win = window.open("", "_blank");
+  if (!win) {
+    toast("Erro", "Pop-up bloqueado pelo navegador. Permita pop-ups deste site (icone na barra de enderecos) e tente novamente.");
+    return;
+  }
   win.document.write(html);
   win.document.close();
 }
@@ -10798,7 +10862,15 @@ function fcSetMode(mode) {
 function fcImprimir() {
   var box = document.querySelector(".fc-box");
   if (!box) return;
+  // ⚡ FIX v3.10.1 (27/05/2026) — Validar pop-up bloqueado.
+  // Mesmo motivo de imprimirRelatorioDia (v3.10.0): Chrome/Safari bloqueiam
+  // window.open quando ha awaits/timers entre o click e o open. Sem essa
+  // checagem, .document.write(...) lancava TypeError silencioso.
   var win = window.open("","_blank","width=600,height=800");
+  if (!win) {
+    toast("Erro", "Pop-up bloqueado pelo navegador. Permita pop-ups deste site e tente novamente.");
+    return;
+  }
   win.document.write("<html><head><title>Fechamento de Caixa</title>");
   win.document.write("<style>body{font-family:sans-serif;padding:20px;font-size:13px}");
   win.document.write(".fc-toggle,.fc-print-btn,.fc-close{display:none}");
