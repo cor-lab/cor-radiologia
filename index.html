@@ -232,6 +232,64 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-27 (v3.9.0): Code review do Vine — fixes P2 #4 e P3 #5.
+              P2 #4 — MAPEAMENTO ERRADO em 3 lugares:
+                * `tel:a.paciente_telefone` → coluna real é
+                  `paciente_tel` (sempre vinha vazio antes!)
+                * `paciente_endereco:a.paciente_endereco` → coluna
+                  real é `paciente_logradouro` (idem, sempre vazio)
+                Bugs silenciosos confirmados em information_schema:
+                só existem paciente_tel e paciente_logradouro.
+                FIX: criado helper `_mapAgFromRow(a, itens)` global
+                que centraliza o mapeamento. Substituídos 3 mappers
+                inline (abrirAgGlobal, loadAllData, fechamento) por
+                chamada ao helper. Os 3 lugares agora produzem
+                objetos com nomes corretos e mesmo conjunto de
+                campos (união de tudo que cada um tinha).
+              P3 #5 — DUPLICATAS:
+                * `calcularValorFinalComDesconto` aparecia 3 vezes
+                  (uma cópia literal globais + um fragmento órfão
+                  entre funções, paste-error). Removidas as 2
+                  duplicatas; mantida só a primeira definição.
+                * `obterDescontoPagamento` aparecia 2 vezes (a
+                  segunda no mesmo fragmento órfão). Removida.
+              Linha 3835 (NFS-e tomadorTelefone): fallback
+                `ag.paciente_telefone` trocado por `ag.paciente_tel`
+                por consistência (defesa em profundidade — agora
+                que o helper popula corretamente, esse fallback
+                virou redundância mas mantém o código defensivo).
+              P1 #1, #2 (pacientes_busca.js) e P1/P2 #3 (scripts
+                faltando localmente) NÃO entram nesta versão —
+                arquivo do pacientes_busca.js que Vine enviou já
+                vinha com os P1 corrigidos, e os JS externos estão
+                OK em produção (faltavam só no Downloads local).
+              PENDENTE: Etapas 4.6, 3, bugs raiz do app COR.
+
+  2026-05-27 (v3.8.9): Etapa 4.5 — Email da senha FotonWeb.
+              Botão "📧 Email" no modal "Acesso FotonWeb" agora
+              FUNCIONA. Chama Edge Function 'enviar-email-cor' v5
+              tipo='fotonweb_senha' que:
+                - Busca o paciente no banco (RLS via service role)
+                - Recupera a senha via RPC recuperar_senha_paciente_fotonweb
+                - Envia HTML formatado com link, CPF mascarado
+                  (xxx.xxx.NNN-NN) e senha completa
+                - Registra em emails_log (audit genérico novo)
+              FRONTEND:
+                * afwEnviarEmail() reescrito (não é mais placeholder)
+                * Botão habilitado dinamicamente em _afwMostrarSenha:
+                  só ativo se paciente.email tem '@'
+                * Confirmação antes de enviar (ação irreversível)
+                * Botão fica "Enviando..." durante o request
+                * Toast de sucesso mostra o destinatário
+                * Trata motivos sem_email/sem_senha/sem_cpf
+              BACKEND (já deployado):
+                * Edge v5 com tipo 'fotonweb_senha'
+                * Tabela emails_log nova (audit genérico)
+                * NFS-e agora faz dual-write (emails_log +
+                  nfse_envios_email legado)
+              PENDENTE: Etapa 4.6 (treino recepção) e Etapa 3
+                (aviso laudo pronto pro dentista).
+
   2026-05-27 (v3.8.8): Segurança do cartão Acesso FotonWeb.
               Demanda: CPF impresso no cartão + na mensagem WhatsApp
                 expõe dados sensíveis caso o cartão seja perdido,
@@ -2254,7 +2312,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.8.8 - 2026-05-27";
+var APP_VERSION = "v3.9.0 - 2026-05-27";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -2963,7 +3021,15 @@ function _afwMostrarSenha(){
     btnWa.disabled = !tem_tel;
     btnWa.title = tem_tel ? "Enviar senha por WhatsApp" : "Paciente sem telefone cadastrado";
   }
-  // Email fica desabilitado por enquanto (etapa 4.5 vai implementar)
+  // v3.8.9 — Email habilitado quando paciente tem email cadastrado
+  var btnEm = document.getElementById("afwBtnEmail");
+  if(btnEm){
+    var tem_email = !!(_afwPacienteAtual.email && String(_afwPacienteAtual.email).indexOf("@") > 0);
+    btnEm.disabled = !tem_email;
+    btnEm.title = tem_email
+      ? "Enviar senha por email pra " + _afwPacienteAtual.email
+      : "Paciente sem email cadastrado — edite o cadastro do paciente primeiro";
+  }
 
   _afwSetEstado("tem_senha");
 }
@@ -3219,9 +3285,75 @@ async function afwEnviarWhatsapp(){
   }
 }
 
-function afwEnviarEmail(){
-  // Implementado na Etapa 4.5
-  toast("Em breve", "Envio por email será implementado na Etapa 4.5");
+async function afwEnviarEmail(){
+  // v3.8.9 (Etapa 4.5) — envia senha de acesso ao FotonWeb por email
+  // via Edge Function 'enviar-email-cor' tipo='fotonweb_senha'.
+  // A senha JÁ ESTÁ gerada no banco (modal só abre nesse estado).
+  // A Edge: 1) busca o paciente, 2) recupera senha via RPC,
+  //         3) envia HTML formatado com CPF mascarado + senha,
+  //         4) registra em emails_log.
+  var pac = _afwPacienteAtual;
+  if(!pac || !pac.id){
+    toast("Erro", "Paciente inválido");
+    return;
+  }
+  if(!pac.email || String(pac.email).indexOf("@") <= 0){
+    toast("Atenção", "Paciente sem email cadastrado. Edite o cadastro primeiro.");
+    return;
+  }
+
+  // Confirmação (envio é irreversível — email cai na caixa do paciente)
+  if(!confirm("Enviar senha de acesso ao FotonWeb por email pra:\n\n" + pac.email + "\n\nConfirma?")){
+    return;
+  }
+
+  // Desabilita o botão durante o envio pra evitar duplo click
+  var btnEm = document.getElementById("afwBtnEmail");
+  if(btnEm){ btnEm.disabled = true; btnEm.textContent = "Enviando..."; }
+
+  try{
+    var r = await supa.functions.invoke("enviar-email-cor", {
+      body: {
+        tipo: "fotonweb_senha",
+        paciente_id: pac.id,
+        modo: "manual"
+      }
+    });
+
+    // O supa.functions.invoke retorna {data, error}; mas a Edge sempre devolve
+    // HTTP 200 mesmo pra casos de negócio (sem_email, sem_senha), com ok:false.
+    // Então tratamos o data.ok primeiro.
+    if(r.error){
+      console.error("afwEnviarEmail:", r.error);
+      toast("Erro", "Falha no envio: " + (r.error.message || "erro desconhecido"));
+      return;
+    }
+    var data = r.data || {};
+    if(!data.ok){
+      var motivo = data.motivo || "";
+      var msg = data.error || "Não foi possível enviar o email";
+      if(motivo === "sem_email") msg = "Paciente sem email cadastrado";
+      else if(motivo === "sem_senha") msg = "Paciente ainda não tem senha gerada";
+      else if(motivo === "sem_cpf") msg = "Paciente sem CPF válido";
+      toast("Atenção", msg);
+      return;
+    }
+
+    toast("📧", "Email enviado pra " + (data.destinatario || pac.email));
+  }catch(e){
+    console.error("afwEnviarEmail exception:", e);
+    toast("Erro", "Falha: " + (e.message || "desconhecida"));
+  }finally{
+    // Restaura o botão
+    if(btnEm){
+      btnEm.disabled = false;
+      btnEm.innerHTML = "📧 Email";
+      // Re-aplica title correto (pode ter sido modificado durante envio)
+      if(_afwPacienteAtual && _afwPacienteAtual.email){
+        btnEm.title = "Enviar senha por email pra " + _afwPacienteAtual.email;
+      }
+    }
+  }
 }
 
 function afwRegenerarConfirmar(){
@@ -3733,7 +3865,7 @@ function montarDpsNacional(ag){
   ""
 );
   var tomadorEmail = ag.paciente_email || "";
-  var tomadorTelefone = ag.tel || ag.paciente_telefone || "";
+  var tomadorTelefone = ag.tel || ag.paciente_tel || "";
   var tomadorCep = ag.paciente_cep || "";
   var tomadorLogradouro = ag.paciente_logradouro || "";
   var tomadorNumero = ag.paciente_numero || "";
@@ -5047,7 +5179,7 @@ async function dbResgatar(dentId,premId,pts){
         <button class="btn btno bsm" onclick="afwCopiar()">📋 Copiar</button>
         <button class="btn btno bsm" onclick="afwImprimirCartao()">🖨️ Cartão</button>
         <button id="afwBtnWhatsapp" class="btn btnt bsm" onclick="afwEnviarWhatsapp()">💬 WhatsApp</button>
-        <button id="afwBtnEmail" class="btn btnp bsm" onclick="afwEnviarEmail()" disabled title="Disponível na Etapa 4.5">📧 Email</button>
+        <button id="afwBtnEmail" class="btn btnp bsm" onclick="afwEnviarEmail()">📧 Email</button>
       </div>
 
       <div style="margin-top:20px;padding:14px;background:rgba(255,255,255,.03);border-radius:8px;font-size:.78rem;line-height:1.7">
@@ -6115,6 +6247,77 @@ async function buscarPacienteGlobal(){
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPER: _mapAgFromRow(a, itens)
+//
+// Mapeia uma linha da tabela agendamentos (vinda do REST/Supabase) pro
+// formato in-memory usado pelo objeto `ag` do app (id, pac, pId, tel, cpf,
+// dt, hr, dur, etc).
+//
+// CRIADO v3.9.0 (P2 #4 do code review do Vine 27/05): centraliza 3 mappers
+// inline (abrirAgGlobal linha 6234, loadAllData/relatório linha 10190,
+// fechamento linha 10474) que tinham 2 bugs silenciosos:
+//   1. liam `a.paciente_telefone` (coluna NÃO existe) → tel sempre ""
+//      coluna real é `a.paciente_tel` (confirmado em information_schema)
+//   2. liam `a.paciente_endereco` (coluna NÃO existe) → sempre ""
+//      coluna real é `a.paciente_logradouro`
+//
+// Esse helper produz a UNIÃO dos campos dos 3 mappers (o mais completo era
+// o de abrirAgGlobal). Mappers 2 e 3 vão receber alguns campos extras
+// (dur, paciente_data_nascimento, etc) — inofensivo, são valores default.
+//
+// `itens` é o array de agendamento_exames já buscado pelo caller; passa
+// `[]` se ainda não foi carregado.
+// ═══════════════════════════════════════════════════════════════════════════
+function _mapAgFromRow(a, itens) {
+  return {
+    id: a.id, pac: a.paciente_nome || "", pId: a.paciente_id || null,
+    // P2 #4 fix: coluna real é paciente_tel (não paciente_telefone)
+    tel: a.paciente_tel || "",
+    cpf: a.paciente_cpf || "",
+    paciente_cnpj: a.paciente_cnpj || "",
+    paciente_email: a.paciente_email || "",
+    paciente_cep: a.paciente_cep || "",
+    // P2 #4 fix: coluna real é paciente_logradouro (não paciente_endereco)
+    paciente_logradouro: a.paciente_logradouro || "",
+    paciente_numero: a.paciente_numero || "",
+    paciente_complemento: a.paciente_complemento || "",
+    paciente_bairro: a.paciente_bairro || "",
+    paciente_municipio: a.paciente_municipio || "",
+    paciente_uf: a.paciente_uf || "",
+    paciente_data_nascimento: a.paciente_data_nascimento || "",
+    paciente_sexo: a.paciente_sexo || "",
+    ex: a.exame_id, exames: itens || [],
+    dt: iso2br(a.data_exame),
+    hr: (a.hora_exame || "08:00").substring(0, 5),
+    dur: a.duracao || 30,
+    dId: a.dentista_id, cv: a.convenio_id || "",
+    vl: parseFloat(a.valor || 0),
+    valor_bruto: parseFloat(a.valor_bruto || a.valor || 0),
+    valor_faturado: parseFloat(a.valor_faturado || a.valor || 0),
+    desconto_percentual: Number(a.desconto_percentual || 0),
+    desconto_valor: Number(a.desconto_valor || 0),
+    forma_pagamento_prevista: a.forma_pagamento_prevista || "avista",
+    forma_pagamento_final: a.forma_pagamento_final || "",
+    cb: a.cashback_pts || 0,
+    st: a.status || "agendado",
+    status: a.status || "agendado",
+    status_clinico: a.status_clinico || a.status || "agendado",
+    status_fiscal: a.status_fiscal || "nao_emitida",
+    nfse_id: a.nfse_id || null,
+    numero_nfse: a.numero_nfse || null,
+    focus_reference: a.focus_reference || null,
+    pode_pontuar: a.pode_pontuar === true,
+    firebird_sync: a.firebird_sync || null,
+    firebird_atend_id: a.firebird_atend_id || null,
+    firebird_seq_atend: a.firebird_seq_atend || null,
+    obs: a.observacoes || "",
+    observacoes: a.observacoes || "",
+    forma_entrega: a.forma_entrega || null,
+    previsao_entrega: a.previsao_entrega || null
+  };
+}
+
 async function abrirAgGlobal(agId){
   // Verificar se já está no array ags
   var existe = ags.find(function(x){return x.id===agId});
@@ -6131,39 +6334,9 @@ async function abrirAgGlobal(agId){
     // Buscar itens
     var itensR = await supaFetch("/rest/v1/agendamento_exames?select=*&agendamento_id=eq."+agId);
     var itens = await itensR.json() || [];
-    // Montar objeto compatível
-    var ag = {
-      id:a.id, pac:a.paciente_nome||"", pId:a.paciente_id||null,
-      tel:a.paciente_telefone||"", cpf:a.paciente_cpf||"",
-      paciente_cep:a.paciente_cep||"",paciente_endereco:a.paciente_endereco||"",
-      paciente_bairro:a.paciente_bairro||"",paciente_municipio:a.paciente_municipio||"",
-      paciente_uf:a.paciente_uf||"",
-      ex:a.exame_id, exames:itens,
-      dt:iso2br(a.data_exame), hr:(a.hora_exame||"08:00").substring(0,5),
-      dur:a.duracao||30, dId:a.dentista_id, cv:a.convenio_id||"",
-      vl:parseFloat(a.valor||0),
-      valor_bruto:parseFloat(a.valor_bruto||a.valor||0),
-      desconto_percentual:Number(a.desconto_percentual||0),
-      desconto_valor:Number(a.desconto_valor||0),
-      valor_faturado:parseFloat(a.valor_faturado||a.valor||0),
-      forma_pagamento_prevista:a.forma_pagamento_prevista||"avista",
-      forma_pagamento_final:a.forma_pagamento_final||"",
-      cb:a.cashback_pts||0,
-      st:a.status||"agendado",status:a.status||"agendado",
-      status_clinico:a.status_clinico||a.status||"agendado",
-      status_fiscal:a.status_fiscal||"nao_emitida",
-      nfse_id:a.nfse_id||null,numero_nfse:a.numero_nfse||null,
-      focus_reference:a.focus_reference||null,
-      pode_pontuar:a.pode_pontuar===true,
-      firebird_sync:a.firebird_sync||null,
-      firebird_atend_id:a.firebird_atend_id||null,
-      firebird_seq_atend:a.firebird_seq_atend||null,
-      obs:a.observacoes||"",observacoes:a.observacoes||"",
-      forma_entrega:a.forma_entrega||null,
-      previsao_entrega:a.previsao_entrega||null,
-      paciente_data_nascimento:a.paciente_data_nascimento||"",
-      paciente_sexo:a.paciente_sexo||""
-    };
+    // P2 #4 fix v3.9.0: usa _mapAgFromRow centralizado (resolve bug
+    // silencioso de paciente_telefone/paciente_endereco)
+    var ag = _mapAgFromRow(a, itens);
     ags.push(ag);
     agEV(agId);
   }catch(e){toast("Erro","Falha ao carregar: "+e.message)}
@@ -7975,19 +8148,6 @@ function calcularValorFinalComDesconto(valorBruto, formaPagamento){
   };
 }
 
-function calcularValorFinalComDesconto(valorBruto, formaPagamento){
-  var bruto = Number(valorBruto || 0);
-  var perc = obterDescontoPagamento(formaPagamento);
-  var descontoValor = bruto * (perc / 100);
-  var valorFinal = bruto - descontoValor;
-
-  return {
-    valor_bruto: bruto,
-    desconto_percentual: perc,
-    desconto_valor: Number(descontoValor.toFixed(2)),
-    valor_faturado: Number(valorFinal.toFixed(2))
-  };
-}
 function atualizarValorNota(){
   if(!AG_EMISSAO_ATUAL) return;
 
@@ -8129,27 +8289,6 @@ async function avisarDentistaAtendimentoRealizado(ag, waWindow){
   fecharSeAberta(); // Fecha qualquer waWindow legacy se ainda vier
   abrirWhatsApp(tel, msg);
 }
-
-function obterDescontoPagamento(formaPagamento){
-    if(formaPagamento === "avista") return 20;
-    if(formaPagamento === "3x") return 10;
-    if(formaPagamento === "4x") return 10;
-    if(formaPagamento === "10x") return 0;
-    return 0;
-  }
-  function calcularValorFinalComDesconto(valorBruto, formaPagamento){
-    var bruto = Number(valorBruto || 0);
-    var perc = obterDescontoPagamento(formaPagamento);
-    var descontoValor = bruto * (perc / 100);
-    var valorFinal = bruto - descontoValor;
-
-    return {
-      valor_bruto: bruto,
-      desconto_percentual: perc,
-      desconto_valor: Number(descontoValor.toFixed(2)),
-      valor_faturado: Number(valorFinal.toFixed(2))
-    };
-  }
 
 // ══ CONVENIOS ══
 
@@ -10088,27 +10227,8 @@ async function imprimirRelatorioDia() {
       var todosItens = await rItens.json() || [];
       dayAgs = dados.map(function(a){
         var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
-        return {
-          id:a.id, pac:a.paciente_nome||"", pId:a.paciente_id,
-          tel:a.paciente_telefone||"", cpf:a.paciente_cpf||"",
-          ex:a.exame_id, exames:itens,
-          dt:iso2br(a.data_exame), hr:(a.hora_exame||"08:00").substring(0,5),
-          dId:a.dentista_id, cv:a.convenio_id||"",
-          vl:parseFloat(a.valor||0),
-          valor_bruto:parseFloat(a.valor_bruto||a.valor||0),
-          valor_faturado:parseFloat(a.valor_faturado||a.valor||0),
-          desconto_percentual:Number(a.desconto_percentual||0),
-          desconto_valor:Number(a.desconto_valor||0),
-          forma_pagamento_prevista:a.forma_pagamento_prevista||"avista",
-          forma_pagamento_final:a.forma_pagamento_final||"",
-          cb:a.cashback_pts||0,
-          st:a.status||"agendado",status:a.status||"agendado",
-          status_clinico:a.status_clinico||a.status||"agendado",
-          status_fiscal:a.status_fiscal||"nao_emitida",
-          nfse_id:a.nfse_id||null,numero_nfse:a.numero_nfse||null,
-          firebird_seq_atend:a.firebird_seq_atend||null,
-          obs:a.observacoes||""
-        };
+        // P2 #4 fix v3.9.0: usa _mapAgFromRow centralizado
+        return _mapAgFromRow(a, itens);
       });
     }
   }catch(e){
@@ -10372,27 +10492,8 @@ async function abrirFechamentoCaixa() {
       var todosItens = await rItens.json() || [];
       dayAgs = dados.map(function(a){
         var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
-        return {
-          id:a.id, pac:a.paciente_nome||"", pId:a.paciente_id,
-          tel:a.paciente_telefone||"", cpf:a.paciente_cpf||"",
-          ex:a.exame_id, exames:itens,
-          dt:iso2br(a.data_exame), hr:(a.hora_exame||"08:00").substring(0,5),
-          dId:a.dentista_id, cv:a.convenio_id||"",
-          vl:parseFloat(a.valor||0),
-          valor_bruto:parseFloat(a.valor_bruto||a.valor||0),
-          valor_faturado:parseFloat(a.valor_faturado||a.valor||0),
-          desconto_percentual:Number(a.desconto_percentual||0),
-          desconto_valor:Number(a.desconto_valor||0),
-          forma_pagamento_prevista:a.forma_pagamento_prevista||"avista",
-          forma_pagamento_final:a.forma_pagamento_final||"",
-          cb:a.cashback_pts||0,
-          st:a.status||"agendado",status:a.status||"agendado",
-          status_clinico:a.status_clinico||a.status||"agendado",
-          status_fiscal:a.status_fiscal||"nao_emitida",
-          nfse_id:a.nfse_id||null,numero_nfse:a.numero_nfse||null,
-          firebird_seq_atend:a.firebird_seq_atend||null,
-          obs:a.observacoes||""
-        };
+        // P2 #4 fix v3.9.0: usa _mapAgFromRow centralizado
+        return _mapAgFromRow(a, itens);
       });
     }
   }catch(e){
