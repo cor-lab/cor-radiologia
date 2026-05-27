@@ -232,6 +232,20 @@
   
   ───────── HISTÓRICO ─────────
   
+  2026-05-27 (v3.8.7): Hotfix da v3.8.6.
+              BUG: ao clicar em "🔑 Acesso FotonWeb", erro
+                "Falha ao buscar paciente". Causa: o select
+                `?select=id,nome,cpf,telefone,celular,email`
+                referenciava coluna `celular` que NÃO EXISTE em
+                public.pacientes (a tabela só tem `telefone`).
+                PostgREST retorna 400 quando uma coluna no select
+                não existe, derrubando o select inteiro.
+              FIX: remover `celular` do select; usar só
+                `telefone` (que é o nome real no banco).
+              Confirmação: SQL `information_schema.columns` em
+                public.pacientes mostra apenas: id, nome, cpf,
+                email, telefone (sem celular).
+
   2026-05-27 (v3.8.6): Code review da v3.8.5 - 3 fixes.
               P1 (grave): botão "🔑 Acesso FotonWeb" no menu de
                 ações do agendamento quase nunca aparecia porque os
@@ -2223,7 +2237,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.8.6 - 2026-05-27";
+var APP_VERSION = "v3.8.7 - 2026-05-27";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -2818,7 +2832,7 @@ async function _afwCarregar(){
   try{
     // 1. Busca dados completos do paciente (precisa do CPF real do banco, não
     //    do que veio em memória — pode estar stale)
-    var rPac = await supaFetch("/rest/v1/pacientes?select=id,nome,cpf,telefone,celular,email&id=eq."+pac.id);
+    var rPac = await supaFetch("/rest/v1/pacientes?select=id,nome,cpf,telefone,email&id=eq."+pac.id);
     if(!rPac.ok) throw new Error("Falha ao buscar paciente");
     var arr = await rPac.json();
     if(!arr || !arr.length) throw new Error("Paciente não encontrado");
@@ -2827,7 +2841,7 @@ async function _afwCarregar(){
     // Atualiza com dados frescos do banco
     _afwPacienteAtual.nome = pacDb.nome || pac.nome;
     _afwPacienteAtual.cpf = pacDb.cpf || "";
-    _afwPacienteAtual.telefone = pacDb.telefone || pacDb.celular || "";
+    _afwPacienteAtual.telefone = pacDb.telefone || "";
     _afwPacienteAtual.email = pacDb.email || "";
 
     var cpfLimpo = String(_afwPacienteAtual.cpf || "").replace(/\D/g, "");
