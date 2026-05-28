@@ -232,6 +232,32 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-05-28 (v3.10.6): 2 ajustes do code review do Vine sobre a v3.10.5.
+              #1 — abrirAcessoFotonwebDoHistorico: quando ha 2+ cadastros
+                ativos com o mesmo CPF, NAO abre mais "o primeiro" (risco de
+                gerar senha no cadastro errado). Agora BLOQUEIA, lista os IDs
+                e pede fusao/revisao antes. Limit da busca 2→5 pra listar.
+              #2 — afwSalvarEmailEEnviar: se o email salvava mas o envio
+                falhava, o campo inline continuava na tela (botao Email seguia
+                escondido). Agora re-renderiza o modal no finally SEMPRE que o
+                email foi salvo (flag emailSalvo) — sucesso ou falha de envio —
+                mostrando o botao "Email" pra retentar. Se o PATCH do email
+                falhou, NAO re-renderiza (preserva o texto digitado pra
+                retentar sem redigitar).
+
+  2026-05-28 (v3.10.5): Modal "Acesso FotonWeb" — campo de email inline.
+              Quando o paciente NAO tem email cadastrado, o modal agora
+              mostra um campo (afwEmailEditBox) pra digitar o email, com
+              botao "Salvar e enviar" que num clique:
+                1. Salva o email no cadastro do paciente (PATCH pacientes.email)
+                2. Envia a senha por email (Edge enviar-email-cor)
+              ORDEM IMPORTA: a Edge le o email do BANCO via paciente_id, por
+              isso salva ANTES de enviar. Nova funcao afwSalvarEmailEEnviar.
+              Quando tem email, segue mostrando o botao "Email" normal; o
+              campo so aparece na ausencia de email. Depende do paciente_id
+              correto do Supabase — garantido pelo fix v3.10.4 (resolucao por
+              CPF na ficha de Historico).
+
   2026-05-27 (v3.10.4): BUG CRÍTICO no botão "Acesso FotonWeb" da ficha de
               HISTÓRICO. O paciente_id da tabela historico_atendimentos é o
               ID do paciente no FIREBIRD (FXARQ032.ID), NÃO o pacientes.id
@@ -2407,7 +2433,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.10.4 - 2026-05-27";
+var APP_VERSION = "v3.10.6 - 2026-05-28";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -2948,16 +2974,19 @@ async function abrirAcessoFotonwebDoHistorico(cpf, nome){
     return;
   }
   try{
-    var r = await supaFetch("/rest/v1/pacientes?select=id,nome,cpf&cpf=eq."+cpfLimpo+"&ativo=eq.true&limit=2");
+    var r = await supaFetch("/rest/v1/pacientes?select=id,nome,cpf&cpf=eq."+cpfLimpo+"&ativo=eq.true&limit=5");
     var arr = r.ok ? await r.json() : [];
     if(!arr || !arr.length){
       toast("⚠️ Sem cadastro", "Este paciente tem exames no histórico mas ainda não tem cadastro ativo no App COR. Cadastre o paciente (com este CPF) antes de gerar a senha do FotonWeb.");
       return;
     }
-    // Caso raro: 2+ cadastros ativos com o mesmo CPF (duplicata real) — usa o
-    // primeiro mas avisa, pois pode precisar de fusão.
+    // ⚡ FIX v3.10.6 (28/05/2026) — 2+ cadastros ativos com o mesmo CPF =
+    // duplicata real. NAO abrir "o primeiro" (pode gerar senha no cadastro
+    // errado / fantasma). Bloqueia e pede revisao/fusao antes.
     if(arr.length > 1){
-      toast("⚠️ Atenção", "Há mais de um cadastro ativo com este CPF. Pode ser duplicata — verifique. Abrindo o primeiro encontrado.");
+      var ids = arr.map(function(p){ return p.id; }).join(", ");
+      toast("⚠️ Duplicata", "Há mais de um cadastro ativo com este CPF (IDs " + ids + "). Funda/revise os cadastros antes de gerar a senha — não dá pra saber qual é o correto.");
+      return;
     }
     var pacReal = arr[0];
     // Abre o modal com o ID CORRETO do Supabase (não o ID-Firebird do histórico)
@@ -3269,13 +3298,23 @@ function _afwMostrarSenha(){
     btnWa.title = tem_tel ? "Enviar senha por WhatsApp" : "Paciente sem telefone cadastrado";
   }
   // v3.8.9 — Email habilitado quando paciente tem email cadastrado
+  // ⚡ v3.10.5 (28/05/2026) — Se NÃO tem email, mostra campo inline pra
+  // cadastrar+enviar num clique (afwEmailEditBox), e esconde o botão Email.
   var btnEm = document.getElementById("afwBtnEmail");
+  var emailBox = document.getElementById("afwEmailEditBox");
+  var tem_email = !!(_afwPacienteAtual.email && String(_afwPacienteAtual.email).indexOf("@") > 0);
   if(btnEm){
-    var tem_email = !!(_afwPacienteAtual.email && String(_afwPacienteAtual.email).indexOf("@") > 0);
+    btnEm.style.display = tem_email ? "" : "none";
     btnEm.disabled = !tem_email;
     btnEm.title = tem_email
       ? "Enviar senha por email pra " + _afwPacienteAtual.email
-      : "Paciente sem email cadastrado — edite o cadastro do paciente primeiro";
+      : "";
+  }
+  if(emailBox){
+    emailBox.style.display = tem_email ? "none" : "block";
+    // Limpa o input ao reabrir
+    var emInput = document.getElementById("afwEmailInput");
+    if(emInput && !tem_email) emInput.value = "";
   }
 
   _afwSetEstado("tem_senha");
@@ -3600,6 +3639,96 @@ async function afwEnviarEmail(){
         btnEm.title = "Enviar senha por email pra " + _afwPacienteAtual.email;
       }
     }
+  }
+}
+
+// ⚡ NOVO v3.10.5 (28/05/2026) — Salva o email no cadastro do paciente E envia
+// a senha do FotonWeb no mesmo clique. Usado pelo campo inline afwEmailEditBox
+// quando o paciente nao tem email cadastrado.
+// ORDEM IMPORTA: a Edge 'enviar-email-cor' le o email do BANCO (via paciente_id),
+// entao salvamos no cadastro ANTES de invocar o envio.
+async function afwSalvarEmailEEnviar(){
+  var pac = _afwPacienteAtual;
+  if(!pac || !pac.id){
+    toast("Erro", "Paciente inválido");
+    return;
+  }
+  var input = document.getElementById("afwEmailInput");
+  var email = input ? String(input.value || "").trim() : "";
+
+  // Validacao simples de email
+  if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+    toast("Atenção", "Digite um email válido (ex: nome@exemplo.com).");
+    if(input) input.focus();
+    return;
+  }
+
+  if(!confirm("Salvar o email no cadastro do paciente e enviar a senha pra:\n\n" + email + "\n\nConfirma?")){
+    return;
+  }
+
+  var btn = document.getElementById("afwBtnSalvarEmail");
+  if(btn){ btn.disabled = true; btn.textContent = "Salvando..."; }
+
+  // ⚡ FIX v3.10.6 — flag pra re-renderizar o modal no finally APENAS se o
+  // email foi salvo no cadastro. Se o PATCH falhar, mantem o campo com o
+  // texto digitado (nao re-renderiza, nao limpa) pra o usuario retentar.
+  var emailSalvo = false;
+
+  try{
+    // 1. Salva o email no cadastro do paciente (pacientes.email)
+    var rUp = await supaFetch("/rest/v1/pacientes?id=eq."+pac.id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ email: email })
+    });
+    if(!rUp.ok){
+      var txt = "";
+      try { txt = await rUp.text(); } catch(e){}
+      console.error("afwSalvarEmailEEnviar PATCH:", rUp.status, txt);
+      toast("Erro", "Não foi possível salvar o email no cadastro (HTTP "+rUp.status+").");
+      return;
+    }
+
+    // Atualiza memoria local pra refletir o email novo
+    _afwPacienteAtual.email = email;
+    emailSalvo = true;
+
+    if(btn){ btn.textContent = "Enviando..."; }
+
+    // 2. Envia a senha por email (Edge le o email recem-salvo do banco)
+    var r = await supa.functions.invoke("enviar-email-cor", {
+      body: { tipo: "fotonweb_senha", paciente_id: pac.id, modo: "manual" }
+    });
+
+    if(r.error){
+      console.error("afwSalvarEmailEEnviar invoke:", r.error);
+      toast("Atenção", "Email salvo no cadastro, mas o envio falhou: " + (r.error.message || "erro") + ". Tente o botão Email.");
+      return;
+    }
+    var data = r.data || {};
+    if(!data.ok){
+      var motivo = data.motivo || "";
+      var msg = data.error || "Email salvo, mas não foi possível enviar";
+      if(motivo === "sem_email") msg = "Email salvo, mas a Edge não encontrou o email (tente de novo em instantes)";
+      else if(motivo === "sem_senha") msg = "Paciente ainda não tem senha gerada";
+      else if(motivo === "sem_cpf") msg = "Paciente sem CPF válido";
+      toast("Atenção", msg);
+      return;
+    }
+
+    toast("📧", "Email salvo e senha enviada pra " + (data.destinatario || email));
+  }catch(e){
+    console.error("afwSalvarEmailEEnviar exception:", e);
+    toast("Erro", "Falha: " + (e.message || "desconhecida"));
+  }finally{
+    if(btn){ btn.disabled = false; btn.innerHTML = "💾 Salvar e enviar"; }
+    // ⚡ FIX v3.10.6 — re-renderiza em TODOS os caminhos onde o email foi
+    // salvo (sucesso OU falha de envio): assim o modal passa a mostrar o
+    // botão "Email" normal (email ja consta no cadastro) e esconde o campo
+    // inline. Se o envio falhou, o usuario retenta pelo botão Email.
+    // Se o PATCH falhou (emailSalvo=false), nao mexe — preserva o input.
+    if(emailSalvo && _afwDadosAtual) _afwMostrarSenha();
   }
 }
 
@@ -5470,6 +5599,21 @@ async function dbResgatar(dentId,premId,pts){
         <button id="afwBtnWhatsapp" class="btn btnt bsm" onclick="afwEnviarWhatsapp()">💬 WhatsApp</button>
         <button id="afwBtnEmail" class="btn btnp bsm" onclick="afwEnviarEmail()">📧 Email</button>
       </div>
+
+      <!-- ⚡ NOVO v3.10.5 (28/05/2026) — Campo de email inline. Aparece quando
+           o paciente NÃO tem email cadastrado. Permite digitar, salvar no
+           cadastro e enviar a senha num clique só (afwSalvarEmailEEnviar). -->
+      <div id="afwEmailEditBox" style="display:none;margin-top:12px;padding:12px;background:rgba(122,90,248,.08);border:1px solid rgba(122,90,248,.25);border-radius:8px">
+        <label style="font-size:.78rem;color:var(--gr);display:block;margin-bottom:6px">Paciente sem email cadastrado — digite pra salvar e enviar:</label>
+        <div style="display:flex;gap:8px;align-items:stretch;flex-wrap:wrap">
+          <input id="afwEmailInput" type="email" placeholder="email@exemplo.com" autocomplete="off"
+                 style="flex:1;min-width:200px"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();afwSalvarEmailEEnviar();}">
+          <button id="afwBtnSalvarEmail" class="btn btnp bsm" onclick="afwSalvarEmailEEnviar()" style="white-space:nowrap">💾 Salvar e enviar</button>
+        </div>
+        <div style="font-size:.72rem;color:var(--gr);margin-top:6px">O email fica salvo no cadastro do paciente e a senha é enviada na hora.</div>
+      </div>
+
 
       <div style="margin-top:20px;padding:14px;background:rgba(255,255,255,.03);border-radius:8px;font-size:.78rem;line-height:1.7">
         <div style="font-weight:600;color:var(--tl);margin-bottom:6px">Estatísticas</div>
