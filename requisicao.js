@@ -1,11 +1,11 @@
 // ============================================================================
-// requisicao.js v3.8 - Sobreimpressão em requisição pré-impressa COR
+// requisicao.js v3.9 - Sobreimpressão em requisição pré-impressa COR
 // ----------------------------------------------------------------------------
-// - v3.8: REVERSÃO da v3.6 (janela). v3.6 fechava winPreAberta e abria
-//         nova — segundo window.open ficava em contexto assincrono e
-//         Chrome bloqueava/escondia. Resultado: "imprimiu mas nada saiu".
-//         v3.8 volta a reusar a winPreAberta (comportamento v3.5).
-//         Renderizacao consistente vem do max-width da v3.7.
+// - v3.9: REMOVIDO o confirm() pra dentista sem endereco. Chrome suprime
+//         confirm() em aba nao focada (popup aberta no fluxo) → retornava
+//         false → janela fechava antes de imprimir. Causa de "abre e fecha
+//         sem imprimir" pra 80% dos dentistas (2114 de 2651 sem endereco).
+// - v3.8: reverter v3.6 (reusa winPreAberta como na v3.5).
 // - v3.7: max-width nos campos pra nao estourar a folha 150mm.
 // - v3.5: calibracao fresca a cada impressao + diagnostico.
 // - v3.4: papel 150x250mm.
@@ -508,7 +508,9 @@ async function imprimirRequisicao(agId, qtd) {
 
     // Sem endereços
     if (!d.enderecos.length) {
-      if (!confirm('Dentista "' + d.nome + '" não tem endereço cadastrado.\nImprimir mesmo assim?')) return;
+      // ⚡ v3.9 (28/05/2026) — confirm() removido (suprimido pelo Chrome em
+      // aba nao focada). Ver explicacao detalhada no fluxo
+      // imprimirRequisicaoPorDentista mais abaixo.
       reqImprimirComEndereco(d, "", calib, qtd);
       return;
     }
@@ -563,10 +565,19 @@ async function imprimirRequisicaoPorDentista(dentId, qtd, winPreAberta) {
     }
 
     if (!d.enderecos.length) {
-      if (!confirm('Dentista "' + d.nome + '" não tem endereço cadastrado.\nImprimir mesmo assim?')) {
-        fechaJanela();
-        return;
-      }
+      // ⚡ v3.9 (28/05/2026) — REMOVIDO o confirm() que perguntava se queria
+      // imprimir mesmo sem endereco. Causa: quando a impressao e iniciada a
+      // partir de um modal (Requisicoes rapidas, modal do agendamento) com
+      // winPreAberta aberta no fluxo, a aba ativa do navegador NAO e a aba
+      // do app COR — e o Chrome SUPRIME silenciosamente window.confirm() em
+      // abas nao focadas (politica desde Chrome 92+). O confirm retornava
+      // false automaticamente, fechaJanela era chamado, e o usuario via
+      // "abrir e fechar instantaneamente" sem nada imprimir.
+      // Como 2114 de 2651 dentistas (80%) estao SEM endereco, isso quebrava
+      // a maioria das impressoes.
+      // Solucao: imprime direto com endereco vazio. Cabe a recepcao decidir
+      // se vale a pena imprimir antes de clicar (o dentista nao tem endereco
+      // cadastrado, vai sair em branco na linha do endereco).
       reqImprimirComEndereco(d, "", calib, qtd, winPreAberta);
       return;
     }
