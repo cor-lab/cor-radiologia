@@ -232,6 +232,28 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-05-27 (v3.10.4): BUG CRÍTICO no botão "Acesso FotonWeb" da ficha de
+              HISTÓRICO. O paciente_id da tabela historico_atendimentos é o
+              ID do paciente no FIREBIRD (FXARQ032.ID), NÃO o pacientes.id
+              do Supabase — são numerações independentes. O botão passava
+              esse ID-Firebird pro modal, que buscava pacientes.id=<X> no
+              Supabase e pegava o cadastro de OUTRA pessoa (colisão de
+              numeração). Numa amostra de 5000 exames, 3039 tinham ID que
+              colidia e em 100% deles caía em pessoa errada.
+              Caso MANUELA MICHEL DA SILVA: ID-Firebird 117796 → pacientes.id
+              117796 no Supabase = PETERSON BOEIRA BUENO (sem CPF) → a função
+              _afwClassificarSemCpf (v3.10.2) via "Peterson sem CPF + CPF
+              pertence à Manuela 96439" e mostrava FALSO "Cadastro duplicado
+              detectado". Não era duplicata nenhuma.
+              FIX: novo fluxo abrirAcessoFotonwebDoHistorico(cpf, nome) —
+              resolve o cadastro REAL do Supabase pelo CPF antes de abrir o
+              modal, passando o pacientes.id correto. Condição do botão
+              trocada de pac.id pra pac.cpf (11 dígitos). Se não houver
+              cadastro ativo com aquele CPF, avisa pra cadastrar primeiro;
+              se houver 2+, alerta de possível duplicata.
+              (A busca da aba Atendimento e o botão de dentro do agendamento
+              NÃO eram afetados — aqueles usam o pacientes.id correto.)
+
   2026-05-27 (v3.10.3): Fix DE VERDADE do pop-up bloqueado em fcImprimir.
               O histórico da v3.10.1 dizia que o check `if (!win)` foi
               aplicado, mas o código real continuava sem ele (Vine
@@ -2385,7 +2407,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.10.3 - 2026-05-27";
+var APP_VERSION = "v3.10.4 - 2026-05-27";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -2914,6 +2936,37 @@ var _afwPacienteAtual = null; // {id, nome, cpf}
 var _afwSenhaAtual = null;    // senha em claro (só quando revelada/gerada)
 var _afwDadosAtual = null;    // {ultimo_login_em, total_logins, created_at, updated_at, ativo}
 var _afwRevelado = false;
+
+// ⚡ NOVO v3.10.4 (27/05/2026) — Abertura do modal Acesso FotonWeb a partir
+// da ficha de HISTÓRICO. NÃO pode usar o paciente_id do histórico porque ele
+// é o ID do paciente no FIREBIRD (FXARQ032.ID), não o pacientes.id do Supabase.
+// Resolve o cadastro REAL do Supabase pelo CPF antes de abrir o modal.
+async function abrirAcessoFotonwebDoHistorico(cpf, nome){
+  var cpfLimpo = String(cpf || "").replace(/\D/g, "");
+  if(cpfLimpo.length !== 11){
+    toast("⚠️", "Este atendimento do histórico não tem CPF válido. Não é possível gerar acesso ao FotonWeb.");
+    return;
+  }
+  try{
+    var r = await supaFetch("/rest/v1/pacientes?select=id,nome,cpf&cpf=eq."+cpfLimpo+"&ativo=eq.true&limit=2");
+    var arr = r.ok ? await r.json() : [];
+    if(!arr || !arr.length){
+      toast("⚠️ Sem cadastro", "Este paciente tem exames no histórico mas ainda não tem cadastro ativo no App COR. Cadastre o paciente (com este CPF) antes de gerar a senha do FotonWeb.");
+      return;
+    }
+    // Caso raro: 2+ cadastros ativos com o mesmo CPF (duplicata real) — usa o
+    // primeiro mas avisa, pois pode precisar de fusão.
+    if(arr.length > 1){
+      toast("⚠️ Atenção", "Há mais de um cadastro ativo com este CPF. Pode ser duplicata — verifique. Abrindo o primeiro encontrado.");
+    }
+    var pacReal = arr[0];
+    // Abre o modal com o ID CORRETO do Supabase (não o ID-Firebird do histórico)
+    abrirModalAcessoFotonweb(pacReal.id, pacReal.nome || nome || "", pacReal.cpf || cpfLimpo);
+  }catch(e){
+    console.error("abrirAcessoFotonwebDoHistorico:", e);
+    toast("Erro", "Falha ao localizar o cadastro do paciente.");
+  }
+}
 
 function abrirModalAcessoFotonweb(pacienteId, pacienteNome, pacienteCpf){
   // Aceita {id, nome, cpf} OU id solto + nome/cpf como string
@@ -6112,11 +6165,19 @@ function renderHistPaciente() {
   h += "</div>";
   h += "</div>";
   // v3.8.5 (Etapa 4.4) — Acesso FotonWeb
-  // Só renderiza o botão se realmente tem paciente.id válido (corrige P2:
-  // histResultados pode ter d.paciente_id vazio em casos legados).
+  // ⚡ FIX v3.10.4 (27/05/2026) — BUG CRÍTICO: pac.id aqui é o paciente_id do
+  // HISTÓRICO, que é o ID do paciente no FIREBIRD (FXARQ032.ID), NÃO o
+  // pacientes.id do Supabase. Passar esse ID pro modal fazia ele buscar o
+  // cadastro errado no Supabase (colisão de numeração: ID-Firebird X bate
+  // por acaso num pacientes.id=X de OUTRA pessoa). Em 100% dos casos onde o
+  // ID coincidia, abria o paciente errado. Caso MANUELA: ID-Firebird 117796
+  // → pacientes.id 117796 = PETERSON (sem CPF) → falso "duplicata detectada".
+  // FIX: o botão agora resolve o paciente REAL pelo CPF (via
+  // abrirAcessoFotonwebDoHistorico) antes de abrir o modal. Condição trocada
+  // de pac.id pra pac.cpf — sem CPF não há como logar no FotonWeb mesmo.
   h += "<div style='display:flex;gap:6px;align-items:center'>";
-  if (pac.id) {
-    h += "<button class='btn btng bsm' onclick='abrirModalAcessoFotonweb(" + pac.id + "," + jsArg(pac.nome || "") + "," + jsArg(pac.cpf || "") + ")' title='Gerar/visualizar senha de acesso ao FotonWeb'>🔑 Acesso FotonWeb</button>";
+  if (pac.cpf && String(pac.cpf).replace(/\D/g,"").length === 11) {
+    h += "<button class='btn btng bsm' onclick='abrirAcessoFotonwebDoHistorico(" + jsArg(pac.cpf || "") + "," + jsArg(pac.nome || "") + ")' title='Gerar/visualizar senha de acesso ao FotonWeb'>🔑 Acesso FotonWeb</button>";
   }
   h += "<button class='btn btno bsm' onclick='histVoltarBusca()'>Voltar</button>";
   h += "</div>";
