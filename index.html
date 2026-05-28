@@ -232,6 +232,141 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-05-28 (v3.10.12): Requisicoes rapidas pra recepcao (sem precisar
+              de role admin nem abrir agendamento). Vine notou que a aba
+              Dentistas — onde o botao "Imprimir Requisicao" da v3.10.8
+              estava — NAO e acessivel pelas secretarias (PERMS.agenda
+              tem dentistas:0). Solucao escolhida: A + B.
+                A) Ja existia: linha 7800 tem botao "📋 Requisicao" no
+                   menu do agendamento → continua funcionando. (Era so
+                   chamar imprimirRequisicao(ag.id) — agora aceita qtd
+                   opcional via v3.1, mas o botao do agendamento usa 1.)
+                B) NOVA: barra superior da aba Atendimento ganhou botao
+                   "🖨️ Requisicoes". Abre modal #modal-req-rapida com:
+                     * busca por nome/CRO (oninput → reqRapFiltrar)
+                     * lista de dentistas ativos do cache `dents`
+                     * campo quantidade (1-50)
+                     * botao Imprimir por dentista (linha clicavel)
+              Funcoes novas: abrirReqRapida, reqRapFiltrar, reqRapImprimir.
+              reqRapImprimir abre janela com loading ANTES dos awaits
+              (mesmo padrao do dentImprimirRequisicao pra evitar pop-up
+              block) e chama imprimirRequisicaoPorDentista do req v3.1+.
+              Permissoes: como esta dentro da aba Atendimento, qualquer
+              role com canAcc('atendimento') ve — admin e agenda.
+              Upload de LOGO continua so admin (aba Dentistas) — secretaria
+              nao tem como fazer upload.
+
+  2026-05-28 (v3.10.11): Code review do Vine sobre a v3.10.10 / req v3.3.
+              FIX #2 do upload de logo: o caso path === pathAntigo (usuario
+              troca a logo mantendo a mesma extensao, ex PNG→PNG) precisava
+              ser tratado separado. O upsert ja sobrescreveu o arquivo no
+              Storage com a logo NOVA, e o banco ja apontava pra esse mesmo
+              caminho — entao se o UPDATE "falha" (RLS/network), o estado
+              final ja esta CONSISTENTE: Storage tem a logo nova + banco
+              aponta pra ela. A v3.10.10 ainda tratava isso como erro e
+              mostrava toast "falha... (logo nova foi descartada)" — mas
+              ela NAO foi descartada, foi aplicada. Agora retorna sucesso
+              nesse caso (toast "Logo salva!") e so faz rollback de
+              verdade quando path mudou (PNG↔JPG) — ai sim, remove o
+              arquivo novo e restaura preview pro pathAntigo. console.warn
+              registra o caso pra auditoria.
+              Sobre o ponto #1 do review (nome requisicao (1).js): falso
+              alarme — o sufixo "(1)" e do browser ao baixar arquivo com
+              mesmo nome existente em downloads. O arquivo entregue chama
+              requisicao.js. Cuidado operacional ao salvar: substituir o
+              existente, nao deixar o "(1)".
+
+  2026-05-28 (v3.10.10): Etapa 3 do plano de logomarca do dentista.
+              REQUER requisicao.js v3.3+ (carrega junto com este index).
+              Todas as mudancas da Etapa 3 ficam no requisicao.js:
+                * reqGerarHtml injeta <img class='logo'> posicionado em
+                  mm quando o dentista tem logo cadastrada E a calibracao
+                  permite (logo_mostrar=true).
+                * REQ_DEF ganhou 5 campos novos: logo_x, logo_y, logo_w,
+                  logo_h, logo_mostrar (defaults conservadores).
+                * SELECT no dentista inclui logo_path.
+                * Tela de calibracao ganhou secao da logo (4 campos +
+                  checkbox de mostrar/esconder).
+                * Botao "Imprimir teste" usa placeholder SVG inline (data
+                  URI) — permite calibrar a posicao/tamanho antes de
+                  qualquer dentista ter logo cadastrada.
+              Nada muda no index.html alem do APP_VERSION e historico —
+              a aba de carregamento do cache `dents` ja inclui o campo
+              logo desde v3.10.7, entao o requisicao.js v3.3 ja pega
+              automaticamente.
+              Plano de logo COMPLETO (Etapas 1, 2, 3) apos esta versao.
+
+  2026-05-28 (v3.10.9): 4 ajustes do code review do Vine sobre a v3.10.8.
+              REQUER requisicao.js v3.2+ (carrega junto com este index).
+              #2 POP-UP BLOQUEADO: dentImprimirRequisicao agora abre a
+                janela IMEDIATAMENTE no clique (via reqAbrirJanelaCom-
+                Loading do req v3.2) e passa adiante. Antes os awaits
+                do fluxo podiam invalidar o gesto do clique e o
+                navegador bloqueava o window.open posterior.
+              #3 PAGINA EM BRANCO EXTRA: corrigido no requisicao.js v3.2
+                (.folha:last-of-type em vez de :last-child).
+              #4 UPLOAD DE LOGO — ordem segura: salva no BANCO primeiro,
+                so depois remove arquivo antigo. Antes, se o UPDATE
+                logo_path falhasse APOS ja ter removido o arquivo antigo,
+                o banco apontava pra arquivo deletado → logo quebrada.
+                Agora se o UPDATE falhar, faz rollback: remove o arquivo
+                NOVO (deixa o antigo intacto) e restaura preview pro
+                pathAntigo. Em todos os caminhos de erro, preview volta
+                pro path antigo (pCache.logo nao e tocado ate o sucesso).
+              #5 RESTAURAR PREVIEW EM FALHA DE UPLOAD: antes, ao falhar
+                upload, chamava dentLogoCarregarPreview("") apagando a
+                logo existente da UI mesmo o banco ainda apontando pra
+                ela. Agora chama dentLogoCarregarPreview(pathAntigo).
+
+  2026-05-28 (v3.10.8): Imprimir requisicao direto do cadastro do dentista.
+              Antes a requisicao so era impressa abrindo um agendamento de
+              paciente com aquele dentista indicado. Agora a recepcao pode
+              pre-imprimir um bloco de folhas pra entregar ao dentista,
+              direto do modal de Editar Dentista. Botao na secao da logo
+              ("🖨️ Imprimir Requisicao") com campo de quantidade (1-50).
+              Se o dentista tem 2+ enderecos, abre o seletor (mesmo fluxo
+              do agendamento) preservando a quantidade.
+              Depende de requisicao.js v3.1+ (nova funcao publica
+              imprimirRequisicaoPorDentista). dentImprimirRequisicao() le
+              o input dentReqQtd, faz clamp 1-50 e dispara o fluxo.
+
+  2026-05-28 (v3.10.7): Etapa 2 do plano de logomarca do dentista.
+              Logo NAO sera enviada pelo dentista via FotonWeb (decisao
+              de seguranca revisada). Recepcao recebe a logo por
+              WhatsApp/email e sobe internamente pelo modal de edicao do
+              dentista no App COR.
+              Pre-requisito (Etapa 1, ja aplicada): bucket public
+              'dentista-logos' (300KB, PNG/JPG/WEBP) + coluna
+              dentistas.logo_path. Policies: SELECT publico, INSERT/UPDATE/
+              DELETE so authenticated.
+              Mudancas neste arquivo:
+                * Mapeamento de dents agora inclui logo = d.logo_path || ""
+                  (linha ~4594) — fica acessivel em fdent(id).logo.
+                * Modal openDtM ganhou secao "🖼️ Logomarca para Requisicao"
+                  visivel so em edicao (igual outras secoes que dependem
+                  de ed): preview 120x80 + botoes Enviar/Remover.
+                * 3 funcoes novas:
+                  - dentLogoCarregarPreview(path): renderiza preview com
+                    URL publica do bucket (cache-bust por timestamp).
+                  - dentLogoSelecionar(file): valida MIME, redimensiona
+                    via canvas pra <=600px lado, reencoda como PNG (ou
+                    JPG se nao couber em 300KB), faz upload com upsert,
+                    apaga versao antiga se mudou extensao, atualiza
+                    coluna logo_path e cache local.
+                    A reencodagem via canvas NEUTRALIZA payloads
+                    embutidos (SVG-script, EXIF malicioso, polyglot)
+                    porque o canvas so copia pixels — o resultado e PNG
+                    novo do zero. Por isso o upload interno e seguro
+                    mesmo a imagem vindo do dentista.
+                  - dentLogoRemover(): apaga coluna primeiro (operacao
+                    critica), depois Storage best-effort. Se Storage
+                    falhar, vira orfao mas nao reaparece.
+                * window._dentLogoEditId guarda o id do dentista em
+                  edicao para as funcoes saberem em qual dentista
+                  trabalhar (modal nao mantem ref do ed).
+              Falta Etapa 3 (Imprimir): adicionar logo na requisicao
+              impressa + 5 campos de calibracao + cache no requisicao.js.
+
   2026-05-28 (v3.10.6): 2 ajustes do code review do Vine sobre a v3.10.5.
               #1 — abrirAcessoFotonwebDoHistorico: quando ha 2+ cadastros
                 ativos com o mesmo CPF, NAO abre mais "o primeiro" (risco de
@@ -2433,7 +2568,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.10.6 - 2026-05-28";
+var APP_VERSION = "v3.10.12 - 2026-05-28";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -4606,7 +4741,13 @@ async function loadAllData(){
           bg: d.bg || "linear-gradient(135deg,#4ab848,#7dcf6e)",
           cor: d.cor || "#fff",
           pvpf: d.pode_ver_pontos_fotonweb === true,
-          raar: d.recebe_aviso_atendimento_realizado !== false
+          raar: d.recebe_aviso_atendimento_realizado !== false,
+          // ⚡ v3.10.7 (28/05/2026) — Etapa 2 da logo do dentista.
+          // logo = path do arquivo no bucket 'dentista-logos' (ex:
+          // 'dentista_123.png'). "" se nao tem logo. Usado pra
+          // imprimir na requisicao (Etapa 3) e mostrar preview no
+          // modal de edicao.
+          logo: d.logo_path || ""
         };
       });
 
@@ -6482,9 +6623,14 @@ function renderAtendimento() {
   var h = "";
 
   // Busca rápida de paciente
-  h += "<div style='margin-bottom:12px;display:flex;gap:8px;align-items:center'>";
-  h += "<input type='text' id='atBuscaPac' placeholder='🔍 Buscar paciente (nome, CPF ou código DigitalS)' style='flex:1;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;font-size:.85rem' onkeydown=\"if(event.key==='Enter')buscarPacienteGlobal()\">";
+  h += "<div style='margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap'>";
+  h += "<input type='text' id='atBuscaPac' placeholder='🔍 Buscar paciente (nome, CPF ou código DigitalS)' style='flex:1;min-width:200px;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;font-size:.85rem' onkeydown=\"if(event.key==='Enter')buscarPacienteGlobal()\">";
   h += "<button class='btn btng' onclick='buscarPacienteGlobal()' style='padding:8px 16px;white-space:nowrap'>Buscar</button>";
+  // ⚡ v3.10.12 (28/05/2026) — Botao de Requisicoes acessivel pra recepcao
+  // SEM precisar abrir um agendamento. Abre um modal com lista de dentistas
+  // + busca + qtd + imprimir. Permissao: mesma de quem ve a aba Atendimento
+  // (admin e agenda). Logo/upload continua so pra admin (na aba Dentistas).
+  h += "<button class='btn btnt' onclick='abrirReqRapida()' style='padding:8px 16px;white-space:nowrap' title='Imprimir requisicao em branco pra qualquer dentista'>🖨️ Requisições</button>";
   h += "</div>";
   h += "<div id='atBuscaResultados'></div>";
 
@@ -9343,6 +9489,37 @@ function openDtM(eid){
     "<div id='dentEndList'>"+(ed?"<div style='color:#666;font-size:12px;padding:6px'>Carregando...</div>":"<div style='color:#666;font-size:12px;padding:6px'>Salve o dentista primeiro para adicionar enderecos</div>")+"</div>"+
     "</div>";
 
+  // ═══ Seção Logomarca (v3.10.7 — só faz sentido em edição) ═══
+  if (ed) {
+    b += "<div style='border-top:1px solid #3a3a5e;margin-top:6px;padding-top:8px'>"+
+      "<label style='font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px'>🖼️ Logomarca para Requisição</label>"+
+      "<div id='dentLogoBox' style='display:flex;gap:10px;align-items:flex-start;padding:6px 0'>"+
+        "<div id='dentLogoPreview' style='width:120px;height:80px;border:1px dashed #555;border-radius:6px;display:flex;align-items:center;justify-content:center;background:#fff;flex-shrink:0;overflow:hidden'>"+
+          "<span style='color:#999;font-size:11px'>Sem logo</span>"+
+        "</div>"+
+        "<div style='flex:1;display:flex;flex-direction:column;gap:6px'>"+
+          "<input type='file' id='dentLogoFile' accept='image/png,image/jpeg,image/webp' style='display:none' onchange='dentLogoSelecionar(this.files[0])'>"+
+          "<button class='btn btng bsm' onclick='document.getElementById(\"dentLogoFile\").click()' style='font-size:11px'>📤 Enviar logo</button>"+
+          "<button id='dentLogoBtnRemover' class='btn btnr bsm' onclick='dentLogoRemover()' style='font-size:11px;display:none'>🗑️ Remover</button>"+
+          "<div style='color:#666;font-size:10px;line-height:1.4'>PNG, JPG ou WEBP. Será redimensionada automaticamente. Visível ao imprimir requisições deste dentista.</div>"+
+        "</div>"+
+      "</div>"+
+      // ⚡ v3.10.8 (28/05/2026) — Imprimir requisicao direto do cadastro.
+      // Antes so dava pra imprimir abrindo um paciente do agendamento.
+      // Agora a recepcao pode pre-imprimir um bloco de folhas pra entregar
+      // ao dentista. Quantidade configuravel (1-50). Se o dentista tem 2+
+      // enderecos, o seletor abre — mesmo fluxo do agendamento.
+      "<div style='border-top:1px dashed #2a2a4a;margin-top:10px;padding-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap'>"+
+        "<label style='font-size:11px;color:#aaa;display:flex;align-items:center;gap:6px;margin:0'>"+
+          "Quantidade: "+
+          "<input type='number' id='dentReqQtd' value='1' min='1' max='50' style='width:60px;padding:4px 6px;font-size:12px;border:1px solid #444;background:#222;color:#fff;border-radius:4px;text-align:center'>"+
+          "<span style='color:#666;font-size:10px'>folha(s)</span>"+
+        "</label>"+
+        "<button class='btn btnt bsm' onclick='dentImprimirRequisicao()' style='font-size:11px'>🖨️ Imprimir Requisição</button>"+
+      "</div>"+
+      "</div>";
+  }
+
   // ═══ Seção Visibilidade no FotonWeb ═══
   // Só faz sentido em edição (novo dentista ainda não tem pontos pra ver)
   if (ed) {
@@ -9413,6 +9590,14 @@ function openDtM(eid){
 
   // Carregar endereços se editando
   if(ed) dentEndLoad(ed.id);
+  // Carregar logo se editando (v3.10.7) — guarda o id no global pra
+  // dentLogoSelecionar/Remover saberem qual dentista esta sendo editado
+  if(ed){
+    window._dentLogoEditId = ed.id;
+    dentLogoCarregarPreview(ed.logo || "");
+  } else {
+    window._dentLogoEditId = null;
+  }
   // Carregar status credencial FotonWeb se editando
   if(ed && ed.fid) dentAuthLoad(ed.fid, ed.n);
   else if(ed && !ed.fid) {
@@ -9438,6 +9623,421 @@ async function dentEndLoad(dentId){
     window._dentEndCache=ends.map(function(e){return{id:e.id,dentista_id:dentId,descricao:e.descricao||"",endereco:e.endereco||"",complemento:e.complemento||"",bairro:e.bairro||"",cep:e.cep||"",cidade:e.cidade||"",principal:!!e.principal,_status:"existing"};});
     dentEndRender();
   } catch(e){ console.error("dentEndLoad exc:",e); el.innerHTML="<div style='color:#f66;font-size:12px'>Erro ao carregar enderecos</div>"; }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ⚡ LOGOMARCA DO DENTISTA — v3.10.7 (28/05/2026), Etapa 2 do plano de logo
+// ──────────────────────────────────────────────────────────────────────────────
+// Recepcao recebe a logo do dentista por WhatsApp/email e sobe internamente
+// pelo modal de edicao. Reprocessada via canvas no navegador antes do upload
+// (neutraliza qualquer payload embutido na imagem).
+//
+// Bucket: dentista-logos (publico, 300KB, PNG/JPG/WEBP)
+// Coluna: public.dentistas.logo_path (text, ex: 'dentista_123.png')
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Limites de processamento da imagem (bate com limite do bucket: 300KB)
+var DENT_LOGO_MAX_LADO = 600;     // pixels — maior lado apos redimensionar
+var DENT_LOGO_MAX_BYTES = 307200; // 300 KB — bucket file_size_limit
+var DENT_LOGO_MIMES_OK = ["image/png", "image/jpeg", "image/webp"];
+
+function dentLogoCarregarPreview(logoPath){
+  var prev = document.getElementById("dentLogoPreview");
+  var btnRem = document.getElementById("dentLogoBtnRemover");
+  if(!prev) return;
+  if(logoPath){
+    var url = SUPA_URL + "/storage/v1/object/public/dentista-logos/" + encodeURIComponent(logoPath) + "?t=" + Date.now();
+    prev.innerHTML = "<img src='" + esc(url) + "' style='max-width:100%;max-height:100%;object-fit:contain' onerror=\"this.parentNode.innerHTML='<span style=color:#f66;font-size:11px>Erro ao carregar</span>'\">";
+    if(btnRem) btnRem.style.display = "";
+  } else {
+    prev.innerHTML = "<span style='color:#999;font-size:11px'>Sem logo</span>";
+    if(btnRem) btnRem.style.display = "none";
+  }
+}
+
+// Le o arquivo, valida, redimensiona via canvas, reencoda como PNG e sobe
+async function dentLogoSelecionar(file){
+  if(!file) return;
+
+  // Identifica o dentista em edicao via input do form
+  // (o openDtM nao guarda o ed em variavel global; usa o nome como ancora)
+  // Melhor: usa ag global edicaoAtual? Nao tem. Usamos hidden via _reqModalState? Nao serve.
+  // Solucao: descobrir o id pelo proprio cache dents + nome do input dNm.
+  // MAIS SIMPLES: armazenar o id no proprio modal via data-attribute.
+  // Como nao temos isso, recuperamos via window._dentLogoEditId que foi
+  // setado por openDtM. Mas openDtM nao seta. Entao: guardamos o id quando
+  // dentLogoCarregarPreview e chamada (rodapé do openDtM).
+  var dentId = window._dentLogoEditId;
+  if(!dentId){
+    toast("⚠️", "Salve o dentista antes de enviar logo.");
+    return;
+  }
+
+  // Validacao 1: MIME claim do arquivo (cliente pode mentir, mas filtra acidente)
+  if(DENT_LOGO_MIMES_OK.indexOf(file.type) < 0){
+    toast("⚠️", "Tipo nao aceito. Use PNG, JPG ou WEBP.");
+    return;
+  }
+  // Validacao 2: tamanho original (rejeicao precoce de arquivo absurdo)
+  if(file.size > 10 * 1024 * 1024){ // 10MB original max
+    toast("⚠️", "Arquivo muito grande (>10MB). Reduza antes de enviar.");
+    return;
+  }
+
+  var prev = document.getElementById("dentLogoPreview");
+  if(prev) prev.innerHTML = "<span style='color:#999;font-size:11px'>Processando...</span>";
+
+  try{
+    // 1. Carrega como imagem (validacao real: se nao for imagem, falha aqui)
+    var img = await dentLogoLerComoImagem(file);
+
+    // 2. Redimensiona pra teto (mantem proporcao)
+    var w = img.naturalWidth, h = img.naturalHeight;
+    if(!w || !h){ throw new Error("Imagem sem dimensoes validas."); }
+    if(w > DENT_LOGO_MAX_LADO || h > DENT_LOGO_MAX_LADO){
+      var ratio = Math.min(DENT_LOGO_MAX_LADO / w, DENT_LOGO_MAX_LADO / h);
+      w = Math.round(w * ratio);
+      h = Math.round(h * ratio);
+    }
+
+    // 3. Pinta no canvas e reencoda como PNG (canvas so copia pixels;
+    //    neutraliza qualquer payload embutido — SVG-script, EXIF malicioso,
+    //    polyglot, etc nao sobrevivem)
+    var canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    var ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, w, h);
+
+    var blob = await new Promise(function(res, rej){
+      canvas.toBlob(function(b){ b ? res(b) : rej(new Error("Falha ao gerar PNG")); }, "image/png");
+    });
+
+    // 4. Se ficou maior que o limite (raro com 600px PNG), tenta JPEG 0.85
+    if(blob.size > DENT_LOGO_MAX_BYTES){
+      blob = await new Promise(function(res, rej){
+        canvas.toBlob(function(b){ b ? res(b) : rej(new Error("Falha ao gerar JPEG")); }, "image/jpeg", 0.85);
+      });
+    }
+    if(blob.size > DENT_LOGO_MAX_BYTES){
+      throw new Error("Logo ficou >300KB mesmo apos otimizacao. Use uma imagem mais simples.");
+    }
+
+    // 5. Determina path
+    // ⚡ v3.10.9 #4 (28/05/2026) — path FIXO por dentista, sempre PNG, INDEPENDENTE
+    // do mime do blob escolhido. Isso elimina dois problemas: (a) path mudando
+    // (.png ↔ .jpg) quando alternava entre PNG/JPEG; (b) necessidade de remover
+    // "arquivo antigo de extensao diferente". Com upsert, o mesmo path e
+    // sobrescrito. Salvamos com a extensao do blob real pra integridade do
+    // contentType, mas o registro no banco pode usar a extensao escolhida.
+    var ext = blob.type === "image/png" ? "png" : "jpg";
+    var path = "dentista_" + dentId + "." + ext;
+
+    // ⚡ v3.10.9 #5 — captura o path ANTIGO antes de qualquer modificacao,
+    // pra usar em rollback/restauracao se algo der errado.
+    var dCache = fdent(dentId);
+    var pathAntigo = (dCache && dCache.logo) || "";
+
+    // 6. Upload pro Storage (upsert pra substituir versao anterior)
+    var rUp = await supa.storage.from("dentista-logos").upload(path, blob, {
+      contentType: blob.type,
+      upsert: true,
+      cacheControl: "3600"
+    });
+    if(rUp.error){
+      console.error("dentLogoSelecionar upload:", rUp.error);
+      toast("Erro", "Upload falhou: " + (rUp.error.message || ""));
+      // ⚡ #5: restaura preview com path ANTIGO (nao limpa), pois a logo
+      // anterior continua intacta no Storage e no banco.
+      dentLogoCarregarPreview(pathAntigo);
+      return;
+    }
+
+    // ⚡ v3.10.9 #4 (28/05/2026) — Ordem corrigida: salvar no BANCO primeiro,
+    // remover arquivo antigo so DEPOIS. Antes, removiamos o arquivo antigo
+    // (passo 7) ANTES de atualizar logo_path (passo 8). Se o update falhasse,
+    // o banco continuava apontando pra arquivo ja deletado → logo quebrada.
+    //
+    // Ordem segura agora:
+    //   6. Upload (acima)
+    //   7. UPDATE pacientes.logo_path = novo
+    //      - falha → rollback: remove arquivo novo, restaura preview do antigo
+    //   8. REMOVE arquivo antigo (so se path diferente do novo) — best-effort,
+    //      orfao no Storage e tolerado (nao afeta logo atual)
+    var rDb = await supa.from("dentistas").update({ logo_path: path }).eq("id", dentId);
+    if(rDb.error){
+      console.error("dentLogoSelecionar update db:", rDb.error);
+      // ⚡ v3.10.11 (28/05/2026) — Code review #2 do Vine: o caso
+      // path === pathAntigo precisa ser tratado separado. Aqui o upsert
+      // ja sobrescreveu o arquivo no Storage com a logo NOVA, e o banco
+      // ja apontava pra esse mesmo caminho — entao na pratica a logo
+      // nova FOI aplicada com sucesso, mesmo o UPDATE tendo "falhado"
+      // (provavelmente RLS / network — mas o estado final ja esta certo).
+      // Tratamos como sucesso: atualiza cache + preview com o path novo.
+      if(path === pathAntigo){
+        console.warn("dentLogoSelecionar: UPDATE falhou mas path == pathAntigo, considerando sucesso (Storage ja contem a logo nova).");
+        if(dCache) dCache.logo = path;
+        dentLogoCarregarPreview(path);
+        toast("🖼️", "Logo salva!");
+        return;
+      }
+      // Path mudou (ex: PNG→JPG): rollback de verdade. Remove o arquivo
+      // novo pra nao deixar lixo, restaura preview pro path antigo.
+      try{ await supa.storage.from("dentista-logos").remove([path]); }catch(_){}
+      toast("Erro", "Falha ao salvar no cadastro: " + (rDb.error.message || ""));
+      dentLogoCarregarPreview(pathAntigo);
+      return;
+    }
+
+    // 8. Remove arquivo antigo se extensao mudou (PNG→JPG ou vice-versa).
+    // Best-effort: se falhar vira orfao no Storage, mas a logo atual ja
+    // esta consolidada no banco — nao reaparece pra ninguem.
+    if(pathAntigo && pathAntigo !== path){
+      try{ await supa.storage.from("dentista-logos").remove([pathAntigo]); }catch(_){}
+    }
+
+    // 9. Atualiza cache local + preview
+    if(dCache) dCache.logo = path;
+    dentLogoCarregarPreview(path);
+    toast("🖼️", "Logo salva!");
+
+  }catch(e){
+    console.error("dentLogoSelecionar:", e);
+    toast("Erro", e.message || "Falha ao processar imagem");
+    // Restaura preview do estado anterior (cache local nao foi tocado se
+    // chegamos aqui via throw antes do update do banco)
+    var dCache2 = fdent(dentId);
+    dentLogoCarregarPreview(dCache2 ? (dCache2.logo || "") : "");
+  } finally {
+    // Limpa o input pra permitir selecionar o mesmo arquivo de novo
+    var fileInput = document.getElementById("dentLogoFile");
+    if(fileInput) fileInput.value = "";
+  }
+}
+
+function dentLogoLerComoImagem(file){
+  return new Promise(function(res, rej){
+    var reader = new FileReader();
+    reader.onload = function(){
+      var img = new Image();
+      img.onload = function(){ res(img); };
+      img.onerror = function(){ rej(new Error("Arquivo nao parece ser uma imagem valida.")); };
+      img.src = reader.result;
+    };
+    reader.onerror = function(){ rej(new Error("Erro ao ler arquivo.")); };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function dentLogoRemover(){
+  var dentId = window._dentLogoEditId;
+  if(!dentId) return;
+  var dCache = fdent(dentId);
+  var path = dCache && dCache.logo;
+  if(!path){
+    dentLogoCarregarPreview("");
+    return;
+  }
+  if(!confirm("Remover a logomarca deste dentista?")) return;
+
+  try{
+    // 1. Limpa coluna primeiro (operacao mais critica — se falhar, para)
+    var rDb = await supa.from("dentistas").update({ logo_path: null }).eq("id", dentId);
+    if(rDb.error){
+      console.error("dentLogoRemover db:", rDb.error);
+      toast("Erro", "Falha ao limpar cadastro: " + (rDb.error.message || ""));
+      return;
+    }
+
+    // 2. Apaga do Storage (best-effort — se falhar, fica orfao mas o cadastro
+    //    ja esta limpo, entao nao reaparece. Os orfaos podem ser limpos
+    //    depois via script separado)
+    try{ await supa.storage.from("dentista-logos").remove([path]); }catch(_){}
+
+    // 3. Atualiza cache + UI
+    if(dCache) dCache.logo = "";
+    dentLogoCarregarPreview("");
+    toast("🗑️", "Logo removida");
+  }catch(e){
+    console.error("dentLogoRemover:", e);
+    toast("Erro", e.message || "Falha ao remover");
+  }
+}
+
+// ⚡ NOVO v3.10.8 (28/05/2026) — Imprimir requisicao direto do cadastro do
+// dentista. Le a quantidade do input dentReqQtd (1-50) e dispara o fluxo
+// publico de requisicao.js (imprimirRequisicaoPorDentista), que reusa
+// reqImprimirComEndereco e o seletor de enderecos quando ha 2+.
+// ⚡ ATUALIZADO v3.10.9 (28/05/2026) — Fix pop-up bloqueado (#2 do code
+// review): abre a janela do navegador IMEDIATAMENTE no clique (com tela
+// de loading), antes de qualquer await. Sem isso, o navegador podia
+// considerar que o gesto do clique se perdeu apos os awaits da Edge e
+// bloquear o window.open. Requer requisicao.js v3.2+.
+function dentImprimirRequisicao(){
+  var dentId = window._dentLogoEditId;
+  if(!dentId){
+    toast("⚠️", "Salve o dentista antes de imprimir requisicao.");
+    return;
+  }
+  var input = document.getElementById("dentReqQtd");
+  var qtd = input ? parseInt(input.value, 10) : 1;
+  if(!isFinite(qtd) || qtd < 1) qtd = 1;
+  if(qtd > 50) qtd = 50;
+  // Confere se a funcao publica do requisicao.js esta carregada
+  if(typeof imprimirRequisicaoPorDentista !== "function"){
+    toast("⚠️", "Modulo requisicao.js v3.1+ nao carregado. Atualize o arquivo.");
+    return;
+  }
+  // ⚡ v3.10.9 — abre a janela AGORA, ainda dentro do gesto do clique
+  // (synchronous, sem awaits antes). reqAbrirJanelaComLoading exibe um
+  // spinner enquanto a impressao e preparada. Passa pra fluxo via param.
+  var winPreAberta = (typeof reqAbrirJanelaComLoading === "function")
+    ? reqAbrirJanelaComLoading()
+    : null;
+  if(!winPreAberta){
+    toast("⚠️", "Bloqueio de pop-up. Permite janelas pra imprimir.");
+    return;
+  }
+  imprimirRequisicaoPorDentista(dentId, qtd, winPreAberta);
+}
+
+// ⚡ NOVO v3.10.12 (28/05/2026) — Requisicoes rapidas pra recepcao.
+// Modal acessivel pela aba Atendimento (botao 🖨️ Requisicoes), permite
+// imprimir requisicao em branco pra qualquer dentista SEM precisar abrir
+// agendamento, edit dentista, ou ter role admin. So depende da permissao
+// `atendimento` (admin e agenda tem).
+// O que NAO faz: upload de logo, edicao de cadastro, edicao de endereco.
+// O que FAZ: busca dentista por nome/CRO + define quantidade + imprime.
+// Reusa imprimirRequisicaoPorDentista do requisicao.js v3.1+ — toda a
+// logica de pop-up pre-aberto, seletor de endereco multi, calibracao,
+// logo, page-break etc continua valendo.
+
+function abrirReqRapida(){
+  // Estado local do modal (separado do _reqModalState que pertence ao
+  // seletor de enderecos do requisicao.js)
+  window._reqRapidaState = { busca: "" };
+
+  // Remove instancia anterior se houver
+  var ant = document.getElementById("modal-req-rapida");
+  if(ant) ant.remove();
+
+  var m = document.createElement("div");
+  m.id = "modal-req-rapida";
+  m.innerHTML =
+    "<style>" +
+    "#modal-req-rapida{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}" +
+    "#modal-req-rapida .box{background:var(--bg,#1a1d24);color:var(--wh,#fff);padding:18px;border-radius:10px;max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.08)}" +
+    "#modal-req-rapida h3{font-size:1rem;margin:0 0 4px}" +
+    "#modal-req-rapida .sub{font-size:.78rem;color:var(--gr,#9aa);margin-bottom:12px}" +
+    "#modal-req-rapida .topo{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}" +
+    "#modal-req-rapida input[type=text],#modal-req-rapida input[type=number]{padding:8px 10px;font-size:.85rem;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--wh,#fff);border-radius:6px}" +
+    "#modal-req-rapida .lista{flex:1;overflow-y:auto;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:4px}" +
+    "#modal-req-rapida .row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.05);cursor:default;transition:background .12s}" +
+    "#modal-req-rapida .row:last-child{border-bottom:none}" +
+    "#modal-req-rapida .row:hover{background:rgba(74,222,128,.05)}" +
+    "#modal-req-rapida .row .info{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}" +
+    "#modal-req-rapida .row .nm{font-size:.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    "#modal-req-rapida .row .meta{font-size:.72rem;color:var(--gr,#9aa)}" +
+    "#modal-req-rapida .ac{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}" +
+    "#modal-req-rapida .vazio{color:var(--gr,#9aa);font-size:.82rem;padding:18px 8px;text-align:center}" +
+    "</style>" +
+    "<div class='box'>" +
+      "<h3>🖨️ Imprimir Requisição</h3>" +
+      "<div class='sub'>Escolha o dentista e a quantidade de folhas. Se houver vários endereços, abrirá o seletor.</div>" +
+      "<div class='topo'>" +
+        "<input type='text' id='reqRapBusca' placeholder='Buscar por nome ou CRO...' autocomplete='off' style='flex:1;min-width:180px' oninput='reqRapFiltrar()'>" +
+        "<label style='display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--gr,#9aa)'>" +
+          "Qtd:" +
+          "<input type='number' id='reqRapQtd' value='1' min='1' max='50' style='width:64px;text-align:center'>" +
+        "</label>" +
+      "</div>" +
+      "<div id='reqRapLista' class='lista'></div>" +
+      "<div class='ac'>" +
+        "<button class='btn bsm' onclick='document.getElementById(\"modal-req-rapida\").remove()'>Fechar</button>" +
+      "</div>" +
+    "</div>";
+
+  document.body.appendChild(m);
+  reqRapFiltrar(); // render inicial
+
+  // Foco no campo de busca
+  setTimeout(function(){
+    var b = document.getElementById("reqRapBusca");
+    if(b) b.focus();
+  }, 50);
+}
+
+function reqRapFiltrar(){
+  var inp = document.getElementById("reqRapBusca");
+  var lista = document.getElementById("reqRapLista");
+  if(!lista) return;
+  var termo = String(inp ? inp.value : "").trim().toLowerCase();
+
+  // Filtra os dentistas (sem mostrar inativos — cache `dents` ja vem so com ativo=true)
+  var arr = (dents || []).slice();
+  if(termo){
+    arr = arr.filter(function(d){
+      return (d.n || "").toLowerCase().indexOf(termo) >= 0
+          || (d.cro || "").toLowerCase().indexOf(termo) >= 0;
+    });
+  }
+
+  // Ordena por nome
+  arr.sort(function(a,b){ return (a.n || "").localeCompare(b.n || ""); });
+
+  if(!arr.length){
+    lista.innerHTML = "<div class='vazio'>Nenhum dentista encontrado.</div>";
+    return;
+  }
+
+  // Render
+  var h = "";
+  arr.forEach(function(d){
+    var nm = esc(d.n || "(sem nome)");
+    var cro = d.cro ? esc(d.cro) : "";
+    var meta = cro ? ("CRO " + cro) : "(sem CRO)";
+    if(d.esp) meta += " · " + esc(d.esp);
+    h += "<div class='row'>" +
+      "<div class='info'>" +
+        "<div class='nm'>" + nm + "</div>" +
+        "<div class='meta'>" + meta + "</div>" +
+      "</div>" +
+      "<button class='btn btng bsm' onclick='reqRapImprimir(" + d.id + ")' title='Imprimir requisicao'>🖨️ Imprimir</button>" +
+      "</div>";
+  });
+  lista.innerHTML = h;
+}
+
+function reqRapImprimir(dentId){
+  if(!dentId) return;
+  // Le qtd do input (clamp 1-50)
+  var inp = document.getElementById("reqRapQtd");
+  var qtd = inp ? parseInt(inp.value, 10) : 1;
+  if(!isFinite(qtd) || qtd < 1) qtd = 1;
+  if(qtd > 50) qtd = 50;
+
+  // Checa modulo carregado
+  if(typeof imprimirRequisicaoPorDentista !== "function"){
+    toast("⚠️", "Modulo requisicao.js v3.1+ nao carregado. Atualize o arquivo.");
+    return;
+  }
+
+  // ⚡ Abre a janela AGORA (gesto do clique sincrono — sem await antes),
+  // pra evitar bloqueio de pop-up. Mesmo padrao de dentImprimirRequisicao.
+  var winPreAberta = (typeof reqAbrirJanelaComLoading === "function")
+    ? reqAbrirJanelaComLoading()
+    : null;
+  if(!winPreAberta){
+    toast("⚠️", "Bloqueio de pop-up. Permite janelas pra imprimir.");
+    return;
+  }
+
+  // Fecha o modal de selecao — a UX de seguir trabalhando esta no
+  // "Acesso FotonWeb / Aba Atendimento" e nao mais nesta lista, alem disso
+  // o seletor de enderecos (quando aparece) ja sobrepoe ao modal.
+  var m = document.getElementById("modal-req-rapida");
+  if(m) m.remove();
+
+  imprimirRequisicaoPorDentista(dentId, qtd, winPreAberta);
 }
 
 function dentEndRender(){

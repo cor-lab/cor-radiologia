@@ -1,11 +1,83 @@
 // ============================================================================
-// requisicao.js v2 - Sobreimpressão em requisição pré-impressa COR
+// requisicao.js v3.3 - Sobreimpressão em requisição pré-impressa COR
 // ----------------------------------------------------------------------------
 // - Imprime nome/CRO/endereço/telefone do dentista nos campos certos.
+// - LOGO do dentista impressa em area calibrada (v3.3).
 // - Calibração persistida em configuracoes (chave 'requisicao_calib').
 // - Múltiplos endereços: abre seletor; principal pré-selecionado.
 // - Permite redefinir o principal direto no seletor (fica salvo).
-// Depende de globais: supa, ags, dents, fdent, esc, toast.
+// - v3.1: pode ser disparada pelo cadastro do dentista (sem agendamento)
+//         e aceita quantidade de folhas.
+// - v3.2: pop-up bloqueado evitado (aba aberta no gesto do clique) +
+//         pagina em branco extra eliminada (last-of-type).
+// - v3.3: logo do dentista impressa em area calibravel (4 mm + checkbox).
+// Depende de globais: supa, ags, dents, fdent, esc, toast, SUPA_URL.
+// ----------------------------------------------------------------------------
+// CHANGELOG v3 (2026-05-28) — code review do Vine:
+//   #1 reqBuscarDentista: trata rE.error (e rD.error) — antes uma falha de
+//      rede/RLS na busca de enderecos era silenciada e imprimia "sem endereco".
+//   #2 reqLerNum: leitura segura dos campos de calibracao com fallback pro
+//      valor atual/padrao — antes parseFloat de campo vazio salvava NaN e a
+//      impressao saia com left:NaNmm. Usado em salvar e imprimir teste.
+//   #3 reqGerarHtml: o print() agora aguarda as imagens decodificarem antes
+//      de disparar (img.decode/complete + timeout 3s). Prepara o terreno pra
+//      a logomarca do dentista (Etapa 3); com folha so-texto dispara na hora.
+//
+// CHANGELOG v3.1 (2026-05-28):
+//   * reqGerarHtml(dados, c, qtd): aceita qtd (1-50, clamp). Gera N folhas
+//     identicas com page-break-after entre elas — uma chamada window.print()
+//     imprime tudo. Retrocompat: chamadas sem qtd seguem com 1 folha.
+//   * Nova publico imprimirRequisicaoPorDentista(dentId, qtd): variante de
+//     imprimirRequisicao(agId, qtd) que NAO depende de agendamento. Recebe
+//     dentId direto. Usado pelo modal de edicao do dentista no App COR
+//     (botao "Imprimir Requisicao" na secao da logo, v3.10.8).
+//   * Nova helper reqBuscarDentistaPorId(dentId): irmao de reqBuscarDentista
+//     mas sem o passo de resolver dentista a partir do agendamento.
+//   * qtd propagada por toda a cadeia: imprimirRequisicao, reqImprimirCom-
+//     Endereco, abrirSeletorEndereco (salva no window._reqModalState),
+//     reqConfirmarImpressao, reqDefinirComoPrincipal (re-render mantem qtd).
+//
+// CHANGELOG v3.2 (2026-05-28) — code review do Vine sobre v3.1:
+//   #2 POP-UP BLOQUEADO: imprimirRequisicaoPorDentista fazia awaits antes
+//      do window.open, podendo perder o gesto do clique e ser bloqueada.
+//      FIX: chamador abre a janela IMEDIATAMENTE no handler do clique
+//      (nova helper reqAbrirJanelaComLoading exibe spinner enquanto carrega)
+//      e passa adiante via parametro winPreAberta. reqAbrirImpressao aceita
+//      janela pre-aberta e escreve o HTML nela. winPreAberta propagada
+//      em toda a cadeia (imprimirRequisicaoPorDentista → reqImprimirCom-
+//      Endereco → reqAbrirImpressao) e tambem em abrirSeletorEndereco/
+//      reqConfirmarImpressao via _reqModalState.winPreAberta. Em todos os
+//      caminhos que NAO terminam imprimindo (erro, cancelamento, sem
+//      dentista) a janela e fechada. Novo reqCancelarSeletor() substitui
+//      o onclick inline antigo de Cancelar pra fechar a janela tambem.
+//   #3 PAGINA EM BRANCO EXTRA: .folha:last-child nao funcionava porque o
+//      <script> apos as folhas era o ultimo filho. Trocado pra
+//      .folha:last-of-type que ignora outros tipos de elemento.
+//
+// CHANGELOG v3.3 (2026-05-28) — Etapa 3 do plano de logomarca do dentista:
+//   * REQ_DEF ganhou 5 campos novos: logo_x, logo_y, logo_w (largura),
+//     logo_h (altura max), logo_mostrar (boolean). Como reqCarregarCalib
+//     ja faz Object.assign(REQ_DEF, salvo), instalacoes antigas (sem esses
+//     campos no Supabase) ganham os defaults automaticamente.
+//   * Novo helper reqLogoUrl(logoPath, cacheBust) constroi URL publica do
+//     bucket dentista-logos. Trata data URIs e URLs absolutas (retorna
+//     como veio) — usado pelo teste de calibracao com placeholder SVG.
+//   * reqBuscarDentista e reqBuscarDentistaPorId agora retornam `logo`
+//     (path no bucket). SELECT inclui logo_path. Reusa dCache.logo se cache
+//     ja tem (App COR v3.10.7+ popula no map de dents).
+//   * reqImprimirComEndereco propaga d.logo pra reqGerarHtml.
+//   * reqGerarHtml(dados, c, qtd): se dados.logo + c.logo_mostrar, injeta
+//     <img class='logo' src=...> posicionado em mm. style:
+//       position:absolute; left/top em mm; width=logo_w em mm; max-height=
+//       logo_h em mm; object-fit:contain. Mantem proporcao + nao extrapola.
+//   * Tela de calibracao (abrirCalibracaoRequisicao) ganhou secao "🖼️ Logo
+//     do dentista" com 4 campos numericos (X, Y, W, H em mm) + checkbox
+//     "Mostrar logo do dentista" (logo_mostrar). reqSalvarCalibFromModal
+//     e reqImprimirTeste passaram a ler/salvar esses campos.
+//   * reqImprimirTeste usa um PLACEHOLDER SVG inline (data URI) como logo —
+//     assim a posicao/tamanho podem ser calibrados antes de qualquer
+//     dentista ter logo cadastrada. O SVG mostra um retangulo tracejado
+//     com a palavra "LOGO" centralizada na area definida.
 // ============================================================================
 
 var REQ_KEY = "requisicao_calib";
@@ -15,8 +87,36 @@ var REQ_DEF = {
   x_cro:  155,   y_cro:  109,
   x_end:  18,    y_end:  129,
   x_tel:  18,    y_tel:  148,
-  fonte:  11
+  fonte:  11,
+  // ⚡ v3.3 (28/05/2026) — Etapa 3 da logo. Posicao GLOBAL (mesma pra todos
+  // os dentistas, ja que a folha pre-impressa e a mesma). Calibravel pela
+  // tela de calibracao da requisicao. Defaults conservadores no canto
+  // superior esquerdo — a recepcao deve calibrar de acordo com o template
+  // pre-impresso real.
+  logo_x: 15,    logo_y: 15,
+  logo_w: 35,    logo_h: 20,
+  logo_mostrar: true
 };
+
+// ⚡ NOVO v3.3 (28/05/2026) — Constroi URL publica da logo a partir do path
+// guardado em dentistas.logo_path. Bucket dentista-logos e public, entao
+// nao precisa de signed URL. Cache-bust por timestamp (pra preview se
+// atualizar quando a logo for trocada).
+// Se receber uma URL absoluta (http*, data:) retorna como veio — uso pelo
+// teste de calibracao com placeholder data URI.
+function reqLogoUrl(logoPath, cacheBust) {
+  if (!logoPath) return "";
+  // Ja e URL absoluta ou data URI? Retorna como veio.
+  if (/^(https?:|data:)/i.test(logoPath)) return logoPath;
+  // Tenta usar SUPA_URL global do app. Em ambiente isolado (sem global),
+  // cai pra URL hardcoded do projeto COR.
+  var base = (typeof SUPA_URL === "string" && SUPA_URL)
+    ? SUPA_URL
+    : "https://flpvzvtbhuyjjdqyrsza.supabase.co";
+  var url = base + "/storage/v1/object/public/dentista-logos/" + encodeURIComponent(logoPath);
+  if (cacheBust) url += "?t=" + Date.now();
+  return url;
+}
 
 var _reqCalib = null;
 
@@ -68,12 +168,13 @@ async function reqBuscarDentista(agId) {
     dentId = rAg.data.dentista_id;
   }
 
-  // Cache local (dents) tem nome/cro/telefone
+  // Cache local (dents) tem nome/cro/telefone (e logo a partir de v3.10.7)
   var dCache = fdent(dentId);
 
   // Busca completa (caso cache não tenha)
+  // ⚡ v3.3 (28/05/2026) — SELECT inclui logo_path pra Etapa 3 da logo.
   var rD = !dCache
-    ? await supa.from("dentistas").select("nome, cro, telefone").eq("id", dentId).single()
+    ? await supa.from("dentistas").select("nome, cro, telefone, logo_path").eq("id", dentId).single()
     : null;
 
   // Sempre busca todos os endereços
@@ -83,11 +184,28 @@ async function reqBuscarDentista(agId) {
     .order("principal", { ascending: false })
     .order("id", { ascending: true });
 
+  // ⚡ FIX v3 (28/05/2026) — tratar erro da query. Antes, rE.error era
+  // ignorado e rE.data||[] virava lista vazia → o codigo tratava como
+  // "dentista sem endereco" e imprimia errado (sem endereco) numa falha
+  // de rede/RLS. Agora lanca erro pra o usuario saber que algo falhou.
+  if (rE.error) {
+    console.error("[req] erro ao buscar enderecos:", rE.error);
+    throw new Error("Falha ao buscar endereços do dentista: " + (rE.error.message || "erro desconhecido"));
+  }
+
+  // Idem para a busca completa do dentista (quando cache nao tem)
+  if (rD && rD.error) {
+    console.error("[req] erro ao buscar dentista:", rD.error);
+    throw new Error("Falha ao buscar dados do dentista: " + (rD.error.message || "erro desconhecido"));
+  }
+
   return {
     dentId: dentId,
     nome: dCache ? dCache.n : (rD.data && rD.data.nome) || "",
     cro:  dCache ? dCache.cro : (rD.data && rD.data.cro) || "",
     telefone: dCache ? dCache.tel : (rD.data && rD.data.telefone) || "",
+    // ⚡ v3.3 (28/05/2026) — logo path do bucket dentista-logos (ou "").
+    logo: dCache ? (dCache.logo || "") : ((rD.data && rD.data.logo_path) || ""),
     enderecos: rE.data || []
   };
 }
@@ -102,37 +220,139 @@ function reqFormatarEnd(e) {
 // HTML da requisição
 // ----------------------------------------------------------------------------
 
-function reqGerarHtml(dados, c) {
-  return "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='UTF-8'>" +
-    "<title>Requisição</title>" +
-    "<style>" +
-    "@page{size:A4;margin:0}" +
-    "*{box-sizing:border-box;margin:0;padding:0}" +
-    "body{font-family:Arial,sans-serif}" +
-    ".folha{position:relative;width:210mm;height:297mm}" +
-    ".campo{position:absolute;font-size:" + c.fonte + "pt;color:#000;white-space:nowrap;overflow:hidden}" +
-    "@media print{.folha{box-shadow:none}}" +
-    "</style></head><body>" +
+function reqGerarHtml(dados, c, qtd) {
+  // ⚡ v3.1 (28/05/2026) — quantidade de folhas (padrao 1). Cada folha gera
+  // um <div class='folha'> com page-break entre eles, e o navegador imprime
+  // tudo numa unica chamada window.print(). Folhas sao identicas (mesmo
+  // dentista, mesmo endereco) — uso tipico: pre-imprimir um bloco de
+  // requisicoes pro dentista levar pro consultorio.
+  qtd = Math.max(1, Math.min(50, parseInt(qtd, 10) || 1));
+
+  // ⚡ v3.3 (28/05/2026) — Etapa 3 da logo. Gera <img> posicionado em mm
+  // se: (a) o dentista tem logo (dados.logo), (b) calib.logo_mostrar = true.
+  // Tamanho via width:Wmm e height:auto (mantem proporcao por padrao). Se
+  // logo_h estiver explicitamente setado, usa como max-height pra nao
+  // extrapolar a area calibrada — assim a logo cabe na caixa
+  // logo_w x logo_h sem deformar.
+  var logoHtml = "";
+  if (dados.logo && c.logo_mostrar !== false) {
+    var logoSrc = reqLogoUrl(dados.logo); // URL publica do bucket
+    logoHtml =
+      "<img class='logo' src='" + esc(logoSrc) + "' alt='logo' " +
+        "style='position:absolute;left:" + c.logo_x + "mm;top:" + c.logo_y + "mm;" +
+              "width:" + c.logo_w + "mm;max-height:" + c.logo_h + "mm;" +
+              "object-fit:contain'>";
+  }
+
+  var folha =
     "<div class='folha'>" +
+      logoHtml +
       "<div class='campo' style='left:" + c.x_dent + "mm;top:" + c.y_dent + "mm'>" + esc(dados.nome) + "</div>" +
       "<div class='campo' style='left:" + c.x_cro  + "mm;top:" + c.y_cro  + "mm'>" + esc(dados.cro) + "</div>" +
       "<div class='campo' style='left:" + c.x_end  + "mm;top:" + c.y_end  + "mm'>" + esc(dados.endereco) + "</div>" +
       (dados.telefone
         ? "<div class='campo' style='left:" + c.x_tel + "mm;top:" + c.y_tel + "mm'>" + esc(dados.telefone) + "</div>"
         : "") +
-    "</div>" +
-    "<script>window.onload=function(){window.print();}<\/script>" +
+    "</div>";
+
+  var folhas = "";
+  for (var i = 0; i < qtd; i++) folhas += folha;
+
+  return "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='UTF-8'>" +
+    "<title>Requisição</title>" +
+    "<style>" +
+    "@page{size:A4;margin:0}" +
+    "*{box-sizing:border-box;margin:0;padding:0}" +
+    "body{font-family:Arial,sans-serif}" +
+    ".folha{position:relative;width:210mm;height:297mm;page-break-after:always}" +
+    // ⚡ FIX v3.2 #3 (28/05/2026) — last-of-type em vez de last-child.
+    // Antes, o <script> apos as folhas fazia a ultima folha NAO ser
+    // last-child (o script era), entao a regra nao aplicava e saia uma
+    // pagina em branco extra ao imprimir varias folhas. last-of-type
+    // ignora outros tipos de elemento (script, etc) e pega so a ultima
+    // folha de fato.
+    ".folha:last-of-type{page-break-after:auto}" +
+    ".campo{position:absolute;font-size:" + c.fonte + "pt;color:#000;white-space:nowrap;overflow:hidden}" +
+    "@media print{.folha{box-shadow:none}}" +
+    "</style></head><body>" +
+    folhas +
+    // ⚡ FIX v3 (28/05/2026) — nao chamar print() direto no onload.
+    // Aguarda TODAS as imagens da pagina decodificarem antes de imprimir
+    // (img.decode() / complete). Sem isso, quando houver logo do dentista
+    // (Etapa 3), a imagem poderia sair em branco no print. Com folha so-texto
+    // (sem <img>), o Promise.all resolve na hora. Timeout de seguranca de 3s
+    // garante que nunca trava se uma imagem falhar.
+    "<script>(function(){" +
+      "function go(){ try{ window.focus(); }catch(e){} window.print(); }" +
+      "function ready(){" +
+        "var imgs = Array.prototype.slice.call(document.images || []);" +
+        "if(!imgs.length){ go(); return; }" +
+        "var ps = imgs.map(function(im){" +
+          "if(im.complete && im.naturalWidth>0) return Promise.resolve();" +
+          "if(im.decode){ return im.decode().catch(function(){}); }" +
+          "return new Promise(function(res){ im.onload=res; im.onerror=res; });" +
+        "});" +
+        "var done=false; function fire(){ if(done) return; done=true; go(); }" +
+        "Promise.all(ps).then(fire);" +
+        "setTimeout(fire, 3000);" + // timeout de seguranca
+      "}" +
+      "if(document.readyState==='complete'){ ready(); }" +
+      "else{ window.addEventListener('load', ready); }" +
+    "})();<\/script>" +
     "</body></html>";
 }
 
-function reqAbrirImpressao(html) {
-  var win = window.open("", "_blank");
+// ⚡ NOVO v3.2 #2 (28/05/2026) — Abertura da janela ja no gesto do clique
+// pra evitar bloqueio de pop-up. Apos awaits (carregar calib + buscar
+// dentista + buscar enderecos), o navegador pode considerar que o gesto
+// do clique se perdeu e bloquear o window.open. Solucao: chamadores
+// abrem a aba IMEDIATAMENTE no handler do click (synchronous), com
+// loading visivel, e passam essa janela pra reqAbrirImpressao quando
+// os dados chegam.
+function reqAbrirJanelaComLoading() {
+  var w = window.open("", "_blank");
+  if (!w) return null;
+  try {
+    w.document.open();
+    w.document.write(
+      "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='UTF-8'>" +
+      "<title>Carregando requisição...</title>" +
+      "<style>" +
+        "body{margin:0;font-family:Arial,sans-serif;background:#f7f7f7;color:#444;" +
+            "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+            "min-height:100vh;text-align:center;padding:20px}" +
+        ".sp{width:38px;height:38px;border:3px solid #ddd;border-top-color:#4ade80;" +
+            "border-radius:50%;animation:r 0.9s linear infinite;margin-bottom:14px}" +
+        "@keyframes r{to{transform:rotate(360deg)}}" +
+        "h3{font-size:1rem;margin:0 0 4px;font-weight:600}" +
+        "p{font-size:.85rem;color:#888;margin:0}" +
+      "</style></head><body>" +
+      "<div class='sp'></div>" +
+      "<h3>Preparando requisição…</h3>" +
+      "<p>Buscando dados do dentista. Aguarde.</p>" +
+      "</body></html>"
+    );
+    w.document.close();
+  } catch (e) { /* janela pode ter sido fechada — ignora */ }
+  return w;
+}
+
+function reqAbrirImpressao(html, winPreAberta) {
+  // Se quem chamou ja abriu uma janela no gesto do clique (forma segura),
+  // reusa ela. Senao, tenta abrir agora (forma legada — pode ser bloqueada).
+  var win = winPreAberta || window.open("", "_blank");
   if (!win) {
     if (typeof toast === "function") toast("⚠️", "Bloqueio de pop-up. Permite janelas pra imprimir.");
     return;
   }
-  win.document.write(html);
-  win.document.close();
+  try {
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  } catch (e) {
+    console.error("[req] erro ao escrever na janela:", e);
+    if (typeof toast === "function") toast("⚠️", "Erro ao gerar requisicao.");
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -163,7 +383,9 @@ async function reqMarcarPrincipal(dentId, endId) {
 // PÚBLICO 1: Imprimir requisição
 // ============================================================================
 
-async function imprimirRequisicao(agId) {
+async function imprimirRequisicao(agId, qtd) {
+  // ⚡ v3.1 (28/05/2026) — qtd opcional (padrao 1). Mantem retrocompat com
+  // chamadas antigas que so passam agId.
   try {
     var calib = await reqCarregarCalib();
     var d = await reqBuscarDentista(agId);
@@ -176,18 +398,18 @@ async function imprimirRequisicao(agId) {
     // Sem endereços
     if (!d.enderecos.length) {
       if (!confirm('Dentista "' + d.nome + '" não tem endereço cadastrado.\nImprimir mesmo assim?')) return;
-      reqImprimirComEndereco(d, "", calib);
+      reqImprimirComEndereco(d, "", calib, qtd);
       return;
     }
 
     // 1 endereço só → direto
     if (d.enderecos.length === 1) {
-      reqImprimirComEndereco(d, reqFormatarEnd(d.enderecos[0]), calib);
+      reqImprimirComEndereco(d, reqFormatarEnd(d.enderecos[0]), calib, qtd);
       return;
     }
 
     // 2+ endereços → seletor
-    abrirSeletorEndereco(d, calib);
+    abrirSeletorEndereco(d, calib, qtd);
 
   } catch (e) {
     console.error("[req] erro:", e);
@@ -196,22 +418,124 @@ async function imprimirRequisicao(agId) {
   }
 }
 
-function reqImprimirComEndereco(d, enderecoStr, calib) {
+// ============================================================================
+// PÚBLICO 3 (v3.1): Imprimir requisição direto pelo cadastro do dentista
+// ============================================================================
+// Diferente de imprimirRequisicao(agId): nao depende de agendamento.
+// Usado pelo modal de edicao do dentista no App COR — pra pre-imprimir
+// um bloco de requisicoes que o dentista leva pro consultorio.
+
+async function imprimirRequisicaoPorDentista(dentId, qtd, winPreAberta) {
+  // ⚡ v3.2 #2 (28/05/2026) — winPreAberta: janela aberta no gesto do
+  // clique (no chamador), passada pra ca pra ser preenchida quando os
+  // dados chegarem. Sem isso, o navegador pode bloquear window.open
+  // depois dos awaits abaixo. Fechamos a janela em todos os caminhos
+  // que NAO terminam imprimindo (erro, cancelamento, dentista invalido).
+  function fechaJanela(){
+    if (winPreAberta) { try { winPreAberta.close(); } catch(_){} }
+  }
+
+  if (!dentId) {
+    if (typeof toast === "function") toast("⚠️", "ID do dentista invalido.");
+    fechaJanela();
+    return;
+  }
+  try {
+    var calib = await reqCarregarCalib();
+    var d = await reqBuscarDentistaPorId(dentId);
+
+    if (!d.nome) {
+      if (typeof toast === "function") toast("⚠️", "Dentista sem nome cadastrado.");
+      fechaJanela();
+      return;
+    }
+
+    if (!d.enderecos.length) {
+      if (!confirm('Dentista "' + d.nome + '" não tem endereço cadastrado.\nImprimir mesmo assim?')) {
+        fechaJanela();
+        return;
+      }
+      reqImprimirComEndereco(d, "", calib, qtd, winPreAberta);
+      return;
+    }
+
+    if (d.enderecos.length === 1) {
+      reqImprimirComEndereco(d, reqFormatarEnd(d.enderecos[0]), calib, qtd, winPreAberta);
+      return;
+    }
+
+    abrirSeletorEndereco(d, calib, qtd, winPreAberta);
+
+  } catch (e) {
+    console.error("[req] erro (por dentista):", e);
+    if (typeof toast === "function") toast("⚠️", "Falha: " + (e.message || e));
+    else alert("Falha: " + (e.message || e));
+    fechaJanela();
+  }
+}
+
+// Versao de reqBuscarDentista que recebe o dentId direto (sem agendamento).
+// Reusa a mesma logica de cache (fdent) + busca completa + enderecos.
+async function reqBuscarDentistaPorId(dentId) {
+  // Cache local (dents) tem nome/cro/telefone (e logo a partir de v3.10.7)
+  var dCache = (typeof fdent === "function") ? fdent(dentId) : null;
+
+  // Busca completa (caso cache nao tenha)
+  // ⚡ v3.3 (28/05/2026) — SELECT inclui logo_path pra Etapa 3 da logo.
+  var rD = !dCache
+    ? await supa.from("dentistas").select("nome, cro, telefone, logo_path").eq("id", dentId).single()
+    : null;
+  if (rD && rD.error) {
+    console.error("[req] erro ao buscar dentista:", rD.error);
+    throw new Error("Falha ao buscar dados do dentista: " + (rD.error.message || "erro desconhecido"));
+  }
+
+  var rE = await supa.from("dentista_enderecos")
+    .select("id, descricao, endereco, complemento, bairro, cidade, cep, principal")
+    .eq("dentista_id", dentId)
+    .order("principal", { ascending: false })
+    .order("id", { ascending: true });
+  if (rE.error) {
+    console.error("[req] erro ao buscar enderecos:", rE.error);
+    throw new Error("Falha ao buscar endereços do dentista: " + (rE.error.message || "erro desconhecido"));
+  }
+
+  return {
+    dentId: dentId,
+    nome: dCache ? dCache.n : (rD.data && rD.data.nome) || "",
+    cro:  dCache ? dCache.cro : (rD.data && rD.data.cro) || "",
+    telefone: dCache ? dCache.tel : (rD.data && rD.data.telefone) || "",
+    // ⚡ v3.3 (28/05/2026) — logo path do bucket dentista-logos (ou "").
+    logo: dCache ? (dCache.logo || "") : ((rD.data && rD.data.logo_path) || ""),
+    enderecos: rE.data || []
+  };
+}
+
+function reqImprimirComEndereco(d, enderecoStr, calib, qtd, winPreAberta) {
+  // ⚡ v3.1 (28/05/2026) — qtd opcional (padrao 1). Passa pra reqGerarHtml
+  // que monta N folhas no mesmo HTML, com page-break entre elas.
+  // ⚡ v3.2 #2 (28/05/2026) — winPreAberta opcional pra evitar pop-up block.
+  // ⚡ v3.3 (28/05/2026) — logo (path) propagado pra reqGerarHtml; quando
+  // presente e calib.logo_mostrar=true, gera <img> posicionado.
+  var nFolhas = Math.max(1, Math.min(50, parseInt(qtd, 10) || 1));
   var html = reqGerarHtml({
     nome: d.nome,
     cro: d.cro,
     endereco: enderecoStr,
-    telefone: d.telefone
-  }, calib);
-  reqAbrirImpressao(html);
-  if (typeof toast === "function") toast("🖨️", "Requisição enviada.");
+    telefone: d.telefone,
+    logo: d.logo || ""
+  }, calib, nFolhas);
+  reqAbrirImpressao(html, winPreAberta);
+  if (typeof toast === "function") {
+    toast("🖨️", nFolhas > 1 ? "Requisição enviada (" + nFolhas + " folhas)." : "Requisição enviada.");
+  }
 }
 
 // ----------------------------------------------------------------------------
 // Modal seletor de endereço
 // ----------------------------------------------------------------------------
 
-function abrirSeletorEndereco(d, calib) {
+function abrirSeletorEndereco(d, calib, qtd, winPreAberta) {
   var ant = document.getElementById("modal-sel-end");
   if (ant) ant.remove();
 
@@ -263,7 +587,9 @@ function abrirSeletorEndereco(d, calib) {
           "<button class='btn btnt bsm' onclick='reqDefinirComoPrincipal()'>⭐ Tornar principal</button>" +
         "</div>" +
         "<div class='dir'>" +
-          "<button class='btn bsm' onclick='document.getElementById(\"modal-sel-end\").remove()'>Cancelar</button>" +
+          // ⚡ v3.2 #2 — botao Cancelar agora usa reqCancelarSeletor() que
+          // tambem fecha a janela de loading aberta antecipadamente.
+          "<button class='btn bsm' onclick='reqCancelarSeletor()'>Cancelar</button>" +
           "<button class='btn btng bsm' onclick='reqConfirmarImpressao()'>🖨️ Imprimir</button>" +
         "</div>" +
       "</div>" +
@@ -272,7 +598,21 @@ function abrirSeletorEndereco(d, calib) {
   document.body.appendChild(m);
 
   // Estado do modal (acessado pelas funções globais abaixo)
-  window._reqModalState = { dentista: d, calib: calib, selecionadoId: preId };
+  // ⚡ v3.1 — qtd preservada pra reqConfirmarImpressao usar quando o usuario
+  // confirmar o endereco escolhido.
+  // ⚡ v3.2 #2 — winPreAberta tambem preservada pra ser fechada no cancelar.
+  window._reqModalState = { dentista: d, calib: calib, selecionadoId: preId, qtd: qtd, winPreAberta: winPreAberta };
+}
+
+function reqCancelarSeletor() {
+  // ⚡ NOVO v3.2 #2 — fecha o modal E a janela de loading (se houver).
+  var m = document.getElementById("modal-sel-end");
+  if (m) m.remove();
+  var st = window._reqModalState;
+  if (st && st.winPreAberta) {
+    try { st.winPreAberta.close(); } catch(_){}
+  }
+  window._reqModalState = null;
 }
 
 function reqSelEndereco(id) {
@@ -294,7 +634,7 @@ function reqConfirmarImpressao() {
   var end = st.dentista.enderecos.find(function(e){ return e.id === st.selecionadoId; });
   if (!end) return;
   document.getElementById("modal-sel-end").remove();
-  reqImprimirComEndereco(st.dentista, reqFormatarEnd(end), st.calib);
+  reqImprimirComEndereco(st.dentista, reqFormatarEnd(end), st.calib, st.qtd, st.winPreAberta);
 }
 
 async function reqDefinirComoPrincipal() {
@@ -311,8 +651,8 @@ async function reqDefinirComoPrincipal() {
     // Atualiza estado em memória
     st.dentista.enderecos.forEach(function(e){ e.principal = (e.id === end.id); });
     if (typeof toast === "function") toast("⭐", "Marcado como principal.");
-    // Reabre o modal pra refletir a estrelinha
-    abrirSeletorEndereco(st.dentista, st.calib);
+    // Reabre o modal pra refletir a estrelinha (preservando qtd e janela)
+    abrirSeletorEndereco(st.dentista, st.calib, st.qtd, st.winPreAberta);
   } catch (e) {
     if (typeof toast === "function") toast("⚠️", "Erro: " + e.message);
   }
@@ -355,6 +695,26 @@ async function abrirCalibracaoRequisicao() {
         cInput("y_tel",  "Telefone Y (mm)", c.y_tel)  +
         cInput("fonte",  "Fonte (pt)",      c.fonte)  +
       "</div>" +
+      // ⚡ v3.3 (28/05/2026) — Etapa 3: secao de calibracao da LOGO.
+      "<div style='border-top:1px solid rgba(255,255,255,.08);margin-top:6px;padding-top:14px'>" +
+        "<div style='display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap'>" +
+          "<label style='font-size:.85rem;color:var(--wh,#fff);text-transform:none;font-weight:600;flex-direction:row;align-items:center;cursor:pointer;gap:8px'>" +
+            "<input type='checkbox' id='ck-logo_mostrar' " + (c.logo_mostrar !== false ? "checked" : "") + " style='width:auto;margin:0'>" +
+            "🖼️ Mostrar logo do dentista" +
+          "</label>" +
+          "<span style='font-size:.7rem;color:var(--gr,#9aa)'>(quando o dentista tem logo cadastrada)</span>" +
+        "</div>" +
+        "<div class='gd'>" +
+          cInput("logo_x", "Logo X (mm)",          c.logo_x) +
+          cInput("logo_y", "Logo Y (mm)",          c.logo_y) +
+          cInput("logo_w", "Largura (mm)",         c.logo_w) +
+          cInput("logo_h", "Altura max (mm)",      c.logo_h) +
+        "</div>" +
+        "<div style='font-size:.7rem;color:var(--gr,#9aa);line-height:1.4;margin-top:4px'>" +
+          "Largura controla o tamanho. Altura max impede que a logo extrapole a area definida. " +
+          "Proporcao da imagem original e preservada (object-fit: contain)." +
+        "</div>" +
+      "</div>" +
       "<div class='ac'>" +
         "<button class='btn btnt bsm' onclick='reqImprimirTeste()'>🖨️ Imprimir teste</button>" +
         "<button class='btn bsm' onclick='document.getElementById(\"modal-calib-req\").remove()'>Cancelar</button>" +
@@ -370,15 +730,32 @@ async function abrirCalibracaoRequisicao() {
   }
 }
 
+// ⚡ FIX v3 (28/05/2026) — leitura segura de campo numerico da calibracao.
+// Antes usava parseFloat direto: campo vazio → NaN → salvava NaN no Supabase
+// e a impressao saia com left:NaNmm. Agora cai pro valor atual (_reqCalib)
+// e, se nao houver, pro padrao (REQ_DEF).
+function reqLerNum(id) {
+  var el = document.getElementById("ck-" + id);
+  var n = el ? parseFloat(el.value) : NaN;
+  if (isFinite(n)) return n;
+  // fallback: valor atual salvo > padrao
+  var atual = (_reqCalib && isFinite(_reqCalib[id])) ? _reqCalib[id] : REQ_DEF[id];
+  return atual;
+}
+
 async function reqSalvarCalibFromModal() {
-  var v = function(id){ return parseFloat(document.getElementById("ck-" + id).value); };
   try {
+    // ⚡ v3.3 (28/05/2026) — checkbox logo_mostrar lido separado
+    var chkMostrar = document.getElementById("ck-logo_mostrar");
     await reqSalvarCalib({
-      x_dent: v("x_dent"), y_dent: v("y_dent"),
-      x_cro:  v("x_cro"),  y_cro:  v("y_cro"),
-      x_end:  v("x_end"),  y_end:  v("y_end"),
-      x_tel:  v("x_tel"),  y_tel:  v("y_tel"),
-      fonte:  v("fonte")
+      x_dent: reqLerNum("x_dent"), y_dent: reqLerNum("y_dent"),
+      x_cro:  reqLerNum("x_cro"),  y_cro:  reqLerNum("y_cro"),
+      x_end:  reqLerNum("x_end"),  y_end:  reqLerNum("y_end"),
+      x_tel:  reqLerNum("x_tel"),  y_tel:  reqLerNum("y_tel"),
+      fonte:  reqLerNum("fonte"),
+      logo_x: reqLerNum("logo_x"), logo_y: reqLerNum("logo_y"),
+      logo_w: reqLerNum("logo_w"), logo_h: reqLerNum("logo_h"),
+      logo_mostrar: chkMostrar ? !!chkMostrar.checked : true
     });
     var m = document.getElementById("modal-calib-req");
     if (m) m.remove();
@@ -389,18 +766,34 @@ async function reqSalvarCalibFromModal() {
 }
 
 function reqImprimirTeste() {
-  var v = function(id){ return parseFloat(document.getElementById("ck-" + id).value); };
+  // ⚡ v3.3 (28/05/2026) — leitura inclui campos da logo, e usa um
+  // PLACEHOLDER inline (data URI) pra logo no teste — assim a posicao/
+  // tamanho podem ser calibrados antes de qualquer dentista ter logo.
+  // O placeholder e um SVG simples (renderizado pelo navegador) que
+  // mostra a area calibrada com "LOGO" escrito.
+  var chkMostrar = document.getElementById("ck-logo_mostrar");
   var calib = {
-    x_dent: v("x_dent"), y_dent: v("y_dent"),
-    x_cro:  v("x_cro"),  y_cro:  v("y_cro"),
-    x_end:  v("x_end"),  y_end:  v("y_end"),
-    x_tel:  v("x_tel"),  y_tel:  v("y_tel"),
-    fonte:  v("fonte")
+    x_dent: reqLerNum("x_dent"), y_dent: reqLerNum("y_dent"),
+    x_cro:  reqLerNum("x_cro"),  y_cro:  reqLerNum("y_cro"),
+    x_end:  reqLerNum("x_end"),  y_end:  reqLerNum("y_end"),
+    x_tel:  reqLerNum("x_tel"),  y_tel:  reqLerNum("y_tel"),
+    fonte:  reqLerNum("fonte"),
+    logo_x: reqLerNum("logo_x"), logo_y: reqLerNum("logo_y"),
+    logo_w: reqLerNum("logo_w"), logo_h: reqLerNum("logo_h"),
+    logo_mostrar: chkMostrar ? !!chkMostrar.checked : true
   };
+  // SVG placeholder pra teste de logo (sem precisar de upload real)
+  var logoPlaceholder = "data:image/svg+xml;utf8," + encodeURIComponent(
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 100'>" +
+      "<rect x='2' y='2' width='196' height='96' fill='none' stroke='#000' stroke-width='1' stroke-dasharray='4,2'/>" +
+      "<text x='100' y='58' text-anchor='middle' font-family='Arial' font-size='28' font-weight='bold' fill='#000'>LOGO</text>" +
+    "</svg>"
+  );
   reqAbrirImpressao(reqGerarHtml({
     nome: "Dr. TESTE DE CALIBRAÇÃO",
     cro:  "CRO-RS 99999",
     endereco: "Rua de Teste, 999 - Bairro Teste - Santa Maria",
-    telefone: "(55) 99999-9999"
+    telefone: "(55) 99999-9999",
+    logo: logoPlaceholder // passa data URI direto; reqLogoUrl nao trata isso
   }, calib));
 }
