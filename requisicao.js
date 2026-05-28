@@ -1,19 +1,17 @@
 // ============================================================================
-// requisicao.js v3.5 - Sobreimpressão em requisição pré-impressa COR
+// requisicao.js v3.7 - Sobreimpressão em requisição pré-impressa COR
 // ----------------------------------------------------------------------------
-// - Imprime nome/CRO/endereço/telefone do dentista nos campos certos.
-// - LOGO do dentista impressa em area calibrada (v3.3).
-// - Calibração persistida em configuracoes (chave 'requisicao_calib').
-// - Múltiplos endereços: abre seletor; principal pré-selecionado.
-// - Permite redefinir o principal direto no seletor (fica salvo).
-// - v3.1: pode ser disparada pelo cadastro do dentista (sem agendamento)
-//         e aceita quantidade de folhas.
-// - v3.2: pop-up bloqueado evitado (aba aberta no gesto do clique) +
-//         pagina em branco extra eliminada (last-of-type).
-// - v3.3: logo do dentista impressa em area calibravel (4 mm + checkbox).
-// - v3.4: tamanho do papel corrigido pra 150x250mm (era A4, errado).
-// - v3.5: calibracao sempre fresca a cada impressao (evita cache stale
-//         entre PCs) + diagnostico no console + toast em fallback silencioso.
+// - v3.7: campos com max-width pra nao estourar a folha 150mm. Resolve
+//         o desalinhamento global quando o endereco (ou outro campo) era
+//         maior que o espaco ate a borda direita. Antes: impressora detectava
+//         conteudo > 150mm e aplicava fit-to-page, encolhendo tudo. Agora:
+//         conteudo e cortado pelo overflow, folha mantem 150mm exatos.
+// - v3.6: janela de impressao sempre limpa (fecha winPreAberta).
+// - v3.5: calibracao fresca a cada impressao + diagnostico no console.
+// - v3.4: papel 150x250mm.
+// - v3.3: logo do dentista.
+// - v3.2: pop-up bloqueado + page-break.
+// - v3.1: quantidade de folhas + impressao por dentista.
 // Depende de globais: supa, ags, dents, fdent, esc, toast, SUPA_URL.
 // ----------------------------------------------------------------------------
 // CHANGELOG v3 (2026-05-28) — code review do Vine:
@@ -103,6 +101,26 @@
 //   * BONUS: reqCarregarCalib agora loga no console o que veio do banco
 //     (pra diagnosticar). E o try/catch silencioso virou toast visivel
 //     em caso de erro — antes, qualquer falha caia silenciosa pra REQ_DEF.
+//
+// CHANGELOG v3.6 (2026-05-28):
+//   * BUG: impressao da aba Atendimento saia em posicao SUTILMENTE diferente
+//     do "Imprimir teste" da Config. Mesmo com calib identica (verificado
+//     por interceptador de HTML) e MESMO HTML gerado pelos dois fluxos,
+//     o papel saia diferente.
+//   * CAUSA: o teste abria janela com window.open("","_blank") direto (limpa),
+//     enquanto a impressao real reusava a winPreAberta (janela aberta no
+//     gesto do clique antes dos awaits, contendo HTML de loading com
+//     spinner, padding, min-height:100vh, flex). Apos document.open() +
+//     document.write() na janela reutilizada, o navegador *as vezes*
+//     preservava caracteristicas residuais do contexto inicial (zoom,
+//     viewport, dimensoes computadas) que afetavam sutilmente o print.
+//   * FIX: reqAbrirImpressao agora SEMPRE fecha a winPreAberta e abre uma
+//     janela NOVA limpa. Como a chamada acontece apos os awaits (gesto do
+//     clique pode ter expirado), pop-up block ainda pode ocorrer, mas
+//     navegadores normalmente permitem janela "filha" subsequente quando
+//     a anterior foi aberta no gesto. Fallback toast pra avisar caso
+//     bloqueie. Tradeoff aceito: 1 piscar de janela em troca de
+//     consistencia visual entre teste e impressao real.
 // ============================================================================
 
 var REQ_KEY = "requisicao_calib";
@@ -295,14 +313,31 @@ function reqGerarHtml(dados, c, qtd) {
               "object-fit:contain'>";
   }
 
+  // ⚡ v3.7 (28/05/2026) — Campos com max-width pra nao estourar a folha.
+  // BUG identificado: quando o texto de um campo (ex: endereco longo) era
+  // maior que o espaco disponivel ate a borda direita da folha, mesmo com
+  // white-space:nowrap + overflow:hidden, o LAYOUT interno reconhecia o
+  // conteudo absoluto extrapolando 150mm. O Chrome enviava pra impressora
+  // uma area imprimivel maior, e a impressora aplicava "fit to printable
+  // area" — encolhendo TUDO uniformemente. Resultado: TODOS os campos
+  // saiam deslocados (nao so o endereco), e dentistas com pouco texto
+  // (ex: Mauricio Mezomo, endereco curto) saiam alinhados corretamente.
+  // FIX: cada .campo recebe max-width inline calculado a partir do seu
+  // left, com 2mm de margem de seguranca antes da borda direita da folha
+  // (150mm). Texto que estoura agora e cortado de verdade pelo overflow:
+  // hidden, sem afetar o layout total da folha.
+  var FOLHA_W = 150; // mm — papel pre-impresso COR (v3.4)
+  var MARGEM_DIR = 2; // mm de seguranca
+  function mw(leftMm){ return Math.max(10, FOLHA_W - leftMm - MARGEM_DIR); }
+
   var folha =
     "<div class='folha'>" +
       logoHtml +
-      "<div class='campo' style='left:" + c.x_dent + "mm;top:" + c.y_dent + "mm'>" + esc(dados.nome) + "</div>" +
-      "<div class='campo' style='left:" + c.x_cro  + "mm;top:" + c.y_cro  + "mm'>" + esc(dados.cro) + "</div>" +
-      "<div class='campo' style='left:" + c.x_end  + "mm;top:" + c.y_end  + "mm'>" + esc(dados.endereco) + "</div>" +
+      "<div class='campo' style='left:" + c.x_dent + "mm;top:" + c.y_dent + "mm;max-width:" + mw(c.x_dent) + "mm'>" + esc(dados.nome) + "</div>" +
+      "<div class='campo' style='left:" + c.x_cro  + "mm;top:" + c.y_cro  + "mm;max-width:" + mw(c.x_cro)  + "mm'>" + esc(dados.cro) + "</div>" +
+      "<div class='campo' style='left:" + c.x_end  + "mm;top:" + c.y_end  + "mm;max-width:" + mw(c.x_end)  + "mm'>" + esc(dados.endereco) + "</div>" +
       (dados.telefone
-        ? "<div class='campo' style='left:" + c.x_tel + "mm;top:" + c.y_tel + "mm'>" + esc(dados.telefone) + "</div>"
+        ? "<div class='campo' style='left:" + c.x_tel + "mm;top:" + c.y_tel + "mm;max-width:" + mw(c.x_tel) + "mm'>" + esc(dados.telefone) + "</div>"
         : "") +
     "</div>";
 
@@ -323,7 +358,10 @@ function reqGerarHtml(dados, c, qtd) {
     "*{box-sizing:border-box;margin:0;padding:0}" +
     "body{font-family:Arial,sans-serif}" +
     // ⚡ v3.4 (28/05/2026) — folha 150x250mm (papel pre-impresso COR)
-    ".folha{position:relative;width:150mm;height:250mm;page-break-after:always}" +
+    // ⚡ v3.7 (28/05/2026) — overflow:hidden na folha pra clipar qualquer
+    // conteudo absoluto que ainda extrapole (logo, campos imprevistos).
+    // Garantia extra contra "fit to printable area" da impressora.
+    ".folha{position:relative;width:150mm;height:250mm;overflow:hidden;page-break-after:always}" +
     // ⚡ FIX v3.2 #3 (28/05/2026) — last-of-type em vez de last-child.
     // Antes, o <script> apos as folhas fazia a ultima folha NAO ser
     // last-child (o script era), entao a regra nao aplicava e saia uma
@@ -397,9 +435,29 @@ function reqAbrirJanelaComLoading() {
 }
 
 function reqAbrirImpressao(html, winPreAberta) {
-  // Se quem chamou ja abriu uma janela no gesto do clique (forma segura),
-  // reusa ela. Senao, tenta abrir agora (forma legada — pode ser bloqueada).
-  var win = winPreAberta || window.open("", "_blank");
+  // ⚡ v3.6 (28/05/2026) — SEMPRE abre janela nova pra impressao.
+  // Bug observado: quando reusava a winPreAberta (que ja tinha conteudo HTML
+  // de loading: spinner, padding, min-height:100vh, flex), apos document.open
+  // + document.write o navegador *as vezes* preservava caracteristicas
+  // residuais da janela inicial (zoom, viewport, dimensoes), causando
+  // renderizacao SUTILMENTE diferente da janela aberta limpa pelo teste de
+  // calibracao. Mesma calib, mesmo HTML, papel diferente.
+  //
+  // Solucao: fecha a janela pre-aberta e abre uma NOVA limpa. Como esta
+  // chamada acontece APOS os awaits (perdeu o gesto do click), pode haver
+  // pop-up block na janela nova — mas como a anterior ja foi aberta no
+  // click, normalmente o navegador permite uma janela "filha" subsequente.
+  // Fallback: se nova janela bloquear, reusa a pre-aberta (v3.2 behavior).
+  if (winPreAberta) {
+    try { winPreAberta.close(); } catch(_){}
+  }
+  var win = window.open("", "_blank");
+  if (!win && winPreAberta) {
+    // Pop-up bloqueado E ja tinhamos uma pre-aberta — mas ela foi fechada
+    // acima. Tenta uma vez mais com about:blank explicito (alguns
+    // navegadores tratam diferente).
+    win = window.open("about:blank", "_blank");
+  }
   if (!win) {
     if (typeof toast === "function") toast("⚠️", "Bloqueio de pop-up. Permite janelas pra imprimir.");
     return;
