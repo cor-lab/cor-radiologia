@@ -1,5 +1,5 @@
 // ============================================================================
-// requisicao.js v3.4 - Sobreimpressão em requisição pré-impressa COR
+// requisicao.js v3.5 - Sobreimpressão em requisição pré-impressa COR
 // ----------------------------------------------------------------------------
 // - Imprime nome/CRO/endereço/telefone do dentista nos campos certos.
 // - LOGO do dentista impressa em area calibrada (v3.3).
@@ -12,6 +12,8 @@
 //         pagina em branco extra eliminada (last-of-type).
 // - v3.3: logo do dentista impressa em area calibravel (4 mm + checkbox).
 // - v3.4: tamanho do papel corrigido pra 150x250mm (era A4, errado).
+// - v3.5: calibracao sempre fresca a cada impressao (evita cache stale
+//         entre PCs) + diagnostico no console + toast em fallback silencioso.
 // Depende de globais: supa, ags, dents, fdent, esc, toast, SUPA_URL.
 // ----------------------------------------------------------------------------
 // CHANGELOG v3 (2026-05-28) — code review do Vine:
@@ -88,6 +90,19 @@
 //     Se a impressora estiver com bandeja A4 configurada, o navegador
 //     escala automaticamente; em impressora com bandeja custom 150x250
 //     sai 1:1 perfeito.
+//
+// CHANGELOG v3.5 (2026-05-28):
+//   * BUG: calibracao "nao propagava" entre PCs. Causa: _reqCalib (cache
+//     em memoria) era populado na primeira chamada e nunca recarregado.
+//     Apos voce calibrar num PC, outros PCs com a sessao ja aberta
+//     continuavam usando a calibracao antiga em memoria.
+//   * FIX: nova reqCarregarCalibFresco() forca refetch do banco.
+//     imprimirRequisicao e imprimirRequisicaoPorDentista agora chamam ela
+//     em vez de reqCarregarCalib (que mantem cache). Custa 1 query extra
+//     por impressao, mas garante consistencia entre PCs.
+//   * BONUS: reqCarregarCalib agora loga no console o que veio do banco
+//     (pra diagnosticar). E o try/catch silencioso virou toast visivel
+//     em caso de erro — antes, qualquer falha caia silenciosa pra REQ_DEF.
 // ============================================================================
 
 var REQ_KEY = "requisicao_calib";
@@ -136,14 +151,40 @@ var _reqCalib = null;
 
 async function reqCarregarCalib(forcar) {
   if (_reqCalib && !forcar) return _reqCalib;
+  // ⚡ v3.5 (28/05/2026) — log do que veio do banco pra diagnosticar
+  // casos onde a calibracao "nao propaga" entre PCs. Antes, qualquer
+  // erro na query era silenciado por try/catch → app usava REQ_DEF sem
+  // avisar ninguem (calibracao "antiga"/default mesmo apos teu save).
+  // Agora log explicito e toast em caso de fallback.
   try {
     var r = await supa.from("configuracoes").select("valor").eq("chave", REQ_KEY).maybeSingle();
-    _reqCalib = Object.assign({}, REQ_DEF, (r.data && r.data.valor) || {});
+    if (r.error) {
+      console.error("[req] reqCarregarCalib: erro do banco:", r.error);
+      if (typeof toast === "function") toast("⚠️", "Erro ao ler calibração (usando padrão). Veja console.");
+      _reqCalib = Object.assign({}, REQ_DEF);
+    } else if (!r.data || !r.data.valor) {
+      console.warn("[req] reqCarregarCalib: nenhuma calibracao no banco, usando padrao REQ_DEF.");
+      _reqCalib = Object.assign({}, REQ_DEF);
+    } else {
+      console.log("[req] reqCarregarCalib: calibracao carregada do banco:", r.data.valor);
+      _reqCalib = Object.assign({}, REQ_DEF, r.data.valor);
+    }
   } catch (e) {
-    console.warn("[req] erro ao ler calib, usando padrão:", e);
+    console.error("[req] reqCarregarCalib: exception:", e);
+    if (typeof toast === "function") toast("⚠️", "Erro ao ler calibração (usando padrão). Veja console.");
     _reqCalib = Object.assign({}, REQ_DEF);
   }
   return _reqCalib;
+}
+
+// ⚡ NOVO v3.5 (28/05/2026) — Sempre busca fresco do banco antes de imprimir.
+// Caso: voce calibra num PC, outros PCs ja tem _reqCalib cacheado em memoria
+// (populado na primeira impressao da sessao) e nao busca de novo, entao
+// imprimem com calibracao antiga. Agora toda impressao chama esta funcao,
+// que ignora o cache e busca o valor atual. O cache (_reqCalib) ainda vale
+// pra preview/tela de calibracao — so a impressao real e sempre fresca.
+async function reqCarregarCalibFresco() {
+  return reqCarregarCalib(true);
 }
 
 async function reqSalvarCalib(novo) {
@@ -404,8 +445,10 @@ async function reqMarcarPrincipal(dentId, endId) {
 async function imprimirRequisicao(agId, qtd) {
   // ⚡ v3.1 (28/05/2026) — qtd opcional (padrao 1). Mantem retrocompat com
   // chamadas antigas que so passam agId.
+  // ⚡ v3.5 (28/05/2026) — usa reqCarregarCalibFresco pra sempre pegar a
+  // calibracao mais recente do banco (evita cache desatualizado entre PCs).
   try {
-    var calib = await reqCarregarCalib();
+    var calib = await reqCarregarCalibFresco();
     var d = await reqBuscarDentista(agId);
 
     if (!d.nome) {
@@ -459,7 +502,8 @@ async function imprimirRequisicaoPorDentista(dentId, qtd, winPreAberta) {
     return;
   }
   try {
-    var calib = await reqCarregarCalib();
+    // ⚡ v3.5 (28/05/2026) — calibracao fresca a cada impressao
+    var calib = await reqCarregarCalibFresco();
     var d = await reqBuscarDentistaPorId(dentId);
 
     if (!d.nome) {
