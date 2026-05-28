@@ -1,5 +1,5 @@
 // ============================================================================
-// requisicao.js v3.3 - Sobreimpressão em requisição pré-impressa COR
+// requisicao.js v3.4 - Sobreimpressão em requisição pré-impressa COR
 // ----------------------------------------------------------------------------
 // - Imprime nome/CRO/endereço/telefone do dentista nos campos certos.
 // - LOGO do dentista impressa em area calibrada (v3.3).
@@ -11,6 +11,7 @@
 // - v3.2: pop-up bloqueado evitado (aba aberta no gesto do clique) +
 //         pagina em branco extra eliminada (last-of-type).
 // - v3.3: logo do dentista impressa em area calibravel (4 mm + checkbox).
+// - v3.4: tamanho do papel corrigido pra 150x250mm (era A4, errado).
 // Depende de globais: supa, ags, dents, fdent, esc, toast, SUPA_URL.
 // ----------------------------------------------------------------------------
 // CHANGELOG v3 (2026-05-28) — code review do Vine:
@@ -78,6 +79,15 @@
 //     assim a posicao/tamanho podem ser calibrados antes de qualquer
 //     dentista ter logo cadastrada. O SVG mostra um retangulo tracejado
 //     com a palavra "LOGO" centralizada na area definida.
+//
+// CHANGELOG v3.4 (2026-05-28):
+//   * Tamanho do papel corrigido: era A4 (210x297mm), passou pra 150x250mm
+//     (papel pre-impresso real da requisicao COR). @page{size:150mm 250mm}
+//     + .folha{width:150mm;height:250mm}. Tudo em mm, entao a calibracao
+//     salva continua valida — Vine ja tinha calibrado pra esse papel real.
+//     Se a impressora estiver com bandeja A4 configurada, o navegador
+//     escala automaticamente; em impressora com bandeja custom 150x250
+//     sai 1:1 perfeito.
 // ============================================================================
 
 var REQ_KEY = "requisicao_calib";
@@ -261,10 +271,18 @@ function reqGerarHtml(dados, c, qtd) {
   return "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='UTF-8'>" +
     "<title>Requisição</title>" +
     "<style>" +
-    "@page{size:A4;margin:0}" +
+    // ⚡ v3.4 (28/05/2026) — Papel pre-impresso COR e 150x250mm (nao A4).
+    // size define o tamanho fisico da pagina no print do navegador. Antes
+    // estava A4 (210x297), o que fazia a impressao em folha A4 ficar com
+    // tudo num canto. Agora o navegador entende que a pagina e 150x250 e
+    // ajusta a impressao (em impressoras com bandeja de tamanho custom).
+    // Se a impressora estiver configurada pra A4, o navegador escala — em
+    // todo caso, a calibracao em mm permanece valida.
+    "@page{size:150mm 250mm;margin:0}" +
     "*{box-sizing:border-box;margin:0;padding:0}" +
     "body{font-family:Arial,sans-serif}" +
-    ".folha{position:relative;width:210mm;height:297mm;page-break-after:always}" +
+    // ⚡ v3.4 (28/05/2026) — folha 150x250mm (papel pre-impresso COR)
+    ".folha{position:relative;width:150mm;height:250mm;page-break-after:always}" +
     // ⚡ FIX v3.2 #3 (28/05/2026) — last-of-type em vez de last-child.
     // Antes, o <script> apos as folhas fazia a ultima folha NAO ser
     // last-child (o script era), entao a regra nao aplicava e saia uma
