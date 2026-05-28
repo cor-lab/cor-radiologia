@@ -1,13 +1,13 @@
 // ============================================================================
-// requisicao.js v3.7 - Sobreimpressão em requisição pré-impressa COR
+// requisicao.js v3.8 - Sobreimpressão em requisição pré-impressa COR
 // ----------------------------------------------------------------------------
-// - v3.7: campos com max-width pra nao estourar a folha 150mm. Resolve
-//         o desalinhamento global quando o endereco (ou outro campo) era
-//         maior que o espaco ate a borda direita. Antes: impressora detectava
-//         conteudo > 150mm e aplicava fit-to-page, encolhendo tudo. Agora:
-//         conteudo e cortado pelo overflow, folha mantem 150mm exatos.
-// - v3.6: janela de impressao sempre limpa (fecha winPreAberta).
-// - v3.5: calibracao fresca a cada impressao + diagnostico no console.
+// - v3.8: REVERSÃO da v3.6 (janela). v3.6 fechava winPreAberta e abria
+//         nova — segundo window.open ficava em contexto assincrono e
+//         Chrome bloqueava/escondia. Resultado: "imprimiu mas nada saiu".
+//         v3.8 volta a reusar a winPreAberta (comportamento v3.5).
+//         Renderizacao consistente vem do max-width da v3.7.
+// - v3.7: max-width nos campos pra nao estourar a folha 150mm.
+// - v3.5: calibracao fresca a cada impressao + diagnostico.
 // - v3.4: papel 150x250mm.
 // - v3.3: logo do dentista.
 // - v3.2: pop-up bloqueado + page-break.
@@ -435,29 +435,21 @@ function reqAbrirJanelaComLoading() {
 }
 
 function reqAbrirImpressao(html, winPreAberta) {
-  // ⚡ v3.6 (28/05/2026) — SEMPRE abre janela nova pra impressao.
-  // Bug observado: quando reusava a winPreAberta (que ja tinha conteudo HTML
-  // de loading: spinner, padding, min-height:100vh, flex), apos document.open
-  // + document.write o navegador *as vezes* preservava caracteristicas
-  // residuais da janela inicial (zoom, viewport, dimensoes), causando
-  // renderizacao SUTILMENTE diferente da janela aberta limpa pelo teste de
-  // calibracao. Mesma calib, mesmo HTML, papel diferente.
+  // ⚡ v3.8 (28/05/2026) — REVERSÃO da v3.6/v3.7 (parte da janela).
+  // A v3.6 introduziu fechar winPreAberta e abrir nova, na teoria de que
+  // contexto residual da janela inicial causava desalinhamento. Era TEORIA
+  // ERRADA — o desalinhamento real era estouro de max-width na folha
+  // (resolvido na v3.7 com max-width nos campos + overflow:hidden).
   //
-  // Solucao: fecha a janela pre-aberta e abre uma NOVA limpa. Como esta
-  // chamada acontece APOS os awaits (perdeu o gesto do click), pode haver
-  // pop-up block na janela nova — mas como a anterior ja foi aberta no
-  // click, normalmente o navegador permite uma janela "filha" subsequente.
-  // Fallback: se nova janela bloquear, reusa a pre-aberta (v3.2 behavior).
-  if (winPreAberta) {
-    try { winPreAberta.close(); } catch(_){}
-  }
-  var win = window.open("", "_blank");
-  if (!win && winPreAberta) {
-    // Pop-up bloqueado E ja tinhamos uma pre-aberta — mas ela foi fechada
-    // acima. Tenta uma vez mais com about:blank explicito (alguns
-    // navegadores tratam diferente).
-    win = window.open("about:blank", "_blank");
-  }
+  // Efeito colateral da v3.6/v3.7: ao fechar winPreAberta e tentar reabrir,
+  // o segundo window.open acontece em contexto assincrono (apos awaits) —
+  // o Chrome trata como pop-up sem gesto e bloqueia ou cria janela sem
+  // foco. Resultado: usuario via "imprimiu" mas nada acontecia, OU sumia
+  // a janela antes de ver o dialogo.
+  //
+  // Solucao v3.8: REUSAR a winPreAberta (comportamento v3.5), e confiar
+  // no fix de max-width pra renderizacao consistente.
+  var win = winPreAberta || window.open("", "_blank");
   if (!win) {
     if (typeof toast === "function") toast("⚠️", "Bloqueio de pop-up. Permite janelas pra imprimir.");
     return;
