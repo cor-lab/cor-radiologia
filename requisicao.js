@@ -1,10 +1,9 @@
 // ============================================================================
-// requisicao.js v3.9 - Sobreimpressão em requisição pré-impressa COR
+// requisicao.js v3.10 - Sobreimpressão em requisição pré-impressa COR
 // ----------------------------------------------------------------------------
-// - v3.9: REMOVIDO o confirm() pra dentista sem endereco. Chrome suprime
-//         confirm() em aba nao focada (popup aberta no fluxo) → retornava
-//         false → janela fechava antes de imprimir. Causa de "abre e fecha
-//         sem imprimir" pra 80% dos dentistas (2114 de 2651 sem endereco).
+// - v3.10: cache busting na URL da logo. Sem isso, troca de logo nao aparecia
+//          ate o cache do navegador expirar (Storage manda cache de 1h).
+// - v3.9: removido confirm() suprimido pelo Chrome em aba nao focada.
 // - v3.8: reverter v3.6 (reusa winPreAberta como na v3.5).
 // - v3.7: max-width nos campos pra nao estourar a folha 150mm.
 // - v3.5: calibracao fresca a cada impressao + diagnostico.
@@ -305,7 +304,11 @@ function reqGerarHtml(dados, c, qtd) {
   // logo_w x logo_h sem deformar.
   var logoHtml = "";
   if (dados.logo && c.logo_mostrar !== false) {
-    var logoSrc = reqLogoUrl(dados.logo); // URL publica do bucket
+    // ⚡ v3.10 (28/05/2026) — cacheBust=true forca o navegador a buscar a
+    // versao FRESCA da logo (adiciona ?t=timestamp na URL). Sem isso, o
+    // navegador cacheava a logo por 1h (Storage cacheControl=3600) e
+    // troca de logo nao aparecia ate o cache expirar.
+    var logoSrc = reqLogoUrl(dados.logo, true);
     logoHtml =
       "<img class='logo' src='" + esc(logoSrc) + "' alt='logo' " +
         "style='position:absolute;left:" + c.logo_x + "mm;top:" + c.logo_y + "mm;" +
