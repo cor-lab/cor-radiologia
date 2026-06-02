@@ -17,6 +17,8 @@
 //       Marcadores: "_calcularIdade", "paciente_data_nascimento"
 //   [✓] Tabela de exames com desconto por item
 //       Marcadores: "itens", "valorBruto", "descontoValor"
+//   [✓] Exclusão de SEDEX/TELE ENTREGA do desconto (v2.9)
+//       Marcadores: "descontavel", "isItemTerceirizado", "somaParticularDescontavel"
 //   [✓] Aviso "misto" (particular + convênio no mesmo atendimento)
 //       Marcadores: "avisoMistoBox", "totalParticularComDesc"
 //   [✓] Setores técnicos (Raios X / Tomografia / Fotos/Escan / Periapicais)
@@ -29,6 +31,10 @@
 //       Marcadores: "entregaLabels", ".entrega-box"
 //
 //   HISTÓRICO
+//   v2.9 (2026-06-02): Desconto NÃO aplicado em itens terceirizados
+//                       (SEDEX/TELE ENTREGA) — espelha regra v3.8 do caixa.
+//                       Usa isItemTerceirizado()/itemTemDesconto() globais.
+//                       Marcadores: "descontavel", "somaParticularDescontavel"
 //   v2.8 (2026-05-27): Validacao pop-up bloqueado em imprimirOS
 //                       Marcadores: "Pop-up bloqueado pelo navegador"
 //   v2.7 (2026-04-23): Grid corrigida (align-items:start + overflow-wrap)
@@ -135,47 +141,76 @@ async function imprimirOS(agId) {
             ? itemEhConvenioForaDoFaturamento(it)
             : !!it.convenio_id;
 
+        // ⚡ v2.9 (2026-06-02) — flag descontavel espelha regra v3.8 do caixa.
+        // Itens SEDEX/TELE ENTREGA (terceirizados) e convênios fixos NÃO
+        // recebem desconto. Usa funções globais do index.html quando
+        // disponíveis; fallback verifica prefixo do nome.
+        var descontavel;
+        if (typeof itemTemDesconto === "function") {
+            descontavel = itemTemDesconto(it);
+        } else {
+            // Fallback: detecta terceirizado por prefixo + assume particular descontavel
+            var nmNorm = (nomeExame || "").toUpperCase()
+                .normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+            var ehTerceirizado = nmNorm.indexOf("SEDEX") === 0
+                              || nmNorm.indexOf("TELE ENTREGA") === 0;
+            descontavel = !foraFat && !ehTerceirizado;
+        }
+
         return {
             nome: nomeExame,
             convNome: cv ? cv.n : "Particular",
             preco: Number(it.preco || 0),
-            foraFat: foraFat
+            foraFat: foraFat,
+            descontavel: descontavel
         };
     });
 
     // ── Somar parte particular vs convênio ──
     var somaParticular = 0, somaConvenio = 0;
+    var somaParticularDescontavel = 0;  // ⚡ v2.9: subgrupo que recebe desconto
     var temParticular = false, temConvenio = false;
     itensInfo.forEach(function(info) {
         if (info.foraFat) { somaConvenio += info.preco; temConvenio = true; }
-        else { somaParticular += info.preco; temParticular = true; }
+        else {
+            somaParticular += info.preco; temParticular = true;
+            if (info.descontavel) somaParticularDescontavel += info.preco;
+        }
     });
 
     var ehMisto = temParticular && temConvenio;
 
-    // ⚡ FIX 06/05/2026 — desc_valor cacheado pode estar STALE em relação aos
-    // exames atuais (caso ELDER 214548: bruto particular=320 com desc_pct=20
-    // mas desc_valor salvo=90, divergente). Recalcula desc_valor a partir
-    // de desc_pct (fonte de verdade, vem da forma de pagamento) e da soma
-    // particular ATUAL. Mantém cached só se desc_pct=0 (desconto manual legado).
-    if (descontoPerc > 0 && somaParticular > 0) {
-        descontoValor = Number((somaParticular * (descontoPerc / 100)).toFixed(2));
+    // ⚡ v2.9 (2026-06-02) — Recalcula descontoValor sobre somaParticularDescontavel
+    // (exclui SEDEX/TELE ENTREGA). Espelha regra v3.8 do caixa: itens terceirizados
+    // são preço fixo, sem desconto. Caso testado: Rosania (215134), bruto=140
+    // (Panorâmica 110 + Sedex 30), com desc_pct=20. Caixa mostra R$ 118 (22 desc
+    // sobre 110). Antes desta v2.9 a OS mostrava R$ 112 (28 desc sobre 140).
+    //
+    // ⚡ FIX 06/05/2026 — desc_valor cacheado pode estar STALE (caso ELDER 214548).
+    // Recalcula desc_valor a partir de desc_pct sobre soma ATUAL.
+    // Mantém cached só se desc_pct=0 (desconto manual legado).
+    if (descontoPerc > 0 && somaParticularDescontavel > 0) {
+        descontoValor = Number((somaParticularDescontavel * (descontoPerc / 100)).toFixed(2));
+    } else if (descontoPerc > 0 && somaParticularDescontavel === 0) {
+        // Particular composto SÓ de terceirizados (ex: ag só Sedex): sem desconto possível
+        descontoValor = 0;
     }
 
     // ── CORRECAO v2.6: Aplicar desconto proporcional na parte PARTICULAR ──
-    // Funciona tanto em 100% particular quanto em misto (desconto só na parte particular)
+    // v2.9: proporcional aos itens DESCONTÁVEIS (terceirizados ficam intactos)
     itensInfo.forEach(function(info) {
         info.precoExibir = info.preco;
         info.precoOriginal = info.preco;
     });
 
-    var temDesconto = descontoValor > 0 && somaParticular > 0;
+    var temDesconto = descontoValor > 0 && somaParticularDescontavel > 0;
     var fatorDesc = 1;
     if (temDesconto) {
-        fatorDesc = (somaParticular - descontoValor) / somaParticular;
+        fatorDesc = (somaParticularDescontavel - descontoValor) / somaParticularDescontavel;
         if (fatorDesc > 0 && fatorDesc < 1) {
             itensInfo.forEach(function(info) {
-                if (!info.foraFat) {
+                // ⚡ v2.9: aplica só nos descontáveis (não nos SEDEX/TELE)
+                if (info.descontavel) {
                     info.precoExibir = info.preco * fatorDesc;
                 }
             });
@@ -200,9 +235,10 @@ async function imprimirOS(agId) {
         var badgeConv = info.foraFat
             ? "<span style='font-size:10px;background:#BA7517;color:#fff;padding:1px 3px;border-radius:2px;margin-left:3px;vertical-align:middle'>CONV.</span>"
             : "";
-        // Se há desconto e item é particular, mostrar preço original riscado + preço com desconto
+        // Se há desconto e item é descontável, mostrar preço original riscado + preço com desconto.
+        // v2.9: usa info.descontavel em vez de !info.foraFat — SEDEX/TELE não riscam.
         var precoCelula = "";
-        if (temDesconto && !info.foraFat) {
+        if (temDesconto && info.descontavel) {
             precoCelula = "<span style='text-decoration:line-through;color:#999;font-size:12px'>R$ " +
                 info.precoOriginal.toFixed(2).replace(".", ",") + "</span><br>" +
                 "<span style='color:#1D9E75;font-weight:600'>R$ " +
