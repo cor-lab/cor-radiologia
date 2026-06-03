@@ -150,6 +150,9 @@
   - etiqueta.js — Etiquetas (Envelope, Protocolo, CD), 3 tipos
   - fichas.js — Fichas A4 (Ficha 1, 2, 3, 4 pendente) + Painel Fotos V1/V2
   - pacientes_busca.js — Busca avançada de pacientes
+  - reportes.js — Reportes do Dentista (Fase 4): aba admin-only "🚩 Reportes"
+    + Realtime Supabase (som+toast+badge) na tabela reportes_dentista.
+    Marcadores: "REPORTES", "rReportes", "rpNavBadge", "reportes_dentista".
   - logo.png — Logo COR usada nas impressões
   
   ───────── SCRIPTS PYTHON BACKEND (servidor 192.168.0.200) ─────────
@@ -231,6 +234,22 @@
     feed-servidor (mesma arquitetura do TomografoCopy).
   
   ───────── HISTÓRICO ─────────
+
+  2026-06-02 (v3.11): Módulo "Reportes do Dentista" — Fase 4 (App COR).
+              Nova aba admin-only "🚩 Reportes" (PERMS.admin.reportes=1,
+              page-reportes, navTo map). Arquivo novo reportes.js: lista os
+              reportes (tabela reportes_dentista) com filtro por status e
+              ações (em andamento/resolver/descartar/reabrir via supaFetch
+              PATCH). REALTIME Supabase (supa.channel postgres_changes INSERT)
+              dispara, com a aba aberta: som (WebAudio beep) + toast + badge
+              contador (#rpNavBadge = nº de reportes 'aberto'). Hooks:
+              REPORTES.onLogin() em doLoginSupa e restaurarSessao (só inicia
+              se CU.role==='admin'); REPORTES.onLogout() em doLogoutSupa
+              (remove o canal). reportes.js injeta o próprio CSS (.rp-*).
+              Backend: Fase 2 (POST /api/dentista/reportar-exame no FotonWeb)
+              e Fase 3 (botão 🚩 no FotonWeb frontend) já entregues.
+              ⚠️ reportes_dentista.dentista_id é FK->dentistas.id (id Supabase),
+              não firebird_id — o FotonWeb resolve isso ao inserir.
 
   2026-05-28 (v3.10.12): Requisicoes rapidas pra recepcao (sem precisar
               de role admin nem abrir agendamento). Vine notou que a aba
@@ -2568,7 +2587,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.10.12 - 2026-05-28";
+var APP_VERSION = "v3.11 - 2026-06-02";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -4581,6 +4600,7 @@ async function doLoginSupa(){
     navTo(CU.role==="dentista"?"cashback":CU.role==="agenda"?"atendimento":"dashboard");
     toast("👋","Bem-vindo(a), "+CU.nome.split(" ")[0]+"!");
     iniciarAutoRefresh();
+    if(window.REPORTES && REPORTES.onLogin) REPORTES.onLogin();
   }catch(e){
     btn.disabled=false; btn.textContent="Entrar";
     err.classList.add("show");
@@ -4591,6 +4611,7 @@ async function doLoginSupa(){
 
 async function doLogoutSupa(){
   if(_autoRefreshTimer) clearInterval(_autoRefreshTimer);
+  if(window.REPORTES && REPORTES.onLogout) REPORTES.onLogout();
   await supa.auth.signOut(); CU=null;
   document.getElementById("AS").style.display="none";
   document.getElementById("LS").style.display="flex";
@@ -5644,6 +5665,7 @@ async function dbResgatar(dentId,premId,pts){
   <button data-p="dentistas">Dentistas</button>
   <button data-p="usuarios">Usuários</button>
   <button data-p="config">Config</button>
+  <button data-p="reportes">🚩 Reportes<span id="rpNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
 </nav>
 <div class="hr">
   <div class="upill">
@@ -5850,15 +5872,16 @@ async function dbResgatar(dentId,premId,pts){
 <div class="page" id="page-dentistas"><div class="pi pg-scroll" id="pgDt"></div></div>
 <div class="page" id="page-usuarios"><div class="pi" id="pgUs"></div></div>
 <div class="page" id="page-config"><div class="pi pg-scroll" id="pgCf"></div></div>
+<div class="page" id="page-reportes"><div class="pi pg-scroll" id="pgRp"></div></div>
 <script>
 // ══ AUTH & USERS ══
 var USERS = [];
 // Dados reais vêm do Supabase via loadAllData()
 var PERMS = {
-  admin:    {dashboard:1,atendimento:1,historico:1,agendar:1,exames:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1},
-  agenda:   {dashboard:1,atendimento:1,historico:1,agendar:1,exames:1,convenios:0,cashback:0,dentistas:0,usuarios:0,config:0},
-  cashback: {dashboard:1,atendimento:0,historico:0,agendar:0,exames:0,convenios:0,cashback:1,dentistas:1,usuarios:0,config:0},
-  dentista: {dashboard:0,atendimento:0,historico:0,agendar:0,exames:0,convenios:0,cashback:1,dentistas:0,usuarios:0,config:0}
+  admin:    {dashboard:1,atendimento:1,historico:1,agendar:1,exames:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1,reportes:1},
+  agenda:   {dashboard:1,atendimento:1,historico:1,agendar:1,exames:1,convenios:0,cashback:0,dentistas:0,usuarios:0,config:0,reportes:0},
+  cashback: {dashboard:1,atendimento:0,historico:0,agendar:0,exames:0,convenios:0,cashback:1,dentistas:1,usuarios:0,config:0,reportes:0},
+  dentista: {dashboard:0,atendimento:0,historico:0,agendar:0,exames:0,convenios:0,cashback:1,dentistas:0,usuarios:0,config:0,reportes:0}
 };
 var RL = {admin:"Administrador",agenda:"Agenda",cashback:"Cashback",dentista:"Dentista"};
 var RE = {admin:"⚙️",agenda:"📅",cashback:"🪙",dentista:"🦷"};
@@ -5935,7 +5958,7 @@ function navTo(page) {
   var map = {
     dashboard: rdash, atendimento: ratendimento, historico: rhistorico, agendar: ragendar, exames: rexames,
     convenios: rconv, cashback: rcash, dentistas: rdent,
-    usuarios: rusrs, config: rcfg
+    usuarios: rusrs, config: rcfg, reportes: window.rReportes
   };
   if (map[page]) map[page]();
 }
@@ -5992,6 +6015,7 @@ async function restaurarSessao(){
 
     // Iniciar auto-refresh
     iniciarAutoRefresh();
+    if(window.REPORTES && REPORTES.onLogin) REPORTES.onLogin();
   }catch(e){
     console.log("Sem sessao ativa:", e.message);
   }
@@ -11974,5 +11998,6 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
 <script src="etiqueta.js"></script>
 <script src="fichas.js"></script>
 <script src="requisicao.js"></script>
+<script src="reportes.js"></script>
 </body>
 </html>
