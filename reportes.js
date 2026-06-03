@@ -36,6 +36,10 @@
    HISTÓRICO:
      2026-06-02 v1 — Criação. Inbox + filtros + ações + Realtime/som/toast/badge.
                      v1 SEM anexos (coluna anexos existe mas não é exibida ainda).
+     2026-06-02 v2 — Fase 5: respostas pré-definidas. Botões de status trocados
+                     por seletor de resposta (RESP) + observação; a resposta
+                     define o status. Grava resposta_tipo + resolucao. O dentista
+                     vê a resposta no FotonWeb (GET /api/dentista/meus-reportes).
    ═══════════════════════════════════════════════════════════════════════════ */
 (function () {
   "use strict";
@@ -72,6 +76,19 @@
     aberto: "Abertos", em_andamento: "Em andamento", resolvido: "Resolvidos",
     descartado: "Descartados", todos: "Todos"
   };
+
+  // Respostas pré-definidas (Fase 5). Cada uma define o STATUS resultante.
+  // 'outro' = texto livre, e o admin escolhe o status manualmente.
+  // resposta_tipo bate com o CHECK da coluna no Supabase e com o backend.
+  var RESP = {
+    solucionado:   { l: "✅ Solucionado",          status: "resolvido" },
+    reenviado:     { l: "📤 Reenviado",            status: "resolvido" },
+    laudo_anexado: { l: "📋 Laudo anexado",        status: "resolvido" },
+    em_avaliacao:  { l: "🔄 Em avaliação",         status: "em_andamento" },
+    improcedente:  { l: "❌ Improcedente",          status: "descartado" },
+    outro:         { l: "✏️ Outro (texto livre)",  status: null }
+  };
+  var RESP_ORDER = ["solucionado", "reenviado", "laudo_anexado", "em_avaliacao", "improcedente", "outro"];
 
   // ───────── Helpers locais (auto-contidos, não dependem do index) ─────────
   function esc(s) {
@@ -153,6 +170,12 @@
       ".rp-reso{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 12px;" +
       "font-size:.8rem;color:#166534;margin-bottom:10px}" +
       ".rp-acts{display:flex;gap:7px;flex-wrap:wrap}" +
+      ".rp-resp{display:flex;gap:7px;flex-wrap:wrap;align-items:center;width:100%}" +
+      ".rp-sel{padding:7px 10px;border:1px solid var(--border,#e5e7eb);border-radius:7px;" +
+      "font-size:.82rem;background:#fff;color:#1f2937}" +
+      ".rp-obs{flex:1;min-width:180px;padding:7px 10px;border:1px solid var(--border,#e5e7eb);" +
+      "border-radius:7px;font-size:.82rem;color:#1f2937}" +
+      ".rp-obs:focus,.rp-sel:focus{outline:none;border-color:#1e5eb8}" +
       ".rp-btn{padding:6px 12px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:600}" +
       ".rp-btn.b-prog{background:#fef3c7;color:#b45309}" +
       ".rp-btn.b-ok{background:#1e5eb8;color:#fff}" +
@@ -316,20 +339,39 @@
     if (r.data_exame) h += "<span>Exame: <b>" + fmtDate(r.data_exame) + "</b></span>";
     h += "</div>";
     h += '<div class="rp-desc">' + esc(r.descricao || "") + "</div>";
-    if (r.resolucao) {
-      h += '<div class="rp-reso">✓ Resolução: ' + esc(r.resolucao) +
-        (r.resolvido_por ? " — " + esc(r.resolvido_por) : "") + "</div>";
+    // Resposta já dada (status resolvido/descartado/em_andamento com resposta)
+    if (r.resposta_tipo || r.resolucao) {
+      var rl = RESP[r.resposta_tipo] ? RESP[r.resposta_tipo].l : "";
+      h += '<div class="rp-reso">';
+      h += "✓ Resposta: <b>" + esc(rl || "—") + "</b>";
+      if (r.resolucao) h += " — " + esc(r.resolucao);
+      if (r.resolvido_por) h += ' <span style="opacity:.7">(' + esc(r.resolvido_por) + ")</span>";
+      h += "</div>";
     }
     h += '<div class="rp-acts">';
-    if (r.status === "aberto") {
-      h += '<button class="rp-btn b-prog" onclick="REPORTES.setStatus(' + r.id + ",'em_andamento')\">▶ Em andamento</button>";
-      h += '<button class="rp-btn b-ok" onclick="REPORTES.setStatus(' + r.id + ",'resolvido')\">✓ Resolver</button>";
-      h += '<button class="rp-btn b-desc" onclick="REPORTES.setStatus(' + r.id + ",'descartado')\">Descartar</button>";
-    } else if (r.status === "em_andamento") {
-      h += '<button class="rp-btn b-ok" onclick="REPORTES.setStatus(' + r.id + ",'resolvido')\">✓ Resolver</button>";
-      h += '<button class="rp-btn b-desc" onclick="REPORTES.setStatus(' + r.id + ",'descartado')\">Descartar</button>";
+    if (r.status === "aberto" || r.status === "em_andamento") {
+      // Form de resposta (2a): select de resposta + obs + (status só p/ "outro") + Responder
+      var sid = "resp-" + r.id, oid = "respobs-" + r.id, stid = "respst-" + r.id;
+      h += '<div class="rp-resp">';
+      h += '<select class="rp-sel" id="' + sid + '" onchange="REPORTES.onRespChange(' + r.id + ')">';
+      h += '<option value="">— Responder ao dentista —</option>';
+      for (var i = 0; i < RESP_ORDER.length; i++) {
+        var k = RESP_ORDER[i];
+        h += '<option value="' + k + '">' + esc(RESP[k].l) + "</option>";
+      }
+      h += "</select>";
+      // status manual (só aparece quando resposta = "outro")
+      h += '<select class="rp-sel rp-sel-st" id="' + stid + '" style="display:none">';
+      h += '<option value="em_andamento">Marcar: Em andamento</option>';
+      h += '<option value="resolvido">Marcar: Resolvido</option>';
+      h += '<option value="descartado">Marcar: Descartado</option>';
+      h += "</select>";
+      h += '<input class="rp-obs" id="' + oid + '" maxlength="500" placeholder="Observação (opcional) — o dentista vê">';
+      h += '<button class="rp-btn b-ok" onclick="REPORTES.responder(' + r.id + ')">Responder</button>';
+      h += "</div>";
     } else {
-      h += '<button class="rp-btn b-reab" onclick="REPORTES.setStatus(' + r.id + ",'aberto')\">↺ Reabrir</button>";
+      // resolvido / descartado: reabrir (a resposta dada aparece acima)
+      h += '<button class="rp-btn b-reab" onclick="REPORTES.reabrir(' + r.id + ')">↺ Reabrir</button>';
     }
     h += "</div>";
     h += "</div>";
@@ -390,20 +432,8 @@
     loadList();
   }
 
-  function setStatus(id, novo) {
+  function patchReporte(id, body) {
     if (!isAdmin()) return;
-    var body = { status: novo };
-    if (novo === "resolvido") {
-      var nota = window.prompt("Resolução (opcional):", "");
-      if (nota === null) return; // cancelou
-      body.resolvido_por = (window.CU && window.CU.nome) || "admin";
-      body.resolucao = (nota || "").trim() || null;
-    } else if (novo === "descartado") {
-      body.resolvido_por = (window.CU && window.CU.nome) || "admin";
-    } else if (novo === "aberto") {
-      body.resolvido_por = null;
-      body.resolucao = null;
-    }
     // resolvido_at é gerenciado por trigger no Supabase — não enviar daqui.
     supaFetch("/rest/v1/reportes_dentista?id=eq." + encodeURIComponent(id), {
       method: "PATCH",
@@ -411,12 +441,52 @@
       body: JSON.stringify(body)
     }).then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
-      notify("✓", "Reporte atualizado.");
+      notify("✓", "Resposta enviada ao dentista.");
       loadList();
       refreshBadge();
     }).catch(function (e) {
       notify("⚠️", "Erro ao atualizar: " + (e && e.message));
     });
+  }
+
+  // mostra/esconde o seletor de status quando a resposta é "Outro"
+  function onRespChange(id) {
+    var sel = document.getElementById("resp-" + id);
+    var stSel = document.getElementById("respst-" + id);
+    if (!sel || !stSel) return;
+    stSel.style.display = (sel.value === "outro") ? "" : "none";
+  }
+
+  function responder(id) {
+    if (!isAdmin()) return;
+    var sel = document.getElementById("resp-" + id);
+    var obs = document.getElementById("respobs-" + id);
+    var stSel = document.getElementById("respst-" + id);
+    if (!sel) return;
+    var tipo = sel.value;
+    if (!tipo) { notify("⚠️", "Escolha uma resposta."); return; }
+
+    var nota = obs ? obs.value.trim() : "";
+    var status;
+    if (tipo === "outro") {
+      status = stSel ? stSel.value : "em_andamento";
+      if (!nota) { notify("⚠️", 'Na resposta "Outro", escreva a observação.'); return; }
+    } else {
+      status = RESP[tipo] ? RESP[tipo].status : "em_andamento";
+    }
+
+    var body = { status: status, resposta_tipo: tipo, resolucao: nota || null };
+    if (status === "resolvido" || status === "descartado") {
+      body.resolvido_por = (window.CU && window.CU.nome) || "admin";
+    } else {
+      body.resolvido_por = null;
+    }
+    patchReporte(id, body);
+  }
+
+  function reabrir(id) {
+    if (!isAdmin()) return;
+    patchReporte(id, { status: "aberto", resposta_tipo: null, resolucao: null, resolvido_por: null });
   }
 
   function reload() { loadList(); refreshBadge(); }
@@ -440,7 +510,9 @@
     render: render,
     reload: reload,
     setFilter: setFilter,
-    setStatus: setStatus,
+    responder: responder,
+    reabrir: reabrir,
+    onRespChange: onRespChange,
     refreshBadge: refreshBadge
   };
 })();
