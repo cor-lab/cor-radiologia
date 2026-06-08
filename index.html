@@ -2587,7 +2587,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.11 - 2026-06-02";
+var APP_VERSION = "v3.12 - 2026-06-08";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -4630,13 +4630,23 @@ function sendWA(id){
 // em db.max_rows (default 1000). Solução robusta: paginar com .range().
 // Usado pra agendamento_exames (passou de 1000 em 06/05/2026).
 async function fetchAllAgEx(){
+  // ⚡ FIX 08/06/2026 — paginacao ESTAVEL por id (unico).
+  // Bug critico: ordenava por "ordem" (valor NAO-unico; centenas de itens com
+  // ordem=1, ordem=2). Paginar com .range() sobre coluna nao-unica gera ordem
+  // de desempate indeterministica entre as requisicoes: itens nas FRONTEIRAS
+  // de pagina (1000, 2000...) "escorregavam" e nao apareciam em pagina nenhuma.
+  // Resultado: agendamentos perdiam itens silenciosamente no cache em memoria
+  // (caso WILMAR 215270: periapical ordem=1 caia na pagina 0, panoramica
+  // ordem=2 na pagina 1 — a periapical sumia do objeto). Ordenar por id (PK
+  // unica) torna a paginacao deterministica e completa. O sort por "ordem"
+  // dentro de cada agendamento ja e refeito depois, em loadAllData (itens.sort).
   var todos = [];
   var pg = 0;
   var pageSize = 1000;
   while(pg < 30){ // safety: max 30k registros
     var r = await supa.from("agendamento_exames")
       .select("*")
-      .order("ordem", {ascending: true})
+      .order("id", {ascending: true})
       .range(pg * pageSize, (pg + 1) * pageSize - 1);
     if(!r.data || !r.data.length) break;
     todos = todos.concat(r.data);
