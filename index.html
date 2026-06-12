@@ -235,6 +235,19 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-06-12 (v3.12): Fusão de cadastros duplicados na janela de Acesso
+              FotonWeb. No Cenário A (CPF do agendamento pertence a outro
+              paciente ativo) foi adicionado o botão "Fundir cadastros", que
+              chama a RPC fundir_pacientes(p_id_canonico, p_id_duplicado):
+              o cadastro com CPF vira o canônico e dono de tudo (agendamentos,
+              emails_log, fotonweb_login_log, nfse_envios_email,
+              pacientes_acesso_fotonweb, sync_erros são reapontados), e o órfão
+              é inativado com sufixo [FUNDIDO->id]. Confirmação dupla antes de
+              fundir (ação praticamente irreversível). Match seguro: usa os 2
+              IDs já identificados pela própria janela (nunca por nome, evitando
+              homônimos). Limpeza LGPD: removidos console.log que expunham CPF,
+              CNPJ e AG completo do paciente no console.
+
   2026-06-02 (v3.11): Módulo "Reportes do Dentista" — Fase 4 (App COR).
               Nova aba admin-only "🚩 Reportes" (PERMS.admin.reportes=1,
               page-reportes, navTo map). Arquivo novo reportes.js: lista os
@@ -2587,7 +2600,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.12 - 2026-06-08";
+var APP_VERSION = "v3.12 - 2026-06-12";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -3186,6 +3199,38 @@ function fecharModalAcessoFotonweb(){
   _afwRevelado = false;
 }
 
+// Funde dois cadastros duplicados: o canonico (com CPF) vira dono de tudo e o
+// orfao (vinculado ao agendamento errado) e inativado. Chama a RPC fundir_pacientes.
+async function fundirCadastrosDuplicados(idCanonico, idOrfao, nomeCanonico){
+  if(!confirm(
+    "Fundir os 2 cadastros?\n\n" +
+    "MANTER (com CPF): " + (nomeCanonico || ("ID " + idCanonico)) + " (ID " + idCanonico + ")\n" +
+    "INATIVAR (duplicado): ID " + idOrfao + "\n\n" +
+    "O agendamento e o historico passam para o cadastro mantido. " +
+    "Esta acao nao se desfaz facilmente. Confirmar?"
+  )) return;
+
+  try {
+    var resp = await supa.rpc("fundir_pacientes", {
+      p_id_canonico: idCanonico,
+      p_id_duplicado: idOrfao
+    });
+    if (resp.error) {
+      toast("❌ Erro", "Falha ao fundir: " + resp.error.message);
+      return;
+    }
+    var r = resp.data || {};
+    if (r.ok === false) {
+      toast("⚠️ Nao fundido", r.erro || "A fusao nao pode ser concluida.");
+      return;
+    }
+    toast("✅ Cadastros fundidos", "Agendamento movido para o cadastro com CPF. Gere a senha novamente.");
+    fecharModalAcessoFotonweb();
+  } catch (e) {
+    toast("❌ Erro", "Falha ao fundir: " + (e && e.message ? e.message : e));
+  }
+}
+
 function _afwSetEstado(estado){
   // Esconde todos
   ["afwLoading","afwSemCpf","afwSemSenha","afwTemSenha"].forEach(function(id){
@@ -3272,7 +3317,13 @@ async function _afwClassificarSemCpf(cpfContexto, pacIdAtual){
           '</div>' +
           '<div class="mf">' +
             '<button class="btn btno" onclick="fecharModalAcessoFotonweb()">Fechar</button>' +
+            '<button class="btn" style="background:#1f9d6b" id="btnFundirDup">Fundir cadastros</button>' +
           '</div>';
+        // Liga o handler do botao por JS (evita problemas de escape no nome inline)
+        setTimeout(function(){
+          var b = document.getElementById("btnFundirDup");
+          if(b) b.onclick = function(){ fundirCadastrosDuplicados(outro.id, pacIdAtual, outro.nome || ""); };
+        }, 0);
       } else if(inativos.length){
         // Cenário C — CPF pertence a paciente inativo (vínculo errado)
         var inat = inativos[0];
@@ -4500,10 +4551,6 @@ function abrirPreEmissaoNacional(agendamentoId){
     toast("Erro", "Agendamento não encontrado.");
     return;
   }
-
-console.log("AG COMPLETO:", ag);
-console.log("CPF paciente:", ag.paciente_cpf);
-console.log("CNPJ paciente:", ag.paciente_cnpj);
 
   var dps;
   var texto;
