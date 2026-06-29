@@ -2686,6 +2686,24 @@ async function renderDocsGuias(ag) {
       "<div style='font-size:.62rem;color:var(--g);word-break:break-all;line-height:1.1'>" + (d.exists ? esc(d.nome_arquivo || (seq + "" + d.slot)) : "—") + "</div>" +
       "<div id='act_" + d.slot + "' style='display:flex;flex-wrap:wrap;gap:4px'></div>";
     grid.appendChild(card);
+    // Drag & drop: solta um JPG sobre o card pra enviar direto pro slot.
+    (function (slot) {
+      function stop(e) { e.preventDefault(); e.stopPropagation(); }
+      card.addEventListener("dragenter", function (e) { stop(e); card.style.outline = "2px dashed var(--g)"; });
+      card.addEventListener("dragover", function (e) { stop(e); card.style.outline = "2px dashed var(--g)"; });
+      card.addEventListener("dragleave", function (e) { stop(e); card.style.outline = ""; });
+      card.addEventListener("drop", function (e) {
+        stop(e); card.style.outline = "";
+        var dt = e.dataTransfer;
+        var f = dt && dt.files && dt.files[0];
+        if (!f) return;
+        if (!/\.jpe?g$/i.test(f.name || "") && f.type !== "image/jpeg") {
+          toast("Erro", "Solte um arquivo JPG.");
+          return;
+        }
+        docUpload(seq, slot, f, ag);
+      });
+    })(d.slot);
     var act = card.querySelector("#act_" + d.slot);
     if (d.exists) {
       act.appendChild(mkDocBtn("Abrir", "btnt", function () { docOpen(seq, d.slot, false); }));
@@ -2788,7 +2806,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.15 - 2026-06-29";
+var APP_VERSION = "v3.16 - 2026-06-29";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
