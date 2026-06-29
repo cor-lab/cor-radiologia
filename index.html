@@ -2148,6 +2148,12 @@ tr:last-child td{border-bottom:none}
 .mx{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--gr);cursor:pointer;font-size:1.1rem;padding:4px 10px;border-radius:8px;transition:all .15s}
 .mx:hover{color:var(--wh);background:rgba(255,255,255,.12)}
 .mf{display:flex;gap:8px;justify-content:center;margin-top:22px;padding-top:16px;border-top:1px solid rgba(255,255,255,.07);flex-wrap:wrap}
+.mb.mb-wide{max-width:780px}
+.mf.mf-grouped{flex-direction:column;align-items:stretch;gap:4px}
+.mfg{width:100%}
+.mfg-t{font-size:.7rem;letter-spacing:.05em;text-transform:uppercase;color:var(--gr);opacity:.75;font-weight:700;margin:12px 0 6px}
+.mfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:8px}
+.mf-grouped .btn{width:100%;justify-content:center}
 /* Toast */
 .toast{position:fixed;bottom:24px;right:24px;z-index:9999;background:rgba(18,36,78,.98);
   border:1px solid rgba(74,184,72,.3);border-radius:12px;padding:13px 18px;
@@ -2656,7 +2662,7 @@ async function renderDocsGuias(ag) {
     return;
   }
   box.innerHTML = "<div style='font-weight:700;margin:10px 0 6px'>📎 Documentos e guias</div>" +
-    "<div id='docsGrid' style='display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px'>" +
+    "<div id='docsGrid' style='display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:10px'>" +
     "<div style='opacity:.6'>Carregando…</div></div>";
   var grid = document.getElementById("docsGrid");
   var list = [];
@@ -2674,7 +2680,7 @@ async function renderDocsGuias(ag) {
     var card = document.createElement("div");
     card.style.cssText = "border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px";
     card.innerHTML =
-      "<div id='th_" + d.slot + "' style='height:96px;background:#000;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#777;font-size:.72rem'>" +
+      "<div id='th_" + d.slot + "' style='height:140px;background:#000;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#777;font-size:.72rem'>" +
       (d.exists ? "…" : "SOLTE / ESCOLHER") + "</div>" +
       "<div style='font-weight:600;font-size:.82rem'>" + esc(d.label) + "</div>" +
       "<div style='font-size:.7rem;color:var(--g)'>" + (d.exists ? esc(d.nome_arquivo || (seq + "" + d.slot)) : "—") + "</div>" +
@@ -2740,7 +2746,7 @@ async function docThumb(seq, slot) {
     if (th) {
       th.innerHTML = "";
       var img = new Image();
-      img.style.cssText = "max-width:100%;max-height:96px;object-fit:contain";
+      img.style.cssText = "max-width:100%;max-height:140px;object-fit:contain";
       img.src = url;
       th.appendChild(img);
     }
@@ -2782,7 +2788,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.13 - 2026-06-29";
+var APP_VERSION = "v3.14 - 2026-06-29";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -6175,15 +6181,65 @@ function toast(ico, msg) {
 function openM(title, body, btns) {
   document.getElementById("MT").textContent = title;
   document.getElementById("MB2").innerHTML = body;
+  var mb = document.getElementById("MB");
+  if (mb) mb.classList.remove("mb-wide");
   var f = document.getElementById("MF"); f.innerHTML = "";
-  (btns || []).forEach(function(b) {
-    var btn = document.createElement("button");
-    btn.className = "btn " + b.cls; btn.textContent = b.lbl; btn.onclick = b.fn;
-    f.appendChild(btn);
-  });
+  f.classList.remove("mf-grouped");
+  var hasGroups = (btns || []).some(function(b){ return b && b.group; });
+  if (!hasGroups) {
+    (btns || []).forEach(function(b) {
+      var btn = document.createElement("button");
+      btn.className = "btn " + b.cls; btn.textContent = b.lbl; btn.onclick = b.fn;
+      f.appendChild(btn);
+    });
+  } else {
+    f.classList.add("mf-grouped");
+    var curGrid = null;
+    (btns || []).forEach(function(b) {
+      if (b.group) {
+        var g = document.createElement("div"); g.className = "mfg";
+        var t = document.createElement("div"); t.className = "mfg-t"; t.textContent = b.group;
+        var grid = document.createElement("div"); grid.className = "mfg-grid";
+        g.appendChild(t); g.appendChild(grid); f.appendChild(g);
+        curGrid = grid;
+        return;
+      }
+      var btn = document.createElement("button");
+      btn.className = "btn " + b.cls; btn.textContent = b.lbl; btn.onclick = b.fn;
+      (curGrid || f).appendChild(btn);
+    });
+  }
   document.getElementById("MO").classList.add("open");
 }
 function closeM() { document.getElementById("MO").classList.remove("open"); }
+
+// Reordena os botoes do modal de agendamento em grupos (Acoes / Fiscal /
+// Impressao / Etiquetas) inserindo marcadores {group}. Retrocompativel: o
+// openM so agrupa quando ha marcadores.
+function agruparBtnsAgendamento(btns) {
+  function cat(lbl) {
+    var s = (lbl || "").toLowerCase();
+    if (s.indexOf("nota") >= 0 || s.indexOf("emiss") >= 0) return "Fiscal";
+    if (s.indexOf("etiq") >= 0) return "Etiquetas";
+    if (s.indexOf("imprimir os") >= 0 || s.indexOf("fichas") >= 0 ||
+        s.indexOf("requisi") >= 0 || s.indexOf("painel") >= 0) return "Impressao";
+    return "Acoes";
+  }
+  var ordem = ["Acoes", "Fiscal", "Impressao", "Etiquetas"];
+  var grupos = {};
+  (btns || []).forEach(function(b) {
+    var c = cat(b.lbl);
+    (grupos[c] = grupos[c] || []).push(b);
+  });
+  var out = [];
+  ordem.forEach(function(g) {
+    if (grupos[g] && grupos[g].length) {
+      out.push({ group: g });
+      grupos[g].forEach(function(b) { out.push(b); });
+    }
+  });
+  return out.length ? out : (btns || []);
+}
 function closeMa() { document.getElementById("MA").classList.remove("open"); }
 
 // ══ NAV ══
@@ -8111,7 +8167,8 @@ function agEV(ev, id) {
 
   b += "<div id=\"docsGuiasBox\" style=\"margin-top:10px\"></div>";
 
-  openM("Agendamento", b, btns);
+  openM("Agendamento", b, agruparBtnsAgendamento(btns));
+  var _mbAg = document.getElementById("MB"); if (_mbAg) _mbAg.classList.add("mb-wide");
   renderDocsGuias(a);
 }
 function openEditAg(id) {
