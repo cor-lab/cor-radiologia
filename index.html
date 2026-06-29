@@ -2647,7 +2647,7 @@ function mkDocBtn(label, cls, fn) {
   b.type = "button";
   b.className = "btn " + cls;
   b.textContent = label;
-  b.style.cssText = "padding:5px 8px;font-size:.74rem;min-width:0;flex:1";
+  b.style.cssText = "padding:4px 6px;font-size:.66rem;min-width:0;flex:1 1 100%";
   b.addEventListener("click", fn);
   return b;
 }
@@ -2662,7 +2662,7 @@ async function renderDocsGuias(ag) {
     return;
   }
   box.innerHTML = "<div style='font-weight:700;margin:10px 0 6px'>📎 Documentos e guias</div>" +
-    "<div id='docsGrid' style='display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:10px'>" +
+    "<div id='docsGrid' style='display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px'>" +
     "<div style='opacity:.6'>Carregando…</div></div>";
   var grid = document.getElementById("docsGrid");
   var list = [];
@@ -2678,12 +2678,12 @@ async function renderDocsGuias(ag) {
   grid.innerHTML = "";
   list.forEach(function (d) {
     var card = document.createElement("div");
-    card.style.cssText = "border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px";
+    card.style.cssText = "border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:6px;display:flex;flex-direction:column;gap:4px";
     card.innerHTML =
-      "<div id='th_" + d.slot + "' style='height:140px;background:#000;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#777;font-size:.72rem'>" +
+      "<div id='th_" + d.slot + "' style='height:92px;background:#000;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#777;font-size:.62rem;text-align:center'>" +
       (d.exists ? "…" : "SOLTE / ESCOLHER") + "</div>" +
-      "<div style='font-weight:600;font-size:.82rem'>" + esc(d.label) + "</div>" +
-      "<div style='font-size:.7rem;color:var(--g)'>" + (d.exists ? esc(d.nome_arquivo || (seq + "" + d.slot)) : "—") + "</div>" +
+      "<div style='font-weight:600;font-size:.74rem;line-height:1.15'>" + esc(d.label) + "</div>" +
+      "<div style='font-size:.62rem;color:var(--g);word-break:break-all;line-height:1.1'>" + (d.exists ? esc(d.nome_arquivo || (seq + "" + d.slot)) : "—") + "</div>" +
       "<div id='act_" + d.slot + "' style='display:flex;flex-wrap:wrap;gap:4px'></div>";
     grid.appendChild(card);
     var act = card.querySelector("#act_" + d.slot);
@@ -2746,7 +2746,7 @@ async function docThumb(seq, slot) {
     if (th) {
       th.innerHTML = "";
       var img = new Image();
-      img.style.cssText = "max-width:100%;max-height:140px;object-fit:contain";
+      img.style.cssText = "max-width:100%;max-height:92px;object-fit:contain";
       img.src = url;
       th.appendChild(img);
     }
@@ -2788,7 +2788,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.14 - 2026-06-29";
+var APP_VERSION = "v3.15 - 2026-06-29";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
