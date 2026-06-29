@@ -2590,6 +2590,188 @@ window.supaFetch = async function(path, opts){
   var url = path.indexOf("http") === 0 ? path : (SUPA_URL + path);
   return fetch(url, opts);
 };
+// ═══ DOCUMENTOS E GUIAS (upload via FotonWeb, sem bridge) ═══
+// O App COR é https (GitHub Pages); o FotonWeb interno é http → usamos a URL
+// PÚBLICA https pra evitar mixed content. A recepção autentica pelo token
+// do Supabase (validado no FotonWeb via /auth/v1/user).
+var FW_DOCS_BASE = "https://exames.corsm.com.br";
+var DOC_SLOTS = [
+  { slot: "reqfrente",  label: "Requisição frente" },
+  { slot: "reqverso",   label: "Requisição verso" },
+  { slot: "cartao",     label: "Cartão" },
+  { slot: "guiaunimed", label: "Guia Unimed" },
+  { slot: "unimed2",    label: "Guia Unimed 2" },
+  { slot: "unimed3",    label: "Guia Unimed 3" }
+];
+
+async function getSupaToken() {
+  try {
+    if (supa && supa.auth && supa.auth.getSession) {
+      var sess = await supa.auth.getSession();
+      if (sess && sess.data && sess.data.session && sess.data.session.access_token) {
+        var s = sess.data.session;
+        var now = Math.floor(Date.now() / 1000);
+        if (s.expires_at && (s.expires_at - now) < 120) {
+          try {
+            var r = await supa.auth.refreshSession();
+            if (r && r.data && r.data.session) return r.data.session.access_token;
+          } catch (_) {}
+        }
+        return s.access_token;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+// fetch ao FotonWeb com Bearer do Supabase. NÃO seta Content-Type (deixa o
+// FormData definir o boundary do multipart).
+async function fwFetch(path, opts) {
+  opts = opts || {};
+  var token = await getSupaToken();
+  if (!token) throw new Error("Sessão expirada. Faça login novamente.");
+  var headers = Object.assign({}, opts.headers || {});
+  headers["Authorization"] = "Bearer " + token;
+  opts.headers = headers;
+  return fetch(FW_DOCS_BASE + path, opts);
+}
+
+function mkDocBtn(label, cls, fn) {
+  var b = document.createElement("button");
+  b.type = "button";
+  b.className = "btn " + cls;
+  b.textContent = label;
+  b.style.cssText = "padding:5px 8px;font-size:.74rem;min-width:0;flex:1";
+  b.addEventListener("click", fn);
+  return b;
+}
+
+async function renderDocsGuias(ag) {
+  var box = document.getElementById("docsGuiasBox");
+  if (!box) return;
+  var seq = ag && ag.firebird_seq_atend;
+  if (!seq) {
+    box.innerHTML = "<div style='font-weight:700;margin:10px 0 6px'>📎 Documentos e guias</div>" +
+      "<div style='opacity:.7;font-size:.82rem;padding:4px 0'>Disponível após a sincronização do atendimento (SEQATEND).</div>";
+    return;
+  }
+  box.innerHTML = "<div style='font-weight:700;margin:10px 0 6px'>📎 Documentos e guias</div>" +
+    "<div id='docsGrid' style='display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px'>" +
+    "<div style='opacity:.6'>Carregando…</div></div>";
+  var grid = document.getElementById("docsGrid");
+  var list = [];
+  try {
+    var r = await fwFetch("/api/agendamento/" + seq + "/documentos", { method: "GET" });
+    if (!r.ok) { grid.innerHTML = "<div style='color:var(--or)'>Erro ao listar (" + r.status + ")</div>"; return; }
+    var j = await r.json();
+    list = (j && j.documentos) || [];
+  } catch (e) {
+    grid.innerHTML = "<div style='color:var(--or)'>" + esc(e.message) + "</div>";
+    return;
+  }
+  grid.innerHTML = "";
+  list.forEach(function (d) {
+    var card = document.createElement("div");
+    card.style.cssText = "border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px";
+    card.innerHTML =
+      "<div id='th_" + d.slot + "' style='height:96px;background:#000;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#777;font-size:.72rem'>" +
+      (d.exists ? "…" : "SOLTE / ESCOLHER") + "</div>" +
+      "<div style='font-weight:600;font-size:.82rem'>" + esc(d.label) + "</div>" +
+      "<div style='font-size:.7rem;color:var(--g)'>" + (d.exists ? esc(d.nome_arquivo || (seq + "" + d.slot)) : "—") + "</div>" +
+      "<div id='act_" + d.slot + "' style='display:flex;flex-wrap:wrap;gap:4px'></div>";
+    grid.appendChild(card);
+    var act = card.querySelector("#act_" + d.slot);
+    if (d.exists) {
+      act.appendChild(mkDocBtn("Abrir", "btnt", function () { docOpen(seq, d.slot, false); }));
+      act.appendChild(mkDocBtn("Imprimir", "btno", function () { docOpen(seq, d.slot, true); }));
+      act.appendChild(mkDocBtn("Excluir", "btnr", function () { docDelete(seq, d.slot, ag); }));
+      docThumb(seq, d.slot);
+    } else {
+      act.appendChild(mkDocBtn("Escolher", "btng", function () { docPick(seq, d.slot, ag); }));
+    }
+  });
+}
+
+function docPick(seq, slot, ag) {
+  var inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "image/jpeg";
+  inp.style.display = "none";
+  document.body.appendChild(inp);
+  inp.addEventListener("change", function () {
+    var f = inp.files && inp.files[0];
+    if (f) docUpload(seq, slot, f, ag);
+    if (inp.parentNode) inp.parentNode.removeChild(inp);
+  });
+  inp.click();
+}
+
+async function docUpload(seq, slot, file, ag) {
+  try {
+    toast("⏳", "Enviando documento…");
+    var fd = new FormData();
+    fd.append("slot", slot);
+    fd.append("file", file, file.name || (slot + ".jpg"));
+    var r = await fwFetch("/api/agendamento/" + seq + "/documento", { method: "POST", body: fd });
+    if (!r.ok) {
+      var msg = "Falha (" + r.status + ")";
+      try { var j = await r.json(); if (j && j.detail) msg = j.detail; } catch (_) {}
+      toast("Erro", msg);
+      return;
+    }
+    toast("✅", "Documento enviado.");
+    renderDocsGuias(ag);
+  } catch (e) {
+    toast("Erro", e.message);
+  }
+}
+
+async function docBlob(seq, slot) {
+  var r = await fwFetch("/api/agendamento/" + seq + "/documento/" + slot, { method: "GET" });
+  if (!r.ok) throw new Error("Falha (" + r.status + ")");
+  return await r.blob();
+}
+
+async function docThumb(seq, slot) {
+  try {
+    var blob = await docBlob(seq, slot);
+    var url = URL.createObjectURL(blob);
+    var th = document.getElementById("th_" + slot);
+    if (th) {
+      th.innerHTML = "";
+      var img = new Image();
+      img.style.cssText = "max-width:100%;max-height:96px;object-fit:contain";
+      img.src = url;
+      th.appendChild(img);
+    }
+  } catch (_) {}
+}
+
+async function docOpen(seq, slot, doPrint) {
+  try {
+    var blob = await docBlob(seq, slot);
+    var url = URL.createObjectURL(blob);
+    var w = window.open(url, "_blank");
+    if (doPrint && w) {
+      w.addEventListener("load", function () { try { w.focus(); w.print(); } catch (_) {} });
+    }
+  } catch (e) {
+    toast("Erro", e.message);
+  }
+}
+
+async function docDelete(seq, slot, ag) {
+  if (!confirm("Excluir este documento? Esta ação remove o arquivo do paciente.")) return;
+  try {
+    var r = await fwFetch("/api/agendamento/" + seq + "/documento/" + slot, { method: "DELETE" });
+    if (!r.ok) { toast("Erro", "Falha ao excluir (" + r.status + ")"); return; }
+    toast("🗑️", "Documento excluído.");
+    renderDocsGuias(ag);
+  } catch (e) {
+    toast("Erro", e.message);
+  }
+}
+
 var CASHBACK_PCT = 5; // percentual padrão do cashback
 var AG_EMISSAO_ATUAL = null;
 
@@ -2600,7 +2782,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.12 - 2026-06-12";
+var APP_VERSION = "v3.13 - 2026-06-29";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -7927,7 +8109,10 @@ function agEV(ev, id) {
     btns.push({lbl:"📲 WhatsApp", cls:"btnt", fn:function(){ closeM(); sWAi(ag.id); }});
   })(a);
 
+  b += "<div id=\"docsGuiasBox\" style=\"margin-top:10px\"></div>";
+
   openM("Agendamento", b, btns);
+  renderDocsGuias(a);
 }
 function openEditAg(id) {
   var a = ags.find(function(x){ return x.id === id; });
