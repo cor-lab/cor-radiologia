@@ -258,7 +258,9 @@ var WHATSAPP = (function () {
         h += "</td>";
         h += "<td style='white-space:nowrap;color:var(--gr)'>" + esc(fmtHora(f.criado_em)) + "</td>";
         h += "<td style='white-space:nowrap'>";
-        var numJs = "'" + esc(f.numero).replace(/'/g, "\\'") + "'";
+        // número entre aspas DUPLAS escapadas (o onclick usa aspas simples;
+        // usar aspas simples aqui fecharia o onclick e quebraria o JS).
+        var numJs = "&quot;" + String(f.numero).replace(/"/g, "") + "&quot;";
         if (_filtroFila === "pendente") {
           h += "<button class='btn' style='padding:4px 8px;font-size:.75rem;margin-right:4px' onclick='WHATSAPP.assumir(" + numJs + ")'>Assumir</button>";
           h += "<button class='btn btng' style='padding:4px 8px;font-size:.75rem' onclick='WHATSAPP.resolver(" + numJs + ")'>Resolver</button>";
