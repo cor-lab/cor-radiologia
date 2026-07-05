@@ -66,7 +66,7 @@ var WHATSAPP = (function () {
     if (_carregando) return;
     _carregando = true;
     try {
-      var cRes = await supaFetch("/rest/v1/conversas?select=numero,historico,atualizado_em&order=atualizado_em.desc&limit=100");
+      var cRes = await supaFetch("/rest/v1/conversas?select=numero,historico,atualizado_em,modo_humano,humano_por&order=atualizado_em.desc&limit=100");
       _convs = cRes.ok ? (await cRes.json()) : [];
 
       var filtro;
@@ -203,6 +203,83 @@ var WHATSAPP = (function () {
 
   async function _refresh() { await carregar(); await contarPendentes(); render(); }
 
+  // ── Fase C: atendimento humano (chama o bot na VM com o JWT do usuário) ──
+  var _BOT_URL = "https://wa.corsm.com.br";
+
+  async function _jwt() {
+    // pega o token do usuário logado (mesma sessão do supaFetch)
+    try {
+      var s = await supa.auth.getSession();
+      return s && s.data && s.data.session ? s.data.session.access_token : null;
+    } catch (e) { return null; }
+  }
+
+  async function _chamarBot(rota, corpo) {
+    var jwt = await _jwt();
+    if (!jwt) { if (typeof toast === "function") toast("⚠️", "Sessão expirada, refaça login"); return null; }
+    var r = await fetch(_BOT_URL + rota, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + jwt },
+      body: JSON.stringify(corpo)
+    });
+    return r;
+  }
+
+  async function assumirConversa() {
+    if (!_sel) return;
+    try {
+      var r = await _chamarBot("/modo_humano", { numero: _sel, ativar: true, atendente: _quemSou() });
+      if (r && r.ok) {
+        if (typeof toast === "function") toast("🙋", "Você assumiu — CORA pausada");
+        await _refresh();
+      } else {
+        var t = r ? await r.text() : "";
+        console.error("assumirConversa:", r && r.status, t);
+        if (typeof toast === "function") toast("⚠️", "Falha ao assumir (HTTP " + (r ? r.status : "?") + ")");
+      }
+    } catch (e) {
+      console.error("assumirConversa:", e);
+      if (typeof toast === "function") toast("⚠️", "Erro ao assumir");
+    }
+  }
+
+  async function devolverCora() {
+    if (!_sel) return;
+    try {
+      var r = await _chamarBot("/modo_humano", { numero: _sel, ativar: false });
+      if (r && r.ok) {
+        if (typeof toast === "function") toast("↩️", "Devolvido para a CORA");
+        await _refresh();
+      } else {
+        if (typeof toast === "function") toast("⚠️", "Falha ao devolver");
+      }
+    } catch (e) {
+      console.error("devolverCora:", e);
+    }
+  }
+
+  async function enviarResposta() {
+    if (!_sel) return;
+    var ta = document.getElementById("waResp");
+    var texto = ta ? ta.value.trim() : "";
+    if (!texto) { if (typeof toast === "function") toast("✍️", "Digite uma mensagem"); return; }
+    try {
+      var r = await _chamarBot("/enviar_manual", { numero: _sel, texto: texto, atendente: _quemSou() });
+      if (r && r.ok) {
+        if (ta) ta.value = "";
+        if (typeof toast === "function") toast("✅", "Enviado ao paciente");
+        await _refresh();
+      } else {
+        var t = r ? await r.text() : "";
+        console.error("enviarResposta:", r && r.status, t);
+        if (typeof toast === "function") toast("⚠️", "Falha ao enviar (HTTP " + (r ? r.status : "?") + ")");
+      }
+    } catch (e) {
+      console.error("enviarResposta:", e);
+      if (typeof toast === "function") toast("⚠️", "Erro ao enviar");
+    }
+  }
+
   function setFiltro(f) { _filtroFila = f; _refresh(); }
 
   // ── render ──
@@ -321,8 +398,27 @@ var WHATSAPP = (function () {
           h += "</div></div>";
         });
       }
-      h += "<div style='margin-top:12px;padding:10px;background:#fff8e1;border-radius:8px;font-size:.78rem;color:#8a6d00'>";
-      h += "ℹ️ Modo monitor (somente leitura). Para responder ao paciente, use o WhatsApp da recepção. Em breve será possível assumir a conversa por aqui.";
+      // ── Barra de atendimento (Fase C) ──
+      var emHumano = !!(conv && conv.modo_humano);
+      h += "<div style='margin-top:12px;border-top:1px solid #2a3550;padding-top:10px'>";
+      if (!emHumano) {
+        h += "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap'>";
+        h += "<span style='font-size:.78rem;color:var(--gr)'>🤖 CORA está atendendo esta conversa automaticamente.</span>";
+        h += "<button class='btn btng' style='padding:6px 12px;font-size:.8rem' onclick='WHATSAPP.assumirConversa()'>🙋 Assumir conversa</button>";
+        h += "</div>";
+      } else {
+        var quem = (conv && conv.humano_por) ? conv.humano_por : "recepção";
+        h += "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px'>";
+        h += "<span style='font-size:.78rem;color:var(--ac,#4ab848)'>🙋 Você assumiu — CORA pausada (por " + esc(quem) + ")</span>";
+        h += "<button class='btn' style='padding:6px 12px;font-size:.8rem' onclick='WHATSAPP.devolverCora()'>↩️ Devolver para a CORA</button>";
+        h += "</div>";
+        // campo de resposta
+        h += "<div style='display:flex;gap:8px;align-items:flex-end'>";
+        h += "<textarea id='waResp' rows='2' placeholder='Digite sua resposta ao paciente…' style='flex:1;padding:8px;border-radius:8px;border:1px solid #2a3550;background:#0f1626;color:#e6e6e6;font-size:.85rem;resize:vertical;font-family:inherit'></textarea>";
+        h += "<button class='btn btng' style='padding:8px 16px;font-size:.85rem' onclick='WHATSAPP.enviarResposta()'>Enviar ➤</button>";
+        h += "</div>";
+        h += "<div style='font-size:.72rem;color:var(--gr);margin-top:4px'>A mensagem será enviada ao paciente pelo WhatsApp da CORA.</div>";
+      }
       h += "</div>";
     }
     h += "</div>";
@@ -353,7 +449,10 @@ var WHATSAPP = (function () {
     setFiltro: setFiltro,
     assumir: assumir,
     resolver: resolver,
-    reabrir: reabrir
+    reabrir: reabrir,
+    assumirConversa: assumirConversa,
+    devolverCora: devolverCora,
+    enviarResposta: enviarResposta
   };
 })();
 
