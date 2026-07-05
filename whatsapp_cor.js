@@ -128,7 +128,7 @@ var WHATSAPP = (function () {
     try {
       await _patch(id, { em_atendimento: true, atendido_por: _quemSou() });
       if (typeof toast === "function") toast("👋", "Item assumido");
-      await refresh();
+      await _refresh();
     } catch (e) {
       console.error("assumir:", e);
       if (typeof toast === "function") toast("⚠️", "Falha ao assumir");
@@ -140,7 +140,7 @@ var WHATSAPP = (function () {
       await _patch(id, { resolvido: true, em_atendimento: false,
                          resolvido_em: new Date().toISOString(), resolvido_por: _quemSou() });
       if (typeof toast === "function") toast("✅", "Marcado como resolvido");
-      await refresh();
+      await _refresh();
     } catch (e) {
       console.error("resolver:", e);
       if (typeof toast === "function") toast("⚠️", "Falha ao resolver");
@@ -152,14 +152,16 @@ var WHATSAPP = (function () {
       await _patch(id, { resolvido: false, em_atendimento: false,
                          resolvido_em: null, resolvido_por: null });
       if (typeof toast === "function") toast("↩️", "Reaberto");
-      await refresh();
+      await _refresh();
     } catch (e) {
       console.error("reabrir:", e);
       if (typeof toast === "function") toast("⚠️", "Falha ao reabrir");
     }
   }
 
-  function setFiltro(f) { _filtroFila = f; refresh(); }
+  async function _refresh() { await carregar(); await contarPendentes(); render(); }
+
+  function setFiltro(f) { _filtroFila = f; _refresh(); }
 
   // ── render ──
   function render() {
@@ -299,7 +301,7 @@ var WHATSAPP = (function () {
   return {
     rWhatsApp: rWhatsApp,
     abrir: function (numero) { _sel = numero; render(); },
-    refresh: async function () { await carregar(); await contarPendentes(); render(); },
+    refresh: _refresh,
     setFiltro: setFiltro,
     assumir: assumir,
     resolver: resolver,
