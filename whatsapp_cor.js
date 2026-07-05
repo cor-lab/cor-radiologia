@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v8-altfixa-20260705";
+  var _VERSAO = "whatsapp-web-v9-fechachat-20260705";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -111,6 +111,7 @@ var WHATSAPP = (function () {
     if (!n) return;
     try {
       await _patchConversa(n, { resolvida: true, resolvida_em: new Date().toISOString(), resolvida_por: _quemSou() });
+      if (n === _sel) _sel = null;   // fecha o chat: a conversa saiu de "Pendentes"
       if (typeof toast === "function") toast("✅", "Resolvida — veja em 'Resolvidas'");
       await _refresh();
     } catch (e) {
@@ -124,6 +125,7 @@ var WHATSAPP = (function () {
     if (!n) return;
     try {
       await _patchConversa(n, { resolvida: false, resolvida_em: null, resolvida_por: null });
+      if (n === _sel) _sel = null;   // fecha o chat: a conversa saiu de "Resolvidas"
       if (typeof toast === "function") toast("↩️", "Reaberta — veja em 'Pendentes'");
       await _refresh();
     } catch (e) {
