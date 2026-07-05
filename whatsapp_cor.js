@@ -19,7 +19,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "fase-c-v3-20260705";  // marcador: confira no console com WHATSAPP.versao
+  var _VERSAO = "fase-c-v4-autorefresh-20260705";  // marcador: confira no console com WHATSAPP.versao
   var _convs = [];        // lista de conversas carregadas
   var _fila = [];         // escalações (conforme filtro)
   var _filaAgrupada = []; // fila agrupada por número (1 por paciente)
@@ -387,6 +387,7 @@ var WHATSAPP = (function () {
       for (var i = 0; i < _convs.length; i++) if (_convs[i].numero === _sel) { conv = _convs[i]; break; }
       h += "<div class='ctitle'>" + esc(fmtNumero(_sel)) + "</div>";
       var hist = (conv && Array.isArray(conv.historico)) ? conv.historico : [];
+      h += "<div id='waChatScroll' style='max-height:340px;overflow-y:auto;padding-right:4px'>";
       if (!hist.length) {
         h += "<div style='padding:20px;color:var(--gr)'>Sem mensagens.</div>";
       } else {
@@ -401,6 +402,7 @@ var WHATSAPP = (function () {
           h += "</div></div>";
         });
       }
+      h += "</div>";
       // ── Barra de atendimento (Fase C) ──
       var emHumano = !!(conv && conv.modo_humano);
       h += "<div style='margin-top:12px;border-top:1px solid #2a3550;padding-top:10px'>";
@@ -428,7 +430,55 @@ var WHATSAPP = (function () {
 
     h += "</div>";
 
+    // preserva o que o atendente já digitou antes de re-renderizar
+    var _rascunho = "";
+    var _taAntigo = document.getElementById("waResp");
+    if (_taAntigo) _rascunho = _taAntigo.value;
+
+    // guarda se o chat estava rolado perto do fim (para decidir auto-scroll)
+    var _scAntigo = document.getElementById("waChatScroll");
+    var _pertoDoFim = true;
+    if (_scAntigo) {
+      _pertoDoFim = (_scAntigo.scrollHeight - _scAntigo.scrollTop - _scAntigo.clientHeight) < 60;
+    }
+
     el.innerHTML = h;
+
+    // restaura o rascunho no campo (se ainda existe após render)
+    var _taNovo = document.getElementById("waResp");
+    if (_taNovo && _rascunho) _taNovo.value = _rascunho;
+
+    // rola para a última mensagem só se já estava perto do fim (ou 1ª carga).
+    // assim não interrompe quem está lendo mensagens antigas.
+    var _sc = document.getElementById("waChatScroll");
+    if (_sc && _pertoDoFim) _sc.scrollTop = _sc.scrollHeight;
+  }
+
+  // ── auto-refresh (Fase C): atualiza chat e fila sozinho ──
+  var _timer = null;
+  var _AUTO_MS = 4000;  // a cada 4s
+
+  function _pgVisivel() {
+    var el = document.getElementById("pgWa");
+    // só atualiza se a aba WhatsApp está de fato na tela
+    return el && el.offsetParent !== null && !document.hidden;
+  }
+
+  async function _tick() {
+    if (_carregando) return;
+    if (!_pgVisivel()) return;
+    // se o atendente está com o campo focado e digitou algo, não re-renderiza
+    // (evita atrapalhar); mas ainda assim busca dados para a próxima vez.
+    var ta = document.getElementById("waResp");
+    var digitando = ta && document.activeElement === ta && ta.value.trim().length > 0;
+    await carregar();
+    await contarPendentes();
+    if (!digitando) render();
+  }
+
+  function _iniciarAuto() {
+    if (_timer) return;
+    _timer = setInterval(_tick, _AUTO_MS);
   }
 
   // ── API pública ──
@@ -443,6 +493,7 @@ var WHATSAPP = (function () {
     await carregar();
     await contarPendentes();
     render();
+    _iniciarAuto();
   }
 
   return {
