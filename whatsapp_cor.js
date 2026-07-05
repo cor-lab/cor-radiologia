@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v6-20260705";
+  var _VERSAO = "whatsapp-web-v7-fundopreto-20260705";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -287,7 +287,7 @@ var WHATSAPP = (function () {
 
       // mensagens (cores do mockup: paciente claro c/ borda, CORA/recepção verde suave)
       var hist = (conv && Array.isArray(conv.historico)) ? conv.historico : [];
-      h += "<div id='waChatScroll' style='flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;background:rgba(255,255,255,.02)'>";
+      h += "<div id='waChatScroll' style='flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;background:#000'>";
       if (!hist.length) {
         h += "<div style='color:var(--gr);text-align:center;padding:20px'>Sem mensagens.</div>";
       } else {
