@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v7-fundopreto-20260705";
+  var _VERSAO = "whatsapp-web-v8-altfixa-20260705";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -214,7 +214,7 @@ var WHATSAPP = (function () {
     var h = "";
 
     // Layout WhatsApp Web: 2 colunas
-    h += "<div style='display:flex;gap:0;border:0.5px solid #2a3550;border-radius:12px;overflow:hidden;min-height:460px'>";
+    h += "<div style='display:flex;gap:0;border:0.5px solid #2a3550;border-radius:12px;overflow:hidden;height:calc(100vh - 150px)'>";
 
     // ── COLUNA ESQUERDA: lista de conversas ──
     h += "<div style='width:270px;border-right:0.5px solid #2a3550;display:flex;flex-direction:column;flex-shrink:0'>";
@@ -256,7 +256,7 @@ var WHATSAPP = (function () {
     h += "</div>";  // fim coluna esquerda
 
     // ── COLUNA DIREITA: chat ──
-    h += "<div style='flex:1;display:flex;flex-direction:column;min-width:0'>";
+    h += "<div style='flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden'>";
     if (!_sel) {
       h += "<div style='flex:1;display:flex;align-items:center;justify-content:center;color:var(--gr);font-size:.85rem;padding:40px;text-align:center'>Selecione uma conversa à esquerda para ver e responder.</div>";
     } else {
