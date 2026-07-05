@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v9 (fecha-chat) — 2026-07-05
+   VERSÃO: WHATSAPP-WEB v10 (troca-aba fecha chat) — 2026-07-05
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v9-fechachat-20260705";
+  var _VERSAO = "whatsapp-web-v10-trocaaba-20260705";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -200,7 +200,7 @@ var WHATSAPP = (function () {
   }
 
   function abrir(numero) { _sel = numero; render(); }
-  function setAba(a) { _aba = a; render(); }
+  function setAba(a) { _aba = a; _sel = null; render(); }
 
   async function _refresh() { await carregar(); render(); }
 
