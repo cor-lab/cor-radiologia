@@ -19,13 +19,14 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "fase-c-v4-autorefresh-20260705";  // marcador: confira no console com WHATSAPP.versao
+  var _VERSAO = "fase-c-v5-limpacampo-20260705";  // marcador: confira no console com WHATSAPP.versao
   var _convs = [];        // lista de conversas carregadas
   var _fila = [];         // escalações (conforme filtro)
   var _filaAgrupada = []; // fila agrupada por número (1 por paciente)
   var _sel = null;        // numero da conversa aberta
   var _carregando = false;
   var _filtroFila = "pendente";  // pendente | atendimento | resolvido
+  var _limparCampo = false;      // após enviar, não restaurar o rascunho
   var _cu = null;         // usuário logado (nome para auditoria)
 
   // ── util ──
@@ -269,6 +270,7 @@ var WHATSAPP = (function () {
     try {
       var r = await _chamarBot("/enviar_manual", { numero: _sel, texto: texto, atendente: _quemSou() });
       if (r && r.ok) {
+        _limparCampo = true;        // sinaliza ao render para NÃO restaurar rascunho
         if (ta) ta.value = "";
         if (typeof toast === "function") toast("✅", "Enviado ao paciente");
         await _refresh();
@@ -431,9 +433,13 @@ var WHATSAPP = (function () {
     h += "</div>";
 
     // preserva o que o atendente já digitou antes de re-renderizar
+    // (exceto logo após enviar: aí o campo deve ficar limpo)
     var _rascunho = "";
-    var _taAntigo = document.getElementById("waResp");
-    if (_taAntigo) _rascunho = _taAntigo.value;
+    if (!_limparCampo) {
+      var _taAntigo = document.getElementById("waResp");
+      if (_taAntigo) _rascunho = _taAntigo.value;
+    }
+    _limparCampo = false;  // consome a flag
 
     // guarda se o chat estava rolado perto do fim (para decidir auto-scroll)
     var _scAntigo = document.getElementById("waChatScroll");
