@@ -7,7 +7,7 @@
    Padrão espelhado de reportes.js:
      - namespace global WHATSAPP
      - função window.rWhatsApp() chamada pelo navTo map
-     - leitura via supa.from(...) (client = supa)
+     - leitura e escrita via supaFetch(...) (JWT auth, RLS libera)
      - estilo: classes card/ctitle/btn/badge do App COR
 
    Tabelas lidas:
@@ -65,27 +65,19 @@ var WHATSAPP = (function () {
     if (_carregando) return;
     _carregando = true;
     try {
-      var cRes = await supa.from("conversas")
-        .select("numero,historico,atualizado_em")
-        .order("atualizado_em", { ascending: false })
-        .limit(100);
-      _convs = (cRes.data || []);
+      var cRes = await supaFetch("/rest/v1/conversas?select=numero,historico,atualizado_em&order=atualizado_em.desc&limit=100");
+      _convs = cRes.ok ? (await cRes.json()) : [];
 
-      var q = supa.from("atendimento_humano")
-        .select("id,numero,ultima_msg,criado_em,resolvido,em_atendimento,atendido_por,resolvido_em,resolvido_por")
-        .order("criado_em", { ascending: false })
-        .limit(200);
-
+      var filtro;
       if (_filtroFila === "pendente") {
-        q = q.eq("resolvido", false).eq("em_atendimento", false);
+        filtro = "resolvido=eq.false&em_atendimento=eq.false";
       } else if (_filtroFila === "atendimento") {
-        q = q.eq("resolvido", false).eq("em_atendimento", true);
-      } else { // resolvido
-        q = q.eq("resolvido", true);
+        filtro = "resolvido=eq.false&em_atendimento=eq.true";
+      } else {
+        filtro = "resolvido=eq.true";
       }
-
-      var fRes = await q;
-      _fila = (fRes.data || []);
+      var fRes = await supaFetch("/rest/v1/atendimento_humano?select=id,numero,ultima_msg,criado_em,resolvido,em_atendimento,atendido_por,resolvido_em,resolvido_por&" + filtro + "&order=criado_em.desc&limit=200");
+      _fila = fRes.ok ? (await fRes.json()) : [];
     } catch (e) {
       console.error("WHATSAPP carregar:", e);
       if (typeof toast === "function") toast("⚠️", "Falha ao carregar conversas");
@@ -98,59 +90,71 @@ var WHATSAPP = (function () {
   var _nPendentes = 0;
   async function contarPendentes() {
     try {
-      var r = await supa.from("atendimento_humano")
-        .select("id", { count: "exact", head: true })
-        .eq("resolvido", false).eq("em_atendimento", false);
-      _nPendentes = (r.count != null) ? r.count : _fila.length;
+      var r = await supaFetch("/rest/v1/atendimento_humano?select=id&resolvido=eq.false&em_atendimento=eq.false", {
+        method: "GET", headers: { "Prefer": "count=exact" }
+      });
+      var cr = r.headers.get("content-range"); // formato "0-24/25"
+      if (cr && cr.indexOf("/") >= 0) {
+        _nPendentes = parseInt(cr.split("/")[1], 10) || 0;
+      } else {
+        var arr = r.ok ? (await r.json()) : [];
+        _nPendentes = arr.length;
+      }
     } catch (e) { _nPendentes = _fila.length; }
   }
 
   // ── ações (Fase B) ──
   function _quemSou() {
-    // tenta pegar o usuário logado do App COR (variável global CU)
     try {
       if (typeof CU !== "undefined" && CU) return CU.nome || CU.email || CU.login || "recepção";
     } catch (e) {}
     return "recepção";
   }
 
+  async function _patch(id, body) {
+    var r = await supaFetch("/rest/v1/atendimento_humano?id=eq." + id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) {
+      var txt = "";
+      try { txt = await r.text(); } catch (e) {}
+      throw new Error("HTTP " + r.status + " " + txt);
+    }
+  }
+
   async function assumir(id) {
     try {
-      await supa.from("atendimento_humano")
-        .update({ em_atendimento: true, atendido_por: _quemSou() })
-        .eq("id", id);
+      await _patch(id, { em_atendimento: true, atendido_por: _quemSou() });
       if (typeof toast === "function") toast("👋", "Item assumido");
       await refresh();
     } catch (e) {
-      console.error(e);
+      console.error("assumir:", e);
       if (typeof toast === "function") toast("⚠️", "Falha ao assumir");
     }
   }
 
   async function resolver(id) {
     try {
-      await supa.from("atendimento_humano")
-        .update({ resolvido: true, em_atendimento: false,
-                  resolvido_em: new Date().toISOString(), resolvido_por: _quemSou() })
-        .eq("id", id);
+      await _patch(id, { resolvido: true, em_atendimento: false,
+                         resolvido_em: new Date().toISOString(), resolvido_por: _quemSou() });
       if (typeof toast === "function") toast("✅", "Marcado como resolvido");
       await refresh();
     } catch (e) {
-      console.error(e);
+      console.error("resolver:", e);
       if (typeof toast === "function") toast("⚠️", "Falha ao resolver");
     }
   }
 
   async function reabrir(id) {
     try {
-      await supa.from("atendimento_humano")
-        .update({ resolvido: false, em_atendimento: false,
-                  resolvido_em: null, resolvido_por: null })
-        .eq("id", id);
+      await _patch(id, { resolvido: false, em_atendimento: false,
+                         resolvido_em: null, resolvido_por: null });
       if (typeof toast === "function") toast("↩️", "Reaberto");
       await refresh();
     } catch (e) {
-      console.error(e);
+      console.error("reabrir:", e);
       if (typeof toast === "function") toast("⚠️", "Falha ao reabrir");
     }
   }
