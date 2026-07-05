@@ -1,22 +1,25 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   FASE A (monitor): SOMENTE LEITURA. Mostra as conversas do bot com os
-   pacientes e a fila de escalações (atendimento_humano). NÃO envia mensagens
-   nem assume conversas (isso é Fase C, futura).
+   VERSÃO: FASE C (v3) — 2026-07-05 — atendimento humano completo
+
+   Fase A: monitor (conversas + fila).
+   Fase B: fila acionável (assumir/resolver/reabrir, agrupada por número).
+   Fase C: assumir conversa (pausa a CORA), responder o paciente pela CORA,
+           devolver para a CORA. Chama o bot (wa.corsm.com.br) com JWT do usuário.
 
    Padrão espelhado de reportes.js:
      - namespace global WHATSAPP
      - função window.rWhatsApp() chamada pelo navTo map
      - leitura e escrita via supaFetch(...) (JWT auth, RLS libera)
-     - estilo: classes card/ctitle/btn/badge do App COR
+     - Fase C via fetch autenticado ao bot (modo_humano / enviar_manual)
 
-   Tabelas lidas:
-     - conversas          (numero, historico[jsonb], atualizado_em)
-     - atendimento_humano (numero, ultima_msg, criado_em, resolvido)
+   Tabelas: conversas (numero, historico, atualizado_em, modo_humano),
+            atendimento_humano (numero, ultima_msg, criado_em, resolvido, ...).
    ═══════════════════════════════════════════════════════════════════════ */
 var WHATSAPP = (function () {
   "use strict";
 
+  var _VERSAO = "fase-c-v3-20260705";  // marcador: confira no console com WHATSAPP.versao
   var _convs = [];        // lista de conversas carregadas
   var _fila = [];         // escalações (conforme filtro)
   var _filaAgrupada = []; // fila agrupada por número (1 por paciente)
@@ -452,7 +455,8 @@ var WHATSAPP = (function () {
     reabrir: reabrir,
     assumirConversa: assumirConversa,
     devolverCora: devolverCora,
-    enviarResposta: enviarResposta
+    enviarResposta: enviarResposta,
+    versao: _VERSAO
   };
 })();
 
