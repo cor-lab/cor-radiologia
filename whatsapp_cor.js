@@ -19,6 +19,7 @@ var WHATSAPP = (function () {
 
   var _convs = [];        // lista de conversas carregadas
   var _fila = [];         // escalações (conforme filtro)
+  var _filaAgrupada = []; // fila agrupada por número (1 por paciente)
   var _sel = null;        // numero da conversa aberta
   var _carregando = false;
   var _filtroFila = "pendente";  // pendente | atendimento | resolvido
@@ -78,6 +79,7 @@ var WHATSAPP = (function () {
       }
       var fRes = await supaFetch("/rest/v1/atendimento_humano?select=id,numero,ultima_msg,criado_em,resolvido,em_atendimento,atendido_por,resolvido_em,resolvido_por&" + filtro + "&order=criado_em.desc&limit=200");
       _fila = fRes.ok ? (await fRes.json()) : [];
+      _filaAgrupada = _agrupar(_fila);
     } catch (e) {
       console.error("WHATSAPP carregar:", e);
       if (typeof toast === "function") toast("⚠️", "Falha ao carregar conversas");
@@ -86,21 +88,55 @@ var WHATSAPP = (function () {
     }
   }
 
+  // Agrupa a fila por número: 1 entrada por paciente, com a mais recente + ids do grupo.
+  function _agrupar(lista) {
+    var mapa = {};
+    var ordem = [];
+    (lista || []).forEach(function (it) {
+      var k = it.numero || "?";
+      if (!mapa[k]) {
+        mapa[k] = {
+          numero: it.numero,
+          ultima_msg: it.ultima_msg,      // a mais recente (lista já vem desc)
+          criado_em: it.criado_em,
+          em_atendimento: it.em_atendimento,
+          atendido_por: it.atendido_por,
+          resolvido: it.resolvido,
+          resolvido_por: it.resolvido_por,
+          resolvido_em: it.resolvido_em,
+          ids: [it.id],
+          qtd: 1
+        };
+        ordem.push(k);
+      } else {
+        mapa[k].ids.push(it.id);
+        mapa[k].qtd += 1;
+        // se qualquer uma do grupo está em atendimento, marca o grupo
+        if (it.em_atendimento) { mapa[k].em_atendimento = true; mapa[k].atendido_por = mapa[k].atendido_por || it.atendido_por; }
+      }
+    });
+    return ordem.map(function (k) { return mapa[k]; });
+  }
+
   // conta pendentes reais (para o card de resumo), independente do filtro atual
   var _nPendentes = 0;
+  var _nAtend = 0;
+  var _nResolv = 0;
   async function contarPendentes() {
-    try {
-      var r = await supaFetch("/rest/v1/atendimento_humano?select=id&resolvido=eq.false&em_atendimento=eq.false", {
-        method: "GET", headers: { "Prefer": "count=exact" }
-      });
-      var cr = r.headers.get("content-range"); // formato "0-24/25"
-      if (cr && cr.indexOf("/") >= 0) {
-        _nPendentes = parseInt(cr.split("/")[1], 10) || 0;
-      } else {
+    async function cont(filtro) {
+      try {
+        var r = await supaFetch("/rest/v1/atendimento_humano?select=id&" + filtro, {
+          method: "GET", headers: { "Prefer": "count=exact" }
+        });
+        var cr = r.headers.get("content-range");
+        if (cr && cr.indexOf("/") >= 0) return parseInt(cr.split("/")[1], 10) || 0;
         var arr = r.ok ? (await r.json()) : [];
-        _nPendentes = arr.length;
-      }
-    } catch (e) { _nPendentes = _fila.length; }
+        return arr.length;
+      } catch (e) { return 0; }
+    }
+    _nPendentes = await cont("resolvido=eq.false&em_atendimento=eq.false");
+    _nAtend = await cont("resolvido=eq.false&em_atendimento=eq.true");
+    _nResolv = await cont("resolvido=eq.true");
   }
 
   // ── ações (Fase B) ──
@@ -111,8 +147,11 @@ var WHATSAPP = (function () {
     return "recepção";
   }
 
-  async function _patch(id, body) {
-    var r = await supaFetch("/rest/v1/atendimento_humano?id=eq." + id, {
+  async function _patchNumero(numero, body, filtroExtra) {
+    // aplica a TODAS as escalações daquele número (grupo do paciente)
+    var q = "numero=eq." + encodeURIComponent(numero);
+    if (filtroExtra) q += "&" + filtroExtra;
+    var r = await supaFetch("/rest/v1/atendimento_humano?" + q, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "Prefer": "return=minimal" },
       body: JSON.stringify(body)
@@ -124,10 +163,11 @@ var WHATSAPP = (function () {
     }
   }
 
-  async function assumir(id) {
+  async function assumir(numero) {
     try {
-      await _patch(id, { em_atendimento: true, atendido_por: _quemSou() });
-      if (typeof toast === "function") toast("👋", "Item assumido");
+      // assume as pendentes (não resolvidas) daquele número
+      await _patchNumero(numero, { em_atendimento: true, atendido_por: _quemSou() }, "resolvido=eq.false");
+      if (typeof toast === "function") toast("👋", "Assumido — veja em 'Em atendimento'");
       await _refresh();
     } catch (e) {
       console.error("assumir:", e);
@@ -135,11 +175,12 @@ var WHATSAPP = (function () {
     }
   }
 
-  async function resolver(id) {
+  async function resolver(numero) {
     try {
-      await _patch(id, { resolvido: true, em_atendimento: false,
-                         resolvido_em: new Date().toISOString(), resolvido_por: _quemSou() });
-      if (typeof toast === "function") toast("✅", "Marcado como resolvido");
+      // resolve TODAS as não-resolvidas daquele número
+      await _patchNumero(numero, { resolvido: true, em_atendimento: false,
+                         resolvido_em: new Date().toISOString(), resolvido_por: _quemSou() }, "resolvido=eq.false");
+      if (typeof toast === "function") toast("✅", "Resolvido — veja em 'Resolvidas'");
       await _refresh();
     } catch (e) {
       console.error("resolver:", e);
@@ -147,10 +188,11 @@ var WHATSAPP = (function () {
     }
   }
 
-  async function reabrir(id) {
+  async function reabrir(numero) {
     try {
-      await _patch(id, { resolvido: false, em_atendimento: false,
-                         resolvido_em: null, resolvido_por: null });
+      // reabre as resolvidas daquele número
+      await _patchNumero(numero, { resolvido: false, em_atendimento: false,
+                         resolvido_em: null, resolvido_por: null }, "resolvido=eq.true");
       if (typeof toast === "function") toast("↩️", "Reaberto");
       await _refresh();
     } catch (e) {
@@ -185,24 +227,27 @@ var WHATSAPP = (function () {
     h += "<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>";
     h += "<div class='ctitle'>🔔 Escalações para a recepção</div>";
     // seletor de filtro
-    var abas = [["pendente","Pendentes"],["atendimento","Em atendimento"],["resolvido","Resolvidas"]];
+    var abas = [["pendente","Pendentes",_nPendentes],["atendimento","Em atendimento",_nAtend],["resolvido","Resolvidas",_nResolv]];
     h += "<div style='display:flex;gap:6px'>";
     abas.forEach(function (a) {
       var on = _filtroFila === a[0];
       h += "<button onclick=\"WHATSAPP.setFiltro('" + a[0] + "')\" class='btn' style='padding:4px 10px;font-size:.78rem;" +
-           (on ? "background:var(--ac,#4ab848);color:#fff" : "background:transparent;color:var(--gr)") + "'>" + a[1] + "</button>";
+           (on ? "background:var(--ac,#4ab848);color:#fff" : "background:transparent;color:var(--gr)") + "'>" + a[1] + " (" + a[2] + ")</button>";
     });
     h += "</div></div>";
 
-    if (!_fila.length) {
+    if (!_filaAgrupada.length) {
       h += "<div style='padding:18px;text-align:center;color:var(--gr)'>Nenhum item nesta lista.</div>";
     } else {
       h += "<table style='width:100%;font-size:.85rem;margin-top:8px'><thead><tr>";
       h += "<th style='text-align:left'>Número</th><th style='text-align:left'>Mensagem / Pedido</th><th>Quando</th><th>Ações</th>";
       h += "</tr></thead><tbody>";
-      _fila.forEach(function (f) {
+      _filaAgrupada.forEach(function (f) {
+        var nQ = f.qtd || 1;
         h += "<tr>";
-        h += "<td style='font-family:DM Mono,monospace;white-space:nowrap'>" + esc(fmtNumero(f.numero)) + "</td>";
+        h += "<td style='font-family:DM Mono,monospace;white-space:nowrap'>" + esc(fmtNumero(f.numero));
+        if (nQ > 1) h += "<div style='font-size:.7rem;color:var(--ac,#4ab848)'>" + nQ + " pedidos</div>";
+        h += "</td>";
         h += "<td>" + esc(f.ultima_msg || "");
         if (f.em_atendimento && f.atendido_por) {
           h += "<div style='font-size:.72rem;color:var(--ac,#4ab848);margin-top:2px'>👋 em atendimento por " + esc(f.atendido_por) + "</div>";
@@ -213,13 +258,14 @@ var WHATSAPP = (function () {
         h += "</td>";
         h += "<td style='white-space:nowrap;color:var(--gr)'>" + esc(fmtHora(f.criado_em)) + "</td>";
         h += "<td style='white-space:nowrap'>";
+        var numJs = "'" + esc(f.numero).replace(/'/g, "\\'") + "'";
         if (_filtroFila === "pendente") {
-          h += "<button class='btn' style='padding:4px 8px;font-size:.75rem;margin-right:4px' onclick='WHATSAPP.assumir(" + f.id + ")'>Assumir</button>";
-          h += "<button class='btn btng' style='padding:4px 8px;font-size:.75rem' onclick='WHATSAPP.resolver(" + f.id + ")'>Resolver</button>";
+          h += "<button class='btn' style='padding:4px 8px;font-size:.75rem;margin-right:4px' onclick='WHATSAPP.assumir(" + numJs + ")'>Assumir</button>";
+          h += "<button class='btn btng' style='padding:4px 8px;font-size:.75rem' onclick='WHATSAPP.resolver(" + numJs + ")'>Resolver</button>";
         } else if (_filtroFila === "atendimento") {
-          h += "<button class='btn btng' style='padding:4px 8px;font-size:.75rem' onclick='WHATSAPP.resolver(" + f.id + ")'>Resolver</button>";
+          h += "<button class='btn btng' style='padding:4px 8px;font-size:.75rem' onclick='WHATSAPP.resolver(" + numJs + ")'>Resolver</button>";
         } else { // resolvido
-          h += "<button class='btn' style='padding:4px 8px;font-size:.75rem' onclick='WHATSAPP.reabrir(" + f.id + ")'>Reabrir</button>";
+          h += "<button class='btn' style='padding:4px 8px;font-size:.75rem' onclick='WHATSAPP.reabrir(" + numJs + ")'>Reabrir</button>";
         }
         h += "</td>";
         h += "</tr>";
