@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v10 (troca-aba fecha chat) — 2026-07-05
+   VERSÃO: WHATSAPP-WEB v11 (auto-refresh sem pulo) — 2026-07-05
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v10-trocaaba-20260705";
+  var _VERSAO = "whatsapp-web-v11-nopulo-20260706";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -345,6 +345,9 @@ var WHATSAPP = (function () {
     if (_taNovo && _rascunho) _taNovo.value = _rascunho;
     var _sc = document.getElementById("waChatScroll");
     if (_sc && _pertoDoFim) _sc.scrollTop = _sc.scrollHeight;
+
+    // mantém a assinatura em dia (evita re-render desnecessário no próximo tick)
+    try { _ultimaAssinatura = _assinatura(); } catch (e) {}
   }
 
   // ── auto-refresh ──
@@ -354,13 +357,33 @@ var WHATSAPP = (function () {
     var el = document.getElementById("pgWa");
     return el && el.offsetParent !== null && !document.hidden;
   }
+  // Assinatura leve dos dados: muda só quando há conteúdo novo relevante.
+  // Usada para o auto-refresh NÃO recriar o DOM (e não fazer o chat "pular")
+  // quando nada mudou de fato.
+  function _assinatura() {
+    var partes = [];
+    for (var i = 0; i < _convs.length; i++) {
+      var c = _convs[i];
+      var h = c.historico;
+      var nmsg = Array.isArray(h) ? h.length : 0;
+      partes.push([c.numero, c.atualizado_em, nmsg, c.modo_humano ? 1 : 0,
+                   c.humano_por || "", c.resolvida ? 1 : 0].join(":"));
+    }
+    return partes.join("|") + "#aba=" + _aba + "#sel=" + (_sel || "");
+  }
+  var _ultimaAssinatura = "";
+
   async function _tick() {
     if (_carregando) return;
     if (!_pgVisivel()) return;
     var ta = document.getElementById("waResp");
     var digitando = ta && document.activeElement === ta && ta.value.trim().length > 0;
     await carregar();
-    if (!digitando) render();
+    if (digitando) return;              // não mexe no DOM enquanto digita
+    var assinatura = _assinatura();
+    if (assinatura === _ultimaAssinatura) return;  // nada mudou -> não re-renderiza (não pula)
+    _ultimaAssinatura = assinatura;
+    render();
   }
   function _iniciarAuto() { if (!_timer) _timer = setInterval(_tick, _AUTO_MS); }
 
