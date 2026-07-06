@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v11 (auto-refresh sem pulo) — 2026-07-05
+   VERSÃO: WHATSAPP-WEB v12 (selo escalação CORA) — 2026-07-05
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v11-nopulo-20260706";
+  var _VERSAO = "whatsapp-web-v12-escalada-20260706";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -72,7 +72,7 @@ var WHATSAPP = (function () {
     if (_carregando) return;
     _carregando = true;
     try {
-      var r = await supaFetch("/rest/v1/conversas?select=numero,historico,atualizado_em,modo_humano,humano_por,resolvida,resolvida_por,resolvida_em&order=atualizado_em.desc&limit=200");
+      var r = await supaFetch("/rest/v1/conversas?select=numero,historico,atualizado_em,modo_humano,humano_por,resolvida,resolvida_por,resolvida_em,escalada&order=atualizado_em.desc&limit=200");
       _convs = r.ok ? (await r.json()) : [];
     } catch (e) {
       console.error("WHATSAPP carregar:", e);
@@ -110,7 +110,7 @@ var WHATSAPP = (function () {
     var n = numero || _sel;
     if (!n) return;
     try {
-      await _patchConversa(n, { resolvida: true, resolvida_em: new Date().toISOString(), resolvida_por: _quemSou() });
+      await _patchConversa(n, { resolvida: true, resolvida_em: new Date().toISOString(), resolvida_por: _quemSou(), escalada: false });
       if (n === _sel) _sel = null;   // fecha o chat: a conversa saiu de "Pendentes"
       if (typeof toast === "function") toast("✅", "Resolvida — veja em 'Resolvidas'");
       await _refresh();
@@ -244,9 +244,12 @@ var WHATSAPP = (function () {
         h += "<span style='font-size:11px;color:var(--gr)'>" + esc(fmtHora(c.atualizado_em)) + "</span>";
         h += "</div>";
         h += "<div style='font-size:12px;color:var(--gr);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" + esc(ultimaMsg(c.historico)) + "</div>";
-        // selo de quem assumiu
+        // selo de quem assumiu / escalação / resolvida
         if (c.modo_humano && c.humano_por) {
           h += "<div style='font-size:11px;color:var(--ac,#4ab848);margin-top:3px'>🙋 " + esc(c.humano_por) + "</div>";
+        } else if (c.escalada && !c.resolvida) {
+          // a CORA escalou para a recepção -> destaque com aceno
+          h += "<div style='font-size:11px;color:#e6a700;margin-top:3px;font-weight:600'>🙋 CORA pediu atendente</div>";
         } else if (c.resolvida && c.resolvida_por) {
           h += "<div style='font-size:11px;color:var(--gr);margin-top:3px'>✅ " + esc(c.resolvida_por) + "</div>";
         }
@@ -367,7 +370,7 @@ var WHATSAPP = (function () {
       var h = c.historico;
       var nmsg = Array.isArray(h) ? h.length : 0;
       partes.push([c.numero, c.atualizado_em, nmsg, c.modo_humano ? 1 : 0,
-                   c.humano_por || "", c.resolvida ? 1 : 0].join(":"));
+                   c.humano_por || "", c.resolvida ? 1 : 0, c.escalada ? 1 : 0].join(":"));
     }
     return partes.join("|") + "#aba=" + _aba + "#sel=" + (_sel || "");
   }
