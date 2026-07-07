@@ -235,6 +235,13 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-07-07 (v3.19): Botão "📧 Resetar e enviar por e-mail" na seção ACESSO
+              FOTONWEB COR do modal de dentista. Chama enviar-email-cor tipo
+              dentista_senha (v0.8): gera senha nova no servidor, grava hash na
+              dentistas_auth e envia por e-mail ao endereço cadastrado do dentista.
+              A recepção não vê a senha (vai direto pro dentista). Trata sem_email
+              e sem_credencial. Marcador: "dentAuthResetEnviarEmail".
+
   2026-07-07 (v3.18): Campo E-MAIL no cadastro/edição de dentista. O campo
               dentistas.email já existia no banco mas não tinha input no modal
               "Editar Dentista" (só aparecia no cadastro de usuário do sistema).
@@ -2822,7 +2829,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.18 - 2026-07-07";
+var APP_VERSION = "v3.19 - 2026-07-07";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -10688,8 +10695,9 @@ function dentAuthRender(firebirdId, dentNome, cred){
             "<button type='button' class='btn btno bsm' onclick='dentAuthGerarSenhaBtn(true)' style='font-size:11px;padding:5px 8px;width:100%'>🎲 Gerar</button>"+
           "</div>"+
         "</div>"+
-        "<div style='display:flex;gap:6px'>"+
+        "<div style='display:flex;gap:6px;flex-wrap:wrap'>"+
           "<button type='button' class='btn btnt bsm' onclick='dentAuthResetBtn("+firebirdId+","+jsArg(dentNome||"")+")' style='font-size:11px;padding:6px 10px'>🔑 Resetar senha</button>"+
+          "<button type='button' class='btn btng bsm' onclick='dentAuthResetEnviarEmail("+firebirdId+","+jsArg(dentNome||"")+")' style='font-size:11px;padding:6px 10px'>📧 Resetar e enviar por e-mail</button>"+
           "<button type='button' class='btn btnr bsm' onclick='dentAuthDeleteBtn("+firebirdId+","+jsArg(cred.logon)+","+jsArg(dentNome||"")+")' style='font-size:11px;padding:6px 10px;margin-left:auto'>🗑 Remover acesso</button>"+
         "</div>"+
       "</div>"+
@@ -10729,6 +10737,41 @@ async function dentAuthCreateBtn(firebirdId, dentNome){
   dentAuthShowSenhaModal(senha, logon, dentNome, "criada");
   // Recarregar
   dentAuthLoad(firebirdId, dentNome);
+}
+
+// Resetar senha E enviar por e-mail (chama enviar-email-cor tipo dentista_senha)
+// A senha nova é gerada no servidor, o hash é gravado e o e-mail é enviado
+// para o endereço cadastrado do dentista. A recepção não vê a senha (foi por e-mail).
+async function dentAuthResetEnviarEmail(firebirdId, dentNome){
+  if(!confirm("Gerar uma NOVA senha para "+(dentNome||"este dentista")+" e enviar por e-mail para o endereço cadastrado?\n\nA senha atual deixará de funcionar.")) return;
+  toast("⏳","Resetando e enviando e-mail...");
+  try{
+    var sess = await supa.auth.getSession();
+    var jwt = sess && sess.data && sess.data.session ? sess.data.session.access_token : "";
+    if(!jwt){ toast("❌","Sessão expirada. Faça login novamente."); return; }
+    var r = await fetch(SUPA_URL+"/functions/v1/enviar-email-cor", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+jwt, "apikey":SUPA_KEY },
+      body: JSON.stringify({ tipo:"dentista_senha", firebird_id: firebirdId })
+    });
+    var j = await r.json();
+    if(j && j.ok){
+      toast("✅","Senha redefinida e enviada para "+(j.destinatario||"o e-mail cadastrado"));
+      dentAuthLoad(firebirdId, dentNome);
+    } else {
+      var motivo = j && j.motivo ? j.motivo : "";
+      if(motivo==="sem_email"){
+        toast("⚠️","Dentista sem e-mail cadastrado. Preencha o e-mail no cadastro primeiro.");
+      } else if(motivo==="sem_credencial"){
+        toast("⚠️","Dentista sem credencial. Crie a credencial (logon/senha) primeiro.");
+      } else {
+        toast("❌", (j && j.error) ? j.error : "Falha ao resetar/enviar");
+      }
+    }
+  } catch(e){
+    console.error("dentAuthResetEnviarEmail:", e);
+    toast("❌","Erro: "+e.message);
+  }
 }
 
 // Resetar senha
