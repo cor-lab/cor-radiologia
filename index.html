@@ -235,6 +235,13 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-07-07 (v3.18): Campo E-MAIL no cadastro/edição de dentista. O campo
+              dentistas.email já existia no banco mas não tinha input no modal
+              "Editar Dentista" (só aparecia no cadastro de usuário do sistema).
+              Agora a recepção pode preencher/editar o e-mail de qualquer dentista.
+              Base para reset de senha do FotonWeb por e-mail (via CORA, futuro).
+              Marcadores: "dEmail", "em:" no cache dents, "email:" em dbSaveDent.
+
   2026-07-04 (v3.17): Nova aba "💬 WhatsApp" (PERMS admin+agenda, page-whatsapp,
               navTo map, botão no nav). Arquivo novo whatsapp_cor.js (namespace
               WHATSAPP, window.rWhatsApp). FASE A = MONITOR SOMENTE LEITURA:
@@ -2815,7 +2822,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.17 - 2026-07-04";
+var APP_VERSION = "v3.18 - 2026-07-07";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5027,6 +5034,7 @@ async function loadAllData(){
           cro: d.cro || "",
           esp: d.especialidade || "",
           tel: d.telefone || "",
+          em: d.email || "",
           nv: d.nivel || "Bronze",
           pts: d.pontos || 0,
           ind: d.indicacoes || 0,
@@ -5219,6 +5227,7 @@ async function dbDelCv(id){
 // ── DENTISTAS ──
 async function dbSaveDent(d,isNew){
   var data={nome:d.n,cro:d.cro,especialidade:d.esp,telefone:d.tel,
+    email:(d.em||"").trim()||null,
     nivel:d.nv,pontos:d.pts,indicacoes:d.ind,ini:d.ini,bg:d.bg,cor:d.cor,ativo:true,
     pode_ver_pontos_fotonweb: d.pvpf === true,
     recebe_aviso_atendimento_realizado: d.raar !== false};
@@ -9827,6 +9836,7 @@ function openDtM(eid){
     "<div class='field'><label>ESPECIALIDADE</label><input id='dEsp' value='"+(ed?esc(ed.esp):"")+"'></div></div>"+
     "<div class='fg2'><div class='field'><label>TELEFONE</label><input id='dTel' value='"+(ed?esc(ed.tel):"")+"'></div>"+
     "<div class='field'><label>INICIAIS</label><input id='dIni' value='"+(ed?esc(ed.ini):"")+"' maxlength='2'></div></div>"+
+    "<div class='field'><label>E-MAIL</label><input id='dEmail' type='email' value='"+(ed&&ed.em?esc(ed.em):"")+"' placeholder='dentista@email.com'></div>"+
     "<div class='fg2'><div class='field'><label>NIVEL</label><select id='dNv'>";
   ["Bronze","Prata","Ouro","Diamante"].forEach(function(n){
     b+="<option value='"+n+"'"+(ed&&ed.nv===n?" selected":"")+">"+n+"</option>";
@@ -9923,14 +9933,16 @@ function openDtM(eid){
       if(ed){
         ed.n=nm;ed.cro=document.getElementById("dCro").value;ed.esp=document.getElementById("dEsp").value;
         ed.tel=document.getElementById("dTel").value;ed.nv=document.getElementById("dNv").value;ed.ini=ini;
+        var emEl=document.getElementById("dEmail");if(emEl)ed.em=emEl.value.trim();
         var pvpfEl=document.getElementById("dPvpf");
         if(pvpfEl) ed.pvpf = pvpfEl.checked;
         var raarEl=document.getElementById("dRaar");
         if(raarEl) ed.raar = raarEl.checked;
       } else {
         var nid=dents.length?Math.max.apply(null,dents.map(function(x){return x.id;}))+1:1;
+        var emNovo=(document.getElementById("dEmail")?document.getElementById("dEmail").value.trim():"");
         dents.push({id:nid,n:nm,cro:document.getElementById("dCro").value,esp:document.getElementById("dEsp").value,
-          tel:document.getElementById("dTel").value,nv:document.getElementById("dNv").value,ini:ini,ind:0,pts:0,bg:bg,cor:"#fff"});
+          tel:document.getElementById("dTel").value,nv:document.getElementById("dNv").value,ini:ini,ind:0,pts:0,bg:bg,cor:"#fff",em:emNovo});
       }
       var isNew2=!ed;var dObj=ed||dents[dents.length-1];
       dbSaveDent(dObj,isNew2).then(function(){
