@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v12-escalada-20260706";
+  var _VERSAO = "whatsapp-web-v13-agendamento-20260707";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -72,7 +72,7 @@ var WHATSAPP = (function () {
     if (_carregando) return;
     _carregando = true;
     try {
-      var r = await supaFetch("/rest/v1/conversas?select=numero,historico,atualizado_em,modo_humano,humano_por,resolvida,resolvida_por,resolvida_em,escalada&order=atualizado_em.desc&limit=200");
+      var r = await supaFetch("/rest/v1/conversas?select=numero,historico,atualizado_em,modo_humano,humano_por,resolvida,resolvida_por,resolvida_em,escalada,agendamento_dados&order=atualizado_em.desc&limit=200");
       _convs = r.ok ? (await r.json()) : [];
     } catch (e) {
       console.error("WHATSAPP carregar:", e);
@@ -117,6 +117,25 @@ var WHATSAPP = (function () {
     } catch (e) {
       console.error("resolver:", e);
       if (typeof toast === "function") toast("⚠️", "Falha ao resolver");
+    }
+  }
+
+  // Abre o formulário "Novo Agendamento" no App COR já pré-preenchido com o
+  // que a CORA coletou. A recepção confere, completa (exame/dentista) e salva.
+  function criarAgendamento(numero) {
+    var n = numero || _sel;
+    if (!n) return;
+    var conv = null;
+    for (var i = 0; i < _convs.length; i++) if (_convs[i].numero === n) { conv = _convs[i]; break; }
+    var dados = conv && conv.agendamento_dados;
+    if (!dados) {
+      if (typeof toast === "function") toast("⚠️", "Sem dados de agendamento nesta conversa");
+      return;
+    }
+    if (typeof window.preencherAgDaCora === "function") {
+      window.preencherAgDaCora(dados);
+    } else {
+      if (typeof toast === "function") toast("⚠️", "Função de agendamento indisponível");
     }
   }
 
@@ -282,6 +301,11 @@ var WHATSAPP = (function () {
       h += "</div>";
       // botões do cabeçalho
       h += "<div style='display:flex;gap:6px'>";
+      // Se a CORA coletou dados de agendamento, oferece criar o agendamento
+      // pré-preenchido (a recepção confere e salva no App COR).
+      if (conv && conv.agendamento_dados) {
+        h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;font-weight:600' onclick='WHATSAPP.criarAgendamento()'>📅 Criar agendamento</button>";
+      }
       if (!jaResolvida) {
         h += "<button class='btn btng' style='padding:5px 12px;font-size:.8rem' onclick='WHATSAPP.resolver()'>✓ Resolver</button>";
       } else {
@@ -370,7 +394,8 @@ var WHATSAPP = (function () {
       var h = c.historico;
       var nmsg = Array.isArray(h) ? h.length : 0;
       partes.push([c.numero, c.atualizado_em, nmsg, c.modo_humano ? 1 : 0,
-                   c.humano_por || "", c.resolvida ? 1 : 0, c.escalada ? 1 : 0].join(":"));
+                   c.humano_por || "", c.resolvida ? 1 : 0, c.escalada ? 1 : 0,
+                   c.agendamento_dados ? 1 : 0].join(":"));
     }
     return partes.join("|") + "#aba=" + _aba + "#sel=" + (_sel || "");
   }
@@ -411,6 +436,7 @@ var WHATSAPP = (function () {
     refresh: _refresh,
     resolver: resolver,
     reabrir: reabrir,
+    criarAgendamento: criarAgendamento,
     assumirConversa: assumirConversa,
     devolverCora: devolverCora,
     enviarResposta: enviarResposta,

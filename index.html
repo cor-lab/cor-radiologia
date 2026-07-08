@@ -2829,7 +2829,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.19 - 2026-07-07";
+var APP_VERSION = "v3.20 - 2026-07-07";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -9055,6 +9055,65 @@ function limparFormNovoAg(modoAtendimento){
     toast("✓", modoAtendimento === true ? "Modo Atendimento ativado" : "Formulário limpo");
   }
 }
+// ══ PRÉ-PREENCHER AGENDAMENTO A PARTIR DOS DADOS DA CORA ══
+// Chamado pelo painel WhatsApp quando a recepção clica em "Criar agendamento".
+// Preenche direto os campos simples (nome/tel/email/nascimento) e joga
+// exame/dentista/convênio/data desejada nas Observações, pra recepção
+// completar os vínculos (exame, dentista) manualmente. Dados vêm do JSON
+// que a CORA gravou em conversas.agendamento_dados.
+function preencherAgDaCora(dados){
+  if(!dados || typeof dados !== "object"){
+    if(typeof toast==="function") toast("⚠️","Sem dados de agendamento");
+    return;
+  }
+  // 1. vai pra aba Agendar (isso renderiza o formulário)
+  navTo("agendar");
+  // 2. limpa o form pra começar do zero (modo agendamento, não atendimento)
+  //    e depois preenche. Damos um tempo pro DOM montar.
+  setTimeout(function(){
+    if(typeof limparFormNovoAg === "function") limparFormNovoAg(false);
+    setTimeout(function(){
+      function setV(id, v){
+        var el = document.getElementById(id);
+        if(el && v) el.value = v;
+      }
+      // campos diretos
+      setV("pNome", (dados.paciente_nome||"").toUpperCase());
+      // telefone: a CORA guarda o numero do whatsapp (ex 5555999436056)
+      var tel = (dados.telefone||"").replace(/\D/g,"");
+      if(tel){
+        // tira o 55 do pais se vier, pra mask brasileira
+        if(tel.length >= 12 && tel.indexOf("55")===0) tel = tel.slice(2);
+        var telEl = document.getElementById("pTel");
+        if(telEl){ telEl.value = tel; if(typeof maskPhone==="function") maskPhone(telEl); }
+      }
+      setV("pEmail", dados.email||"");
+      // data de nascimento: aceita AAAA-MM-DD ou DD/MM/AAAA
+      var dn = (dados.data_nascimento||"").trim();
+      if(dn){
+        var mBr = dn.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if(mBr) dn = mBr[3]+"-"+mBr[2]+"-"+mBr[1];
+        setV("pDataNasc", dn);
+      }
+      // Observação destacada com o que a recepção precisa completar
+      var obs = [];
+      obs.push("── AGENDAMENTO VIA CORA (WhatsApp) ──");
+      if(dados.data_horario) obs.push("Data/horário desejado: " + dados.data_horario);
+      if(dados.exame)        obs.push("Exame: " + dados.exame);
+      if(dados.convenio)     obs.push("Convênio: " + dados.convenio);
+      if(dados.indicacao)    obs.push("Indicação/Dentista: " + dados.indicacao);
+      obs.push("⚠️ Confira e complete: exame, dentista, convênio e data/hora.");
+      var pObs = document.getElementById("pObs");
+      if(pObs) pObs.value = obs.join("\n");
+      if(typeof toast==="function") toast("📅","Agendamento da CORA carregado — confira e salve");
+      // rola pro topo do form
+      var pn = document.getElementById("pNome");
+      if(pn) pn.scrollIntoView({behavior:"smooth", block:"center"});
+    }, 250);
+  }, 200);
+}
+window.preencherAgDaCora = preencherAgDaCora;
+
 function maskPhone(el){
   if(!el) return;
 
