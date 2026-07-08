@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v12 (selo escalação CORA) — 2026-07-05
+   VERSÃO: WHATSAPP-WEB v14 (bloqueio de atendente + agendamento) — 2026-07-08
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v13-agendamento-20260707";
+  var _VERSAO = "whatsapp-web-v14-bloqueio-atendente-20260708";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -172,6 +172,13 @@ var WHATSAPP = (function () {
 
   async function assumirConversa() {
     if (!_sel) return;
+    // Se outro atendente já assumiu, não deixa "roubar" (evita dois ao mesmo tempo).
+    var conv = null;
+    for (var i = 0; i < _convs.length; i++) if (_convs[i].numero === _sel) { conv = _convs[i]; break; }
+    if (conv && conv.modo_humano && conv.humano_por && conv.humano_por !== _quemSou()) {
+      if (typeof toast === "function") toast("🔒", esc(conv.humano_por) + " já está atendendo esta conversa");
+      return;
+    }
     try {
       var r = await _chamarBot("/modo_humano", { numero: _sel, ativar: true, atendente: _quemSou() });
       if (r && r.ok) {
@@ -339,14 +346,27 @@ var WHATSAPP = (function () {
         h += "<button class='btn btng' style='padding:6px 12px;font-size:.8rem' onclick='WHATSAPP.assumirConversa()'>🙋 Assumir conversa</button>";
         h += "</div>";
       } else {
-        h += "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px'>";
-        h += "<span style='font-size:.78rem;color:var(--ac,#4ab848)'>🙋 Você assumiu — CORA pausada</span>";
-        h += "<button class='btn' style='padding:5px 10px;font-size:.78rem' onclick='WHATSAPP.devolverCora()'>↩️ Devolver para a CORA</button>";
-        h += "</div>";
-        h += "<div style='display:flex;gap:8px;align-items:flex-end'>";
-        h += "<textarea id='waResp' rows='2' placeholder='Digite sua resposta ao paciente…' style='flex:1;padding:8px;border-radius:8px;border:1px solid #2a3550;background:#0f1626;color:#e6e6e6;font-size:.85rem;resize:vertical;font-family:inherit'></textarea>";
-        h += "<button class='btn btng' style='padding:8px 16px;font-size:.85rem' onclick='WHATSAPP.enviarResposta()'>Enviar ➤</button>";
-        h += "</div>";
+        // Alguém assumiu. Descobre se fui EU ou OUTRA pessoa.
+        var quemAssumiu = (conv && conv.humano_por) ? String(conv.humano_por) : "";
+        var euMesmo = quemAssumiu && (quemAssumiu === _quemSou());
+        if (euMesmo) {
+          // Fui eu: posso responder e devolver.
+          h += "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px'>";
+          h += "<span style='font-size:.78rem;color:var(--ac,#4ab848)'>🙋 Você assumiu — CORA pausada</span>";
+          h += "<button class='btn' style='padding:5px 10px;font-size:.78rem' onclick='WHATSAPP.devolverCora()'>↩️ Devolver para a CORA</button>";
+          h += "</div>";
+          h += "<div style='display:flex;gap:8px;align-items:flex-end'>";
+          h += "<textarea id='waResp' rows='2' placeholder='Digite sua resposta ao paciente…' style='flex:1;padding:8px;border-radius:8px;border:1px solid #2a3550;background:#0f1626;color:#e6e6e6;font-size:.85rem;resize:vertical;font-family:inherit'></textarea>";
+          h += "<button class='btn btng' style='padding:8px 16px;font-size:.85rem' onclick='WHATSAPP.enviarResposta()'>Enviar ➤</button>";
+          h += "</div>";
+        } else {
+          // OUTRA pessoa assumiu: bloqueia (não deixa dois atendentes ao mesmo
+          // tempo). Mostra quem está atendendo, sem campo de resposta.
+          h += "<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'>";
+          h += "<span style='font-size:.8rem;color:#e6a700;font-weight:600'>🔒 " + esc(quemAssumiu || "Outro atendente") + " está atendendo esta conversa</span>";
+          h += "</div>";
+          h += "<div style='font-size:.72rem;color:var(--gr);margin-top:4px'>Para responder, peça que " + esc(quemAssumiu || "o atendente") + " devolva a conversa à CORA.</div>";
+        }
       }
       h += "</div>";
     }
