@@ -2829,7 +2829,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.21 - 2026-07-08";
+var APP_VERSION = "v3.23 - 2026-07-08";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -9055,6 +9055,65 @@ function limparFormNovoAg(modoAtendimento){
     toast("✓", modoAtendimento === true ? "Modo Atendimento ativado" : "Formulário limpo");
   }
 }
+// ══ SIMILARIDADE (para casar exame/dentista que a CORA mandou em texto) ══
+// Normaliza: minúsculas, sem acento, sem pontuação.
+function _normSim(s){
+  return String(s||"")
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")  // tira acentos
+    .replace(/[^a-z0-9\s]/g," ")
+    .replace(/\s+/g," ").trim();
+}
+// Score entre dois textos: fração de palavras do ALVO (o texto curto da CORA)
+// que aparecem no CANDIDATO, com bônus se for substring direta. 0..1.
+function _scoreSim(alvo, cand){
+  var a = _normSim(alvo), c = _normSim(cand);
+  if(!a || !c) return 0;
+  if(a === c) return 1.0;                              // idêntico = match perfeito
+  if(c.indexOf(a) >= 0 || a.indexOf(c) >= 0) return 0.9;  // um contém o outro
+  var pa = a.split(" "), pc = c.split(" ");
+  var setC = {}; pc.forEach(function(w){ if(w.length>=3) setC[w]=1; });
+  var hit = 0, tot = 0;
+  pa.forEach(function(w){
+    if(w.length < 3) return;   // ignora palavras muito curtas (de, da, a)
+    tot++;
+    if(setC[w]) hit++;
+  });
+  if(tot === 0) return 0;
+  return (hit / tot) * 0.85;   // match parcial por palavras vale um pouco menos
+}
+// Acha o melhor candidato numa lista [{id, texto}]. Retorna {id, score, texto}
+// ou null. Exige score mínimo e uma folga sobre o 2º melhor (pra evitar
+// ambiguidade — se dois empatam, não arrisca).
+function _melhorMatch(alvo, lista, minScore){
+  minScore = minScore || 0.5;
+  var na = _normSim(alvo);
+  var ranked = lista.map(function(it){
+    var sc = _scoreSim(alvo, it.texto);
+    // desempate: quanto mais perto do tamanho do alvo, melhor (match exato).
+    var nt = _normSim(it.texto);
+    var difTam = Math.abs(nt.length - na.length);
+    return { id: it.id, texto: it.texto, score: sc, difTam: difTam };
+  }).sort(function(x,y){
+    if(y.score !== x.score) return y.score - x.score;  // score desc
+    return x.difTam - y.difTam;                          // depois, tamanho mais próximo
+  });
+  if(!ranked.length) return null;
+  var top = ranked[0];
+  if(top.score < minScore) return null;
+  // Match exato (1.0) sempre vence, mesmo que outros tenham substring.
+  if(top.score >= 1.0) return top;
+  // Ambiguidade: se vários candidatos empatam no topo (ex: vários "Lorenzoni"
+  // por substring), não arrisca — deixa a recepção escolher.
+  var empatados = ranked.filter(function(r){ return r.score === top.score; }).length;
+  if(empatados > 1) return null;
+  // Se o 2º está muito perto do 1º, também é ambíguo.
+  var seg = ranked[1];
+  var segScore = seg ? seg.score : 0;
+  if(top.score - segScore < 0.12 && segScore >= minScore) return null;
+  return top;
+}
+
 // ══ PRÉ-PREENCHER AGENDAMENTO A PARTIR DOS DADOS DA CORA ══
 // Chamado pelo painel WhatsApp quando a recepção clica em "Criar agendamento".
 // Preenche direto os campos simples (nome/tel/email/nascimento) e joga
@@ -9135,6 +9194,45 @@ function preencherAgDaCora(dados){
       obs.push("⚠️ Confira e complete: exame, dentista, convênio e data/hora.");
       var pObs = document.getElementById("pObs");
       if(pObs) pObs.value = obs.join("\n");
+
+      // ── EXAME ──
+      // 1º) Se a CORA já resolveu o ID exato (via lista numerada nos bastidores),
+      //     marca direto — match perfeito, sem adivinhar.
+      // 2º) Senão, tenta por similaridade de nome (fallback).
+      if(typeof exT !== "undefined" && Array.isArray(exT) && typeof toggleExame === "function"){
+        var exIdMarcar = null;
+        if(dados.exame_id){
+          // confere que o id existe na lista carregada
+          for(var ei=0; ei<exT.length; ei++){
+            if(String(exT[ei].id) === String(dados.exame_id)){ exIdMarcar = exT[ei].id; break; }
+          }
+        }
+        if(!exIdMarcar && dados.exame){
+          var listaEx = exT.map(function(e){ return { id: e.id, texto: e.n }; });
+          var mEx = _melhorMatch(dados.exame, listaEx, 0.5);
+          if(mEx) exIdMarcar = mEx.id;
+        }
+        if(exIdMarcar){
+          try {
+            toggleExame("pExames", exIdMarcar, "updAgSum");
+            if(typeof toast==="function") toast("🔎", dados.exame_id ? "Exame preenchido" : "Exame sugerido: confira");
+          } catch(e){}
+        }
+      }
+
+      // ── Tenta casar DENTISTA por similaridade e pré-selecionar ──
+      // dents = lista global [{id, n, cro}]. Só seleciona se o match for claro.
+      if(dados.indicacao && typeof dents !== "undefined" && Array.isArray(dents)){
+        var listaDt = dents.map(function(d){ return { id: d.id, texto: d.n }; });
+        var mDt = _melhorMatch(dados.indicacao, listaDt, 0.5);
+        var dSelEl = document.getElementById("dSel");
+        if(mDt && dSelEl){
+          dSelEl.value = String(mDt.id);
+          if(typeof mostrarEndDent === "function"){ try { mostrarEndDent(); } catch(e){} }
+          if(typeof toast==="function") toast("🔎","Dentista sugerido: confira se está certo");
+        }
+      }
+
       if(typeof toast==="function") toast("📅","Agendamento da CORA carregado — confira e salve");
       // rola pro topo do form
       var pn = document.getElementById("pNome");
