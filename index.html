@@ -2829,7 +2829,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.20 - 2026-07-07";
+var APP_VERSION = "v3.21 - 2026-07-08";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -9079,11 +9079,21 @@ function preencherAgDaCora(dados){
       }
       // campos diretos
       setV("pNome", (dados.paciente_nome||"").toUpperCase());
-      // telefone: a CORA guarda o numero do whatsapp (ex 5555999436056)
+      // telefone: a CORA guarda o numero do whatsapp (ex 5555999436056 =
+      // 55 país + 55 DDD + 999436056 número). Tira o 55 do país e deixa
+      // DDD+número pra mask brasileira. Se o número vier sem o 9º dígito
+      // (origem incompleta), preenche o que der — a recepção corrige.
       var tel = (dados.telefone||"").replace(/\D/g,"");
       if(tel){
-        // tira o 55 do pais se vier, pra mask brasileira
+        // remove o 55 do país só se o total indicar país+DDD (>=12 dígitos)
         if(tel.length >= 12 && tel.indexOf("55")===0) tel = tel.slice(2);
+        // Se sobrou DDD(2) + 8 dígitos = celular antigo sem o 9º dígito.
+        // Adiciona o 9 quando o 1º dígito do número indica celular (6-9).
+        if(tel.length === 10){
+          var ddd = tel.slice(0,2);
+          var resto = tel.slice(2);
+          if(/^[6-9]/.test(resto)) tel = ddd + "9" + resto;
+        }
         var telEl = document.getElementById("pTel");
         if(telEl){ telEl.value = tel; if(typeof maskPhone==="function") maskPhone(telEl); }
       }
@@ -9094,6 +9104,26 @@ function preencherAgDaCora(dados){
         var mBr = dn.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
         if(mBr) dn = mBr[3]+"-"+mBr[2]+"-"+mBr[1];
         setV("pDataNasc", dn);
+      }
+      // Data/horário do exame: a CORA costuma mandar "AAAA-MM-DD às HH:MM".
+      // Tenta extrair a data (AAAA-MM-DD) e a hora (HH:MM) e preencher direto.
+      var dh = (dados.data_horario||"").trim();
+      if(dh){
+        var mData = dh.match(/(\d{4})-(\d{2})-(\d{2})/);      // AAAA-MM-DD
+        if(!mData){                                            // ou DD/MM/AAAA
+          var mBr2 = dh.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+          if(mBr2) mData = [mBr2[0], mBr2[3], mBr2[2], mBr2[1]];
+        }
+        if(mData){
+          var iso = mData[1] + "-" + mData[2] + "-" + mData[3];
+          setV("pData", iso);
+        }
+        var mHora = dh.match(/(\d{1,2})[:hH](\d{2})/);         // 17:30 / 17h30
+        if(mHora){
+          var hh = ("0"+mHora[1]).slice(-2);
+          var mm = mHora[2];
+          setV("pHora", hh + ":" + mm);
+        }
       }
       // Observação destacada com o que a recepção precisa completar
       var obs = [];
