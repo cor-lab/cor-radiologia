@@ -2861,7 +2861,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.25 - 2026-07-08";
+var APP_VERSION = "v3.26 - 2026-07-09";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -7093,8 +7093,15 @@ function renderAtendimento() {
   });
 
   // Filtrar por status
-  var filtered = dayAgs;
-  if (atFilter !== "todos") {
+  // "todos" agora ESCONDE os cancelados (deixa a agenda limpa). Para ver os
+  // cancelados, a recepção clica no filtro "Cancelados". Os demais filtros
+  // (agendado/aguardando/realizado/cancelado) mostram exatamente aquele status.
+  var filtered;
+  if (atFilter === "todos") {
+    filtered = dayAgs.filter(function(a) {
+      return (a.status_clinico || a.st) !== "cancelado";
+    });
+  } else {
     filtered = dayAgs.filter(function(a) {
       return (a.status_clinico || a.st) === atFilter;
     });
@@ -7146,9 +7153,10 @@ function renderAtendimento() {
   h += "</div>";
   h += "<div class='at-day-sub'>Pendentes: " + (cAg + cAw) + " | Realizados: " + cRe + " | Cancelados: " + cCa + "</div>";
 
-  // Filtros
+  // Filtros — "Todos" conta sem os cancelados (que ficam escondidos por padrão)
+  var totalSemCancel = dayAgs.length - cCa;
   h += "<div class='at-flt'>";
-  [{v:"todos",l:"Todos (" + dayAgs.length + ")"},{v:"agendado",l:"Agendados (" + cAg + ")"},{v:"aguardando",l:"Aguardando (" + cAw + ")"},{v:"realizado",l:"Realizados (" + cRe + ")"},{v:"cancelado",l:"Cancelados (" + cCa + ")"}].forEach(function(f) {
+  [{v:"todos",l:"Todos (" + totalSemCancel + ")"},{v:"agendado",l:"Agendados (" + cAg + ")"},{v:"aguardando",l:"Aguardando (" + cAw + ")"},{v:"realizado",l:"Realizados (" + cRe + ")"},{v:"cancelado",l:"Cancelados (" + cCa + ")"}].forEach(function(f) {
     h += "<div class='at-flt-btn" + (atFilter === f.v ? " active" : "") + "' onclick=\"setAtFilter('" + f.v + "')\">" + f.l + "</div>";
   });
   if (CU.role === "admin" || CU.role === "agenda") {
@@ -7789,6 +7797,8 @@ function rndAg() {
       h+="<div class=\"ag-cl"+hfcls+"\" style=\"height:"+AGSZ+"px\" onclick=\"agCC('"+cd+"','"+ct+"')\" ></div>";
     }
     var dayAgs=ags.filter(function(a){
+      // esconde cancelados da grade visual (mesma regra da lista)
+      if((a.status_clinico || a.st)==="cancelado") return false;
       var dp=a.dt.split("/");
       return new Date(parseInt(dp[2]),parseInt(dp[1])-1,parseInt(dp[0])).toDateString()===day.toDateString();
     });
