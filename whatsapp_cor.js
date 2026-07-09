@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v15 (imagens do paciente) — 2026-07-08
+   VERSÃO: WHATSAPP-WEB v16 (anti-jump do scroll no refresh) — 2026-07-09
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v15-imagens-20260708";
+  var _VERSAO = "whatsapp-web-v16-antijump-20260709";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -440,14 +440,26 @@ var WHATSAPP = (function () {
 
     var _scAntigo = document.getElementById("waChatScroll");
     var _pertoDoFim = true;
-    if (_scAntigo) _pertoDoFim = (_scAntigo.scrollHeight - _scAntigo.scrollTop - _scAntigo.clientHeight) < 60;
+    var _scrollAntigo = 0;
+    if (_scAntigo) {
+      _pertoDoFim = (_scAntigo.scrollHeight - _scAntigo.scrollTop - _scAntigo.clientHeight) < 60;
+      _scrollAntigo = _scAntigo.scrollTop;  // guarda a posição exata pra restaurar
+    }
 
     el.innerHTML = h;
 
     var _taNovo = document.getElementById("waResp");
     if (_taNovo && _rascunho) _taNovo.value = _rascunho;
     var _sc = document.getElementById("waChatScroll");
-    if (_sc && _pertoDoFim) _sc.scrollTop = _sc.scrollHeight;
+    if (_sc) {
+      if (_pertoDoFim) {
+        // estava lendo o fim da conversa: cola no fim (mensagem nova aparece)
+        _sc.scrollTop = _sc.scrollHeight;
+      } else {
+        // estava lendo no meio: RESTAURA a posição exata (evita o salto pro topo)
+        _sc.scrollTop = _scrollAntigo;
+      }
+    }
 
     // mantém a assinatura em dia (evita re-render desnecessário no próximo tick)
     try { _ultimaAssinatura = _assinatura(); } catch (e) {}
