@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v14 (bloqueio de atendente + agendamento) — 2026-07-08
+   VERSÃO: WHATSAPP-WEB v15 (imagens do paciente) — 2026-07-08
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v14-bloqueio-atendente-20260708";
+  var _VERSAO = "whatsapp-web-v15-imagens-20260708";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -57,6 +57,10 @@ var WHATSAPP = (function () {
   function ultimaMsg(hist) {
     if (!Array.isArray(hist) || !hist.length) return "";
     var m = hist[hist.length - 1];
+    if (m && m.midia && m.midia.tipo === "image") {
+      var c = (m.content && m.content !== "[imagem]") ? " " + m.content : "";
+      return "📷 Imagem" + c;
+    }
     var t = (m && m.content) ? String(m.content) : "";
     return t.length > 42 ? t.substring(0, 42) + "…" : t;
   }
@@ -65,6 +69,47 @@ var WHATSAPP = (function () {
       if (typeof CU !== "undefined" && CU) return CU.nome || CU.email || CU.login || "recepção";
     } catch (e) {}
     return "recepção";
+  }
+
+  // ── Mídia (imagens do paciente, bucket privado wa-midias) ──
+  // Gera uma URL assinada temporária e injeta na <img>. Bucket é privado,
+  // então precisa de token — só a recepção logada consegue.
+  var _WA_MIDIA_BUCKET = "wa-midias";
+  var _midiaCache = {};  // path -> signedUrl (evita regerar toda hora)
+
+  async function _urlAssinada(path) {
+    if (_midiaCache[path]) return _midiaCache[path];
+    try {
+      var r = await supaFetch("/storage/v1/object/sign/" + _WA_MIDIA_BUCKET + "/" + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expiresIn: 3600 })  // 1h
+      });
+      if (!r || !r.ok) return null;
+      var j = await r.json();
+      // resposta traz signedURL relativo a /storage/v1
+      var signed = j.signedURL || j.signedUrl;
+      if (!signed) return null;
+      var full = (typeof SUPA_URL !== "undefined" ? SUPA_URL : "") + "/storage/v1" + signed;
+      _midiaCache[path] = full;
+      return full;
+    } catch (e) {
+      console.error("url assinada:", e);
+      return null;
+    }
+  }
+
+  async function _carregarMidia(path, imgId) {
+    var url = await _urlAssinada(path);
+    if (!url) return;
+    var el = document.getElementById(imgId);
+    if (el) el.src = url;
+  }
+
+  async function abrirMidia(path) {
+    var url = await _urlAssinada(path);
+    if (url) window.open(url, "_blank");
+    else if (typeof toast === "function") toast("⚠️", "Não consegui abrir a imagem");
   }
 
   // ── carregamento ──
@@ -329,7 +374,18 @@ var WHATSAPP = (function () {
       } else {
         hist.forEach(function (m) {
           var isBot = m.role === "assistant";
-          if (isBot) {
+          // Mensagem com IMAGEM (paciente enviou foto pela CORA)
+          if (m.midia && m.midia.tipo === "image" && m.midia.path) {
+            var cap = (m.content && m.content !== "[imagem]") ? m.content : "";
+            var imgId = "waimg_" + Math.random().toString(36).slice(2, 9);
+            h += "<div style='align-self:flex-start;max-width:72%;background:#f0f0f0;color:#222;padding:6px;border-radius:12px;border:0.5px solid #ddd'>";
+            h += "<img id='" + imgId + "' alt='imagem do paciente' style='max-width:240px;max-height:280px;border-radius:8px;display:block;cursor:pointer;background:#e5e5e5;min-height:80px' onclick='WHATSAPP.abrirMidia(\"" + esc(m.midia.path) + "\")'/>";
+            if (cap) h += "<div style='font-size:.8rem;margin-top:4px;padding:0 4px'>" + esc(cap) + "</div>";
+            h += "<div style='font-size:.72rem;color:#0a7;margin-top:3px;padding:0 4px;cursor:pointer' onclick='WHATSAPP.abrirMidia(\"" + esc(m.midia.path) + "\")'>📎 abrir / baixar</div>";
+            h += "</div>";
+            // carrega a imagem via URL assinada (bucket privado)
+            _carregarMidia(m.midia.path, imgId);
+          } else if (isBot) {
             h += "<div style='align-self:flex-end;max-width:72%;background:#d8f5e3;color:#0f6e56;padding:8px 12px;border-radius:12px;font-size:.85rem;white-space:pre-wrap'>" + esc(m.content) + "</div>";
           } else {
             h += "<div style='align-self:flex-start;max-width:72%;background:#f0f0f0;color:#222;padding:8px 12px;border-radius:12px;font-size:.85rem;white-space:pre-wrap;border:0.5px solid #ddd'>" + esc(m.content) + "</div>";
@@ -457,6 +513,7 @@ var WHATSAPP = (function () {
     resolver: resolver,
     reabrir: reabrir,
     criarAgendamento: criarAgendamento,
+    abrirMidia: abrirMidia,
     assumirConversa: assumirConversa,
     devolverCora: devolverCora,
     enviarResposta: enviarResposta,
