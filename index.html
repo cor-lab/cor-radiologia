@@ -2861,7 +2861,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.26 - 2026-07-09";
+var APP_VERSION = "v3.27 - 2026-07-10";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5987,6 +5987,7 @@ async function dbResgatar(dentId,premId,pts){
   <button data-p="config">Config</button>
   <button data-p="reportes">🚩 Reportes<span id="rpNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
   <button data-p="whatsapp">💬 WhatsApp<span id="waNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
+  <button data-p="aprendizado">🎓 Aprendizado CORA<span id="aprNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
 </nav>
 <div class="hr">
   <div class="upill">
@@ -6203,12 +6204,13 @@ async function dbResgatar(dentId,premId,pts){
 <div class="page" id="page-config"><div class="pi pg-scroll" id="pgCf"></div></div>
 <div class="page" id="page-reportes"><div class="pi pg-scroll" id="pgRp"></div></div>
 <div class="page" id="page-whatsapp"><div class="pi pg-scroll" id="pgWa"></div></div>
+<div class="page" id="page-aprendizado"><div class="pi pg-scroll" id="pgApr"></div></div>
 <script>
 // ══ AUTH & USERS ══
 var USERS = [];
 // Dados reais vêm do Supabase via loadAllData()
 var PERMS = {
-  admin:    {dashboard:1,atendimento:1,historico:1,agendar:1,exames:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1,reportes:1,whatsapp:1},
+  admin:    {dashboard:1,atendimento:1,historico:1,agendar:1,exames:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1,reportes:1,whatsapp:1,aprendizado:1},
   agenda:   {dashboard:1,atendimento:1,historico:1,agendar:1,exames:1,convenios:0,cashback:0,dentistas:0,usuarios:0,config:0,reportes:0,whatsapp:1},
   cashback: {dashboard:1,atendimento:0,historico:0,agendar:0,exames:0,convenios:0,cashback:1,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:0},
   dentista: {dashboard:0,atendimento:0,historico:0,agendar:0,exames:0,convenios:0,cashback:1,dentistas:0,usuarios:0,config:0,reportes:0,whatsapp:0}
@@ -6418,7 +6420,8 @@ function navTo(page) {
   var map = {
     dashboard: rdash, atendimento: ratendimento, historico: rhistorico, agendar: ragendar, exames: rexames,
     convenios: rconv, cashback: rcash, dentistas: rdent,
-    usuarios: rusrs, config: rcfg, reportes: window.rReportes, whatsapp: window.rWhatsApp
+    usuarios: rusrs, config: rcfg, reportes: window.rReportes, whatsapp: window.rWhatsApp,
+    aprendizado: rAprendizado
   };
   if (map[page]) map[page]();
 }
@@ -11206,6 +11209,183 @@ function dentAuthCopiarSenha(logon, senha){
 function delDt(id){var d=fdent(id);openM("Remover","<p style='color:var(--gr)'>Remover <strong>"+esc(d?d.n:"")+"</strong>?</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Remover",cls:"btnr",fn:function(){dents=dents.filter(function(x){return x.id!==id;});dbDelDent(id);closeM();rdent();toast("🗑️","Removido");}}]);}
 
 // ══ USUARIOS ══
+// ══ APRENDIZADO CORA (admin-only) ══
+// Lista os casos onde a CORA escalou (não soube resolver) para o admin revisar
+// e marcar quais viram regra. NÃO altera o comportamento da CORA — só organiza.
+// Os motivos operacionais rotineiros (agendamento/remarcação/cancelamento) são
+// filtrados fora, pois não são "a CORA não soube", e sim fluxo normal.
+var APR_MOTIVOS_ROTINA = [
+  "pedido de agendamento", "remarcação de atendimento", "remarcacao de atendimento",
+  "cancelamento de agendamento", "desmarcação", "desmarcacao"
+];
+function _aprEhRotina(motivo){
+  if(!motivo) return true; // sem motivo = não é caso de aprendizado
+  var m = motivo.toLowerCase();
+  for(var i=0;i<APR_MOTIVOS_ROTINA.length;i++){
+    if(m.indexOf(APR_MOTIVOS_ROTINA[i])!==-1) return true;
+  }
+  return false;
+}
+var _aprCasos = [];       // casos carregados (para o clique dos botões)
+async function rAprendizado(){
+  var el = document.getElementById("pgApr");
+  if(!canAcc("aprendizado")){ deny(el); return; }
+  el.innerHTML = "<div style='padding:40px;text-align:center;color:var(--gr)'>Carregando casos…</div>";
+
+  try {
+    // 1) conversas com motivo de escalação (candidatas a aprendizado)
+    var rC = await supaFetch("/rest/v1/conversas?select=numero,escalada_motivo,resolvida_por,escalada_em,atualizado_em,historico&escalada_motivo=not.is.null&order=atualizado_em.desc");
+    var convs = rC.ok ? await rC.json() : [];
+    // 2) status já marcados
+    var rS = await supaFetch("/rest/v1/cora_aprendizado_status?select=numero,status,nota,revisado_por,revisado_em");
+    var status = rS.ok ? await rS.json() : [];
+    var mapaStatus = {};
+    status.forEach(function(s){ mapaStatus[s.numero] = s; });
+
+    // filtra fora os rotineiros e monta os casos
+    _aprCasos = convs.filter(function(c){ return !_aprEhRotina(c.escalada_motivo); })
+      .map(function(c){
+        var st = mapaStatus[c.numero] || {status:"pendente"};
+        return {
+          numero: c.numero, motivo: c.escalada_motivo, resolvida_por: c.resolvida_por,
+          quando: c.escalada_em || c.atualizado_em, status: st.status || "pendente",
+          nota: st.nota || "", revisado_por: st.revisado_por || ""
+        };
+      });
+
+    _aprRender();
+  } catch(e){
+    console.error("rAprendizado:", e);
+    el.innerHTML = "<div style='padding:40px;text-align:center;color:#e66'>Erro ao carregar. Tente novamente.</div>";
+  }
+}
+
+function _aprFmtData(iso){
+  if(!iso) return "";
+  try {
+    var d = new Date(iso);
+    if(isNaN(d.getTime())) return "";
+    var pad = function(n){ return String(n).padStart(2,"0"); };
+    return pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+" "+pad(d.getHours())+":"+pad(d.getMinutes());
+  } catch(e){ return ""; }
+}
+
+function _aprFmtNum(n){
+  // formata número BR: 555599741592 -> (55) 9974-1592 (melhor esforço)
+  var s = String(n||"").replace(/\D/g,"");
+  if(s.indexOf("55")===0) s = s.slice(2); // tira DDI
+  if(s.length>=10){
+    var ddd = s.slice(0,2), resto = s.slice(2);
+    if(resto.length===9) return "("+ddd+") "+resto.slice(0,5)+"-"+resto.slice(5);
+    if(resto.length===8) return "("+ddd+") "+resto.slice(0,4)+"-"+resto.slice(4);
+  }
+  return n;
+}
+
+function _aprRender(){
+  var el = document.getElementById("pgApr");
+  var pend = _aprCasos.filter(function(c){ return c.status==="pendente"; });
+  var regra = _aprCasos.filter(function(c){ return c.status==="vira_regra"; });
+  var ign = _aprCasos.filter(function(c){ return c.status==="ignorado"; });
+
+  var h = "";
+  h += "<div style='margin-bottom:18px'>";
+  h += "<h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>🎓 Aprendizado CORA</h2>";
+  h += "<p style='color:var(--gr);font-size:.82rem;margin-top:3px'>Casos onde a CORA precisou de ajuda humana. Revise e marque quais viram regra — isso ajuda a melhorar a CORA (a aplicação da regra é feita manualmente).</p>";
+  h += "</div>";
+
+  // resumo
+  h += "<div style='display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap'>";
+  h += _aprCard("Pendentes", pend.length, "#e6a700");
+  h += _aprCard("Viraram regra", regra.length, "#4ab848");
+  h += _aprCard("Ignorados", ign.length, "var(--gr)");
+  h += "</div>";
+
+  if(!_aprCasos.length){
+    h += "<div style='padding:40px;text-align:center;color:var(--gr)'>Nenhum caso de aprendizado no momento. 😊</div>";
+    el.innerHTML = h;
+    return;
+  }
+
+  // lista: pendentes primeiro, depois o resto
+  var ordenados = pend.concat(regra, ign);
+  h += "<div style='display:flex;flex-direction:column;gap:10px'>";
+  ordenados.forEach(function(c){
+    var cor = c.status==="vira_regra" ? "#4ab848" : c.status==="ignorado" ? "var(--gr)" : "#e6a700";
+    var selo = c.status==="vira_regra" ? "✅ Vira regra" : c.status==="ignorado" ? "🚫 Ignorado" : "⏳ Pendente";
+    h += "<div style='border:0.5px solid #2a3550;border-left:3px solid "+cor+";border-radius:10px;padding:14px'>";
+    h += "<div style='display:flex;justify-content:space-between;align-items:start;gap:12px'>";
+    h += "<div style='flex:1;min-width:0'>";
+    h += "<div style='font-size:.72rem;color:"+cor+";font-weight:600;margin-bottom:4px'>"+selo+"</div>";
+    h += "<div style='font-size:.9rem;margin-bottom:6px'>"+esc(c.motivo)+"</div>";
+    h += "<div style='font-size:.75rem;color:var(--gr)'>📱 "+esc(_aprFmtNum(c.numero))+
+         (c.resolvida_por ? "  ·  resolvido por "+esc(c.resolvida_por) : "")+
+         (c.quando ? "  ·  "+esc(_aprFmtData(c.quando)) : "")+"</div>";
+    if(c.nota) h += "<div style='font-size:.75rem;color:var(--gr);margin-top:5px;font-style:italic'>📝 "+esc(c.nota)+"</div>";
+    h += "</div>";
+    // ações
+    h += "<div style='display:flex;flex-direction:column;gap:6px;flex-shrink:0'>";
+    h += "<button class='btn' onclick=\"_aprAbrirConversa('"+esc(c.numero)+"')\" style='padding:5px 10px;font-size:.72rem'>💬 Ver conversa</button>";
+    if(c.status!=="vira_regra")
+      h += "<button class='btn btng' onclick=\"_aprMarcar('"+esc(c.numero)+"','vira_regra')\" style='padding:5px 10px;font-size:.72rem'>✅ Vira regra</button>";
+    if(c.status!=="ignorado")
+      h += "<button class='btn' onclick=\"_aprMarcar('"+esc(c.numero)+"','ignorado')\" style='padding:5px 10px;font-size:.72rem'>🚫 Ignorar</button>";
+    if(c.status!=="pendente")
+      h += "<button class='btn' onclick=\"_aprMarcar('"+esc(c.numero)+"','pendente')\" style='padding:5px 10px;font-size:.72rem;color:var(--gr)'>↩ Reabrir</button>";
+    h += "</div>";
+    h += "</div>";
+    h += "</div>";
+  });
+  h += "</div>";
+
+  el.innerHTML = h;
+}
+
+function _aprCard(titulo, n, cor){
+  var h = "<div style='flex:1;min-width:120px;border:0.5px solid #2a3550;border-radius:10px;padding:12px 14px'>";
+  h += "<div style='font-size:1.6rem;font-weight:700;color:"+cor+"'>"+n+"</div>";
+  h += "<div style='font-size:.76rem;color:var(--gr)'>"+titulo+"</div>";
+  h += "</div>";
+  return h;
+}
+
+function _aprAbrirConversa(numero){
+  // leva para o painel do WhatsApp e abre a conversa
+  if(typeof navTo==="function") navTo("whatsapp");
+  if(window.WHATSAPP && WHATSAPP.abrir){
+    setTimeout(function(){ try{ WHATSAPP.abrir(numero); }catch(e){} }, 400);
+  }
+}
+
+async function _aprMarcar(numero, novoStatus){
+  try {
+    var quem = (CU && CU.nome) ? CU.nome : "admin";
+    var payload = {
+      numero: numero, status: novoStatus,
+      revisado_por: quem, revisado_em: new Date().toISOString()
+    };
+    // upsert (merge-duplicates) — cria ou atualiza a linha do caso
+    var r = await supaFetch("/rest/v1/cora_aprendizado_status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify(payload)
+    });
+    if(!r.ok){ throw new Error("status "+r.status); }
+    // atualiza local e re-renderiza
+    for(var i=0;i<_aprCasos.length;i++){
+      if(_aprCasos[i].numero===numero){ _aprCasos[i].status=novoStatus; _aprCasos[i].revisado_por=quem; break; }
+    }
+    _aprRender();
+    if(typeof toast==="function"){
+      var msg = novoStatus==="vira_regra" ? "Marcado: vira regra ✅" : novoStatus==="ignorado" ? "Marcado como ignorado" : "Reaberto";
+      toast("🎓", msg);
+    }
+  } catch(e){
+    console.error("_aprMarcar:", e);
+    if(typeof toast==="function") toast("⚠️", "Erro ao salvar. Tente de novo.");
+  }
+}
+
 function rusrs(){
   if(!canAcc("usuarios")){
     deny(document.getElementById("pgUs"));
