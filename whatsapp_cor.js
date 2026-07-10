@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v16 (anti-jump do scroll no refresh) — 2026-07-09
+   VERSÃO: WHATSAPP-WEB v17 (busca de conversas) — 2026-07-10
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,11 +20,12 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v16-antijump-20260709";
+  var _VERSAO = "whatsapp-web-v17-busca-20260710";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
   var _aba = "pendentes";       // pendentes | resolvidas
+  var _busca = "";              // texto do campo de pesquisa (filtra por número/nome)
   var _limparCampo = false;     // após enviar, não restaurar rascunho
   var _BOT_URL = "https://wa.corsm.com.br";
 
@@ -127,10 +128,27 @@ var WHATSAPP = (function () {
     }
   }
 
-  // conversas filtradas pela aba atual
+  // conversas filtradas pela aba atual + pelo texto de busca
   function _filtradas() {
-    if (_aba === "resolvidas") return _convs.filter(function (c) { return c.resolvida; });
-    return _convs.filter(function (c) { return !c.resolvida; });
+    var base = (_aba === "resolvidas")
+      ? _convs.filter(function (c) { return c.resolvida; })
+      : _convs.filter(function (c) { return !c.resolvida; });
+
+    var q = (_busca || "").trim().toLowerCase();
+    if (!q) return base;
+
+    // normaliza: remove tudo que não é dígito, para casar número digitado
+    var qDigitos = q.replace(/\D/g, "");
+    return base.filter(function (c) {
+      var num = String(c.numero || "");
+      var numFmt = String(fmtNumero(c.numero) || "").toLowerCase();
+      var nome = String(c.nome_contato || c.nome || "").toLowerCase();
+      // casa por: número cru, número formatado, ou nome (se houver)
+      var okNum = qDigitos && num.replace(/\D/g, "").indexOf(qDigitos) !== -1;
+      var okFmt = numFmt.indexOf(q) !== -1;
+      var okNome = nome && nome.indexOf(q) !== -1;
+      return okNum || okFmt || okNome;
+    });
   }
   function _contar(resolvida) {
     var n = 0;
@@ -271,7 +289,20 @@ var WHATSAPP = (function () {
   }
 
   function abrir(numero) { _sel = numero; render(); }
-  function setAba(a) { _aba = a; _sel = null; render(); }
+  function setAba(a) { _aba = a; _sel = null; _busca = ""; render(); }
+
+  function setBusca(v) {
+    _busca = v || "";
+    render();
+    // o render redesenha tudo (innerHTML) e o campo perde o foco; restaura o
+    // foco e coloca o cursor no fim, para a pessoa seguir digitando sem parar.
+    var inp = document.getElementById("waBusca");
+    if (inp) {
+      inp.focus();
+      var n = inp.value.length;
+      try { inp.setSelectionRange(n, n); } catch (e) {}
+    }
+  }
 
   async function _refresh() { await carregar(); render(); }
 
@@ -299,11 +330,26 @@ var WHATSAPP = (function () {
          (_aba === "pendentes" ? "background:var(--ac,#4ab848);color:#fff" : "background:transparent;color:var(--gr)") + "'>Pendentes (" + nPend + ")</button>";
     h += "<button onclick=\"WHATSAPP.setAba('resolvidas')\" class='btn' style='padding:5px 12px;font-size:.78rem;" +
          (_aba === "resolvidas" ? "background:var(--ac,#4ab848);color:#fff" : "background:transparent;color:var(--gr)") + "'>Resolvidas (" + nResolv + ")</button>";
-    h += "</div></div>";
-    // itens
+    h += "</div>";  // fim abas
+    // campo de pesquisa
+    h += "<div style='margin-top:10px;position:relative'>";
+    h += "<input id='waBusca' type='text' placeholder='🔍 Buscar por número ou nome…' value='" + esc(_busca) + "' " +
+         "oninput='WHATSAPP.setBusca(this.value)' autocomplete='off' " +
+         "style='width:100%;box-sizing:border-box;padding:7px 10px;font-size:.8rem;border:0.5px solid #2a3550;" +
+         "border-radius:8px;background:var(--bg2,#0f1626);color:inherit;outline:none'>";
+    if (_busca) {
+      h += "<button onclick='WHATSAPP.setBusca(\"\")' title='Limpar' " +
+           "style='position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;" +
+           "border:0;color:var(--gr);cursor:pointer;font-size:.9rem;padding:2px 6px'>✕</button>";
+    }
+    h += "</div>";
+    h += "</div>";  // fim cabeçalho
     h += "<div style='overflow-y:auto;flex:1'>";
     if (!lista.length) {
-      h += "<div style='padding:24px 14px;text-align:center;color:var(--gr);font-size:.82rem'>Nenhuma conversa " + (_aba === "resolvidas" ? "resolvida" : "pendente") + ".</div>";
+      var vazio = _busca
+        ? "Nenhuma conversa encontrada para \"" + esc(_busca) + "\"."
+        : "Nenhuma conversa " + (_aba === "resolvidas" ? "resolvida" : "pendente") + ".";
+      h += "<div style='padding:24px 14px;text-align:center;color:var(--gr);font-size:.82rem'>" + vazio + "</div>";
     } else {
       lista.forEach(function (c) {
         var ativo = c.numero === _sel;
@@ -494,8 +540,11 @@ var WHATSAPP = (function () {
     if (!_pgVisivel()) return;
     var ta = document.getElementById("waResp");
     var digitando = ta && document.activeElement === ta && ta.value.trim().length > 0;
+    // também não interrompe quem está digitando no campo de busca
+    var bu = document.getElementById("waBusca");
+    var buscando = bu && document.activeElement === bu;
     await carregar();
-    if (digitando) return;              // não mexe no DOM enquanto digita
+    if (digitando || buscando) return;  // não mexe no DOM enquanto digita/busca
     var assinatura = _assinatura();
     if (assinatura === _ultimaAssinatura) return;  // nada mudou -> não re-renderiza (não pula)
     _ultimaAssinatura = assinatura;
@@ -521,6 +570,7 @@ var WHATSAPP = (function () {
     rWhatsApp: rWhatsApp,
     abrir: abrir,
     setAba: setAba,
+    setBusca: setBusca,
     refresh: _refresh,
     resolver: resolver,
     reabrir: reabrir,
