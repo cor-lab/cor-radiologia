@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v17 (busca de conversas) — 2026-07-10
+   VERSÃO: WHATSAPP-WEB v18 (busca ampla: nome/mensagem) — 2026-07-10
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v17-busca-20260710";
+  var _VERSAO = "whatsapp-web-v18-busca-ampla-20260710";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -128,6 +128,25 @@ var WHATSAPP = (function () {
     }
   }
 
+  // texto buscável de uma conversa: nome do agendamento + conteúdo das mensagens.
+  // usado para a busca por nome/palavra encontrar em qualquer lugar da conversa.
+  function _textoBuscavel(c) {
+    var partes = [];
+    // nome do paciente, se a CORA coletou num agendamento
+    if (c.agendamento_dados && c.agendamento_dados.paciente_nome) {
+      partes.push(String(c.agendamento_dados.paciente_nome));
+    }
+    // conteúdo das mensagens (texto que o paciente/CORA trocaram)
+    var h = c.historico;
+    if (Array.isArray(h)) {
+      for (var i = 0; i < h.length; i++) {
+        var ct = h[i] && h[i].content;
+        if (typeof ct === "string") partes.push(ct);
+      }
+    }
+    return partes.join(" ").toLowerCase();
+  }
+
   // conversas filtradas pela aba atual + pelo texto de busca
   function _filtradas() {
     var base = (_aba === "resolvidas")
@@ -142,12 +161,12 @@ var WHATSAPP = (function () {
     return base.filter(function (c) {
       var num = String(c.numero || "");
       var numFmt = String(fmtNumero(c.numero) || "").toLowerCase();
-      var nome = String(c.nome_contato || c.nome || "").toLowerCase();
-      // casa por: número cru, número formatado, ou nome (se houver)
+      // casa por número (cru ou formatado)
       var okNum = qDigitos && num.replace(/\D/g, "").indexOf(qDigitos) !== -1;
       var okFmt = numFmt.indexOf(q) !== -1;
-      var okNome = nome && nome.indexOf(q) !== -1;
-      return okNum || okFmt || okNome;
+      // casa por nome/palavra dentro da conversa (agendamento + mensagens)
+      var okTexto = _textoBuscavel(c).indexOf(q) !== -1;
+      return okNum || okFmt || okTexto;
     });
   }
   function _contar(resolvida) {
@@ -333,7 +352,7 @@ var WHATSAPP = (function () {
     h += "</div>";  // fim abas
     // campo de pesquisa
     h += "<div style='margin-top:10px;position:relative'>";
-    h += "<input id='waBusca' type='text' placeholder='🔍 Buscar por número ou nome…' value='" + esc(_busca) + "' " +
+    h += "<input id='waBusca' type='text' placeholder='🔍 Buscar por número, nome ou mensagem…' value='" + esc(_busca) + "' " +
          "oninput='WHATSAPP.setBusca(this.value)' autocomplete='off' " +
          "style='width:100%;box-sizing:border-box;padding:7px 10px;font-size:.8rem;border:0.5px solid #2a3550;" +
          "border-radius:8px;background:var(--bg2,#0f1626);color:inherit;outline:none'>";
