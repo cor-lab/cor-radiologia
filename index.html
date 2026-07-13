@@ -2861,7 +2861,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.27 - 2026-07-10";
+var APP_VERSION = "v3.29 - 2026-07-11";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5087,7 +5087,14 @@ async function loadAllData(){
           // 'dentista_123.png'). "" se nao tem logo. Usado pra
           // imprimir na requisicao (Etapa 3) e mostrar preview no
           // modal de edicao.
-          logo: d.logo_path || ""
+          logo: d.logo_path || "",
+          // ⚡ v3.28 (11/07/2026) — Observações livres sobre o dentista.
+          // Anotações internas da equipe (preferências, avisos). Nunca vão
+          // para o dentista/paciente: é só uso interno da COR.
+          obs: d.observacoes || "",
+          // ⚡ v3.29 (11/07/2026) — se true, a observação acima aparece no
+          // modal de AGENDAMENTO (aviso para a recepção na hora de agendar).
+          obsAg: d.obs_mostrar_agendamento === true
         };
       });
 
@@ -5267,6 +5274,8 @@ async function dbDelCv(id){
 async function dbSaveDent(d,isNew){
   var data={nome:d.n,cro:d.cro,especialidade:d.esp,telefone:d.tel,
     email:(d.em||"").trim()||null,
+    observacoes:(d.obs||"").trim()||null,
+    obs_mostrar_agendamento: d.obsAg === true,
     nivel:d.nv,pontos:d.pts,indicacoes:d.ind,ini:d.ini,bg:d.bg,cor:d.cor,ativo:true,
     pode_ver_pontos_fotonweb: d.pvpf === true,
     recebe_aviso_atendimento_realizado: d.raar !== false};
@@ -7920,6 +7929,10 @@ function agEV(ev, id) {
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">" + ex3.ico + "</span> " + esc(ex3.n) + " — <strong>R$ " + Number(_vlExibir).toFixed(2).replace(".", ",") + "</strong></div>";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🦷</span> " + esc(d3.n) + "</div>";
   if(d3.end) b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📍</span> <span style=\"color:var(--gr);font-size:.82rem\">" + esc(d3.end) + "</span></div>";
+  // ⚡ v3.29 (11/07/2026) — Observação do dentista, SÓ se ele estiver marcado
+  // com "mostrar no agendamento" (obsAg). Aviso para a recepção na hora certa,
+  // sem precisar abrir o cadastro. Ocupa a linha inteira (flex-basis:100%).
+  if(d3.obs && d3.obsAg) b += "<div style=\"flex-basis:100%;display:flex;align-items:flex-start;gap:7px;margin-top:2px;padding:8px 10px;background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.35);border-radius:8px\"><span>📝</span><span style=\"font-size:.82rem;line-height:1.45\">" + esc(d3.obs) + "</span></div>";
   if(cv3) b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">💚</span> " + esc(cv3.n) + "</div>";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📲</span> Tel: <strong>" + (a.tel ? esc(a.tel) : "<span style='color:var(--or)'>Nao cadastrado</span>") + "</strong></div>";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🪙</span> <strong style=\"color:var(--g)\">+" + a.cb + " pts</strong></div>";
@@ -10156,7 +10169,7 @@ function rdent(){
   h+="</tr></thead><tbody id='dtTb'></tbody></table></div></div>";
   document.getElementById("pgDt").innerHTML=h; bldDtRows();
 }
-function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong></div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:var(--g);font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button><button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button></div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
+function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong>"+(d.obs?"<span title='"+esc(d.obs)+"' style='cursor:help;font-size:.8rem;opacity:.75'>📝</span>":"")+"</div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:var(--g);font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button><button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button></div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
 function filtDt(v){dtSrch=v.toLowerCase();bldDtRows();}
 function openDtM(eid){
   var ed=eid?fdent(eid):null;
@@ -10172,6 +10185,22 @@ function openDtM(eid){
     b+="<option value='"+n+"'"+(ed&&ed.nv===n?" selected":"")+">"+n+"</option>";
   });
   b+="</select></div><div class='field'><label>COR AVATAR</label><input type='color' id='dCl' value='"+(ed&&ed.bg?ed.bg.match(/#[0-9a-fA-F]{6}/)?ed.bg.match(/#[0-9a-fA-F]{6}/)[0]:"#4ab848":"#4ab848")+"'></div></div>";
+
+  // ⚡ v3.28 (11/07/2026) — Caixa de OBSERVAÇÕES (uso interno da equipe COR).
+  // Anotações livres sobre o dentista: preferências, avisos, particularidades.
+  // Não aparece para o dentista nem para o paciente.
+  b+="<div class='field'><label>OBSERVAÇÕES</label>"+
+     "<textarea id='dObs' rows='3' placeholder='Anotações internas sobre este dentista (preferências, avisos, particularidades)…' "+
+     "style='width:100%;box-sizing:border-box;padding:8px 10px;font-size:.85rem;font-family:inherit;border:1px solid #3a3a5e;"+
+     "border-radius:8px;background:var(--bg2,#0f1626);color:inherit;outline:none;resize:vertical;min-height:64px'>"+
+     (ed&&ed.obs?esc(ed.obs):"")+"</textarea>"+
+     "<label style='display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;padding:6px 0'>"+
+       "<input type='checkbox' id='dObsAg' "+(ed&&ed.obsAg?"checked":"")+" style='margin:0;cursor:pointer'>"+
+       "<span>📌 Mostrar esta observação no <strong style='color:#4ade80'>agendamento</strong></span>"+
+     "</label>"+
+     "<div style='color:#666;font-size:10px;line-height:1.45;padding:0 0 2px 22px'>"+
+       "Ligado: a observação aparece em destaque ao abrir um agendamento deste dentista (aviso para a recepção). "+
+       "Desligado: fica só aqui no cadastro. O dentista nunca vê este campo.</div></div>";
 
   // Seção de endereços
   b+="<div style='border-top:1px solid #3a3a5e;margin-top:6px;padding-top:8px'>"+
@@ -10264,6 +10293,8 @@ function openDtM(eid){
         ed.n=nm;ed.cro=document.getElementById("dCro").value;ed.esp=document.getElementById("dEsp").value;
         ed.tel=document.getElementById("dTel").value;ed.nv=document.getElementById("dNv").value;ed.ini=ini;
         var emEl=document.getElementById("dEmail");if(emEl)ed.em=emEl.value.trim();
+        var obsEl=document.getElementById("dObs");if(obsEl)ed.obs=obsEl.value.trim();
+        var obsAgEl=document.getElementById("dObsAg");if(obsAgEl)ed.obsAg=obsAgEl.checked;
         var pvpfEl=document.getElementById("dPvpf");
         if(pvpfEl) ed.pvpf = pvpfEl.checked;
         var raarEl=document.getElementById("dRaar");
@@ -10271,8 +10302,10 @@ function openDtM(eid){
       } else {
         var nid=dents.length?Math.max.apply(null,dents.map(function(x){return x.id;}))+1:1;
         var emNovo=(document.getElementById("dEmail")?document.getElementById("dEmail").value.trim():"");
+        var obsNovo=(document.getElementById("dObs")?document.getElementById("dObs").value.trim():"");
+        var obsAgNovo=(document.getElementById("dObsAg")?document.getElementById("dObsAg").checked:false);
         dents.push({id:nid,n:nm,cro:document.getElementById("dCro").value,esp:document.getElementById("dEsp").value,
-          tel:document.getElementById("dTel").value,nv:document.getElementById("dNv").value,ini:ini,ind:0,pts:0,bg:bg,cor:"#fff",em:emNovo});
+          tel:document.getElementById("dTel").value,nv:document.getElementById("dNv").value,ini:ini,ind:0,pts:0,bg:bg,cor:"#fff",em:emNovo,obs:obsNovo,obsAg:obsAgNovo});
       }
       var isNew2=!ed;var dObj=ed||dents[dents.length-1];
       dbSaveDent(dObj,isNew2).then(function(){
