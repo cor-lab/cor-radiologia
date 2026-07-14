@@ -235,6 +235,18 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-07-14 (v3.32): Modal "🔑 Acesso FotonWeb" mostrava o nome do CADASTRO
+              (pacientes.nome) em vez do nome do ATENDIMENTO. Como o cadastro
+              guarda o nome digitado na entrada e nem sempre recebe a correcao
+              feita no agendamento, a modal (e o WhatsApp/e-mail disparados
+              dela) saiam com nome errado. Caso ZAHRAA HAYTHAM KHALAF, exibida
+              como "VAHRAA KHALAF" (atend. 216072). Levantamento no banco:
+              389 pacientes com nome divergente entre agendamento e cadastro,
+              58 deles com acesso FotonWeb ativo.
+              FIX em _afwCarregar(): o nome passa a vir do CONTEXTO
+              (agendamento/ficha que abriu a modal); CPF, telefone e e-mail
+              continuam vindo do cadastro (fonte mestre). Marcador: "v3.32".
+
   2026-07-07 (v3.19): Botão "📧 Resetar e enviar por e-mail" na seção ACESSO
               FOTONWEB COR do modal de dentista. Chama enviar-email-cor tipo
               dentista_senha (v0.8): gera senha nova no servidor, grava hash na
@@ -2861,7 +2873,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.31 - 2026-07-14";
+var APP_VERSION = "v3.32 - 2026-07-14";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -3649,7 +3661,13 @@ async function _afwCarregar(){
     var pacDb = arr[0];
 
     // Atualiza com dados frescos do banco
-    _afwPacienteAtual.nome = pacDb.nome || pac.nome;
+    // ⚡ v3.32 (14/07/2026) — NOME: prioriza o do CONTEXTO (agendamento) sobre o
+    // do cadastro. O cadastro (pacientes.nome) guarda o nome digitado na entrada
+    // e nem sempre acompanha a correcao feita no atendimento — caso ZAHRAA
+    // HAYTHAM KHALAF, que aparecia aqui (e no WhatsApp/e-mail) como "VAHRAA
+    // KHALAF". O nome do agendamento e o conferido no balcao/requisicao.
+    // CPF/telefone/email seguem vindo do cadastro (fonte mestre).
+    _afwPacienteAtual.nome = (String(pac.nome || "").trim()) || pacDb.nome || "";
     _afwPacienteAtual.cpf = pacDb.cpf || "";
     _afwPacienteAtual.telefone = pacDb.telefone || "";
     _afwPacienteAtual.email = pacDb.email || "";
