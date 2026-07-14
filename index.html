@@ -2861,7 +2861,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.29 - 2026-07-11";
+var APP_VERSION = "v3.30 - 2026-07-14";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5273,7 +5273,7 @@ async function dbDelCv(id){
 // ── DENTISTAS ──
 async function dbSaveDent(d,isNew){
   var data={nome:d.n,cro:d.cro,especialidade:d.esp,telefone:d.tel,
-    email:(d.em||"").trim()||null,
+    email:(d.em||"").trim().toLowerCase()||null,
     observacoes:(d.obs||"").trim()||null,
     obs_mostrar_agendamento: d.obsAg === true,
     nivel:d.nv,pontos:d.pts,indicacoes:d.ind,ini:d.ini,bg:d.bg,cor:d.cor,ativo:true,
@@ -5396,7 +5396,7 @@ async function propagarPacienteVinculado(pacienteId, form){
   var camposForm = {
     cpf:              formCpfNorm,
     telefone:         formTelNorm,
-    email:            (form.email || "").trim(),
+    email:            (form.email || "").trim().toLowerCase(),
     data_nascimento:  (form.data_nascimento || "").trim() || null,
     sexo:             (form.sexo || "").trim(),
     cep:              (form.cep || "").trim(),
@@ -8757,7 +8757,9 @@ async function confAg(isAtendimento) {
   var nm = document.getElementById("pNome").value.trim();
   var tl = document.getElementById("pTel").value.trim().replace(/\D/g,"");
   var cpf = (document.getElementById("pCpf")?.value || "").trim();
-  var email = (document.getElementById("pEmail")?.value || "").trim();
+  // e-mail sempre em minúsculas: o teclado do celular capitaliza a 1a letra
+  // ("Fulano@gmail.com") e isso quebra comparação/login depois.
+  var email = (document.getElementById("pEmail")?.value || "").trim().toLowerCase();
   var cep = (document.getElementById("pCep")?.value || "").trim();
   var logradouro = (document.getElementById("pLogradouro")?.value || "").trim();
   var numero = (document.getElementById("pNumero")?.value || "").trim();
@@ -10292,7 +10294,7 @@ function openDtM(eid){
       if(ed){
         ed.n=nm;ed.cro=document.getElementById("dCro").value;ed.esp=document.getElementById("dEsp").value;
         ed.tel=document.getElementById("dTel").value;ed.nv=document.getElementById("dNv").value;ed.ini=ini;
-        var emEl=document.getElementById("dEmail");if(emEl)ed.em=emEl.value.trim();
+        var emEl=document.getElementById("dEmail");if(emEl)ed.em=emEl.value.trim().toLowerCase();
         var obsEl=document.getElementById("dObs");if(obsEl)ed.obs=obsEl.value.trim();
         var obsAgEl=document.getElementById("dObsAg");if(obsAgEl)ed.obsAg=obsAgEl.checked;
         var pvpfEl=document.getElementById("dPvpf");
@@ -10301,7 +10303,7 @@ function openDtM(eid){
         if(raarEl) ed.raar = raarEl.checked;
       } else {
         var nid=dents.length?Math.max.apply(null,dents.map(function(x){return x.id;}))+1:1;
-        var emNovo=(document.getElementById("dEmail")?document.getElementById("dEmail").value.trim():"");
+        var emNovo=(document.getElementById("dEmail")?document.getElementById("dEmail").value.trim().toLowerCase():"");
         var obsNovo=(document.getElementById("dObs")?document.getElementById("dObs").value.trim():"");
         var obsAgNovo=(document.getElementById("dObsAg")?document.getElementById("dObsAg").checked:false);
         dents.push({id:nid,n:nm,cro:document.getElementById("dCro").value,esp:document.getElementById("dEsp").value,
