@@ -2861,7 +2861,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.30 - 2026-07-14";
+var APP_VERSION = "v3.31 - 2026-07-14";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -6442,6 +6442,25 @@ document.addEventListener("DOMContentLoaded", function() {
     verEl.textContent = APP_VERSION;
   }
 
+  // ⚡ v3.31 (14/07/2026) — E-MAIL SEMPRE EM MINÚSCULAS, EM TEMPO REAL.
+  // O teclado do celular capitaliza a 1a letra sozinho ("Fulano@gmail.com") e a
+  // recepção acaba colando assim. Isso quebra o login do portal (que compara em
+  // minúsculas) — foi o que aconteceu com o reset de senha da dentista Lucélia.
+  // Em vez de tratar campo a campo (e esquecer algum, como aconteceu com o eEmail
+  // do agendamento), este listener pega QUALQUER input type="email" da tela,
+  // inclusive os criados depois (modais). Preserva a posição do cursor.
+  document.addEventListener("input", function(ev) {
+    var el = ev.target;
+    if (!el || el.tagName !== "INPUT") return;
+    if ((el.type || "").toLowerCase() !== "email") return;
+    var v = el.value || "";
+    var low = v.toLowerCase();
+    if (v === low) return;
+    var ini = el.selectionStart, fim = el.selectionEnd;
+    el.value = low;
+    try { el.setSelectionRange(ini, fim); } catch (e) {}
+  }, true);
+
   document.getElementById("nav").addEventListener("click", function(e) {
     if (e.target.dataset.p) navTo(e.target.dataset.p);
   });
@@ -8375,7 +8394,7 @@ function openEditAg(id) {
   var b = "<div style=\"display:flex;flex-direction:column;gap:10px\">";
   b += "<div class=\"field\"><label>Nome do Paciente</label><input id=\"eNm2\" value=\"" + esc(a.pac) + "\"></div>";
   b += "<div class=\"field\"><label>Telefone/WhatsApp</label><input id=\"eTel2\" value=\"" + esc(String(a.tel || "").replace(/^(\d{2})(\d{4,5})(\d{4})$/, "($1) $2-$3")) + "\" placeholder=\"(49) 99999-9999\" oninput=\"maskPhone(this)\"></div>";
-  b += "<div class=\"field\"><label>E-mail</label><input id=\"eEmail\" type=\"email\" value=\"" + esc(a.paciente_email || "") + "\" placeholder=\"paciente@email.com\"></div>";
+  b += "<div class=\"field\"><label>E-mail</label><input id=\"eEmail\" type=\"email\" value=\"" + esc((a.paciente_email || "").toLowerCase()) + "\" placeholder=\"paciente@email.com\"></div>";
 
   b += "<div class=\"fg2\"><div class=\"field\"><label>Data</label><input type=\"date\" id=\"eDt2\" value=\"" + dtVal + "\"></div>";
   b += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"eHr2\" value=\"" + a.hr + "\"></div></div>";
@@ -8459,7 +8478,7 @@ function openEditAg(id) {
     {lbl:"Salvar", cls:"btng", fn:async function(){
       var nm2 = document.getElementById("eNm2").value.trim();
       var tel2 = document.getElementById("eTel2").value.trim().replace(/\D/g,"");
-      var email2 = (document.getElementById("eEmail")?.value || "").trim();
+      var email2 = (document.getElementById("eEmail")?.value || "").trim().toLowerCase();
       var cpf2 = (document.getElementById("eCpf")?.value || "").trim();
       var cep2 = (document.getElementById("eCep")?.value || "").trim();
       var logradouro2 = (document.getElementById("eLogradouro")?.value || "").trim();
@@ -9307,7 +9326,7 @@ function preencherAgDaCora(dados){
         var telEl = document.getElementById("pTel");
         if(telEl){ telEl.value = tel; if(typeof maskPhone==="function") maskPhone(telEl); }
       }
-      setV("pEmail", dados.email||"");
+      setV("pEmail", (dados.email||"").toLowerCase());
       // data de nascimento: aceita AAAA-MM-DD ou DD/MM/AAAA
       var dn = (dados.data_nascimento||"").trim();
       if(dn){
@@ -10181,7 +10200,7 @@ function openDtM(eid){
     "<div class='field'><label>ESPECIALIDADE</label><input id='dEsp' value='"+(ed?esc(ed.esp):"")+"'></div></div>"+
     "<div class='fg2'><div class='field'><label>TELEFONE</label><input id='dTel' value='"+(ed?esc(ed.tel):"")+"'></div>"+
     "<div class='field'><label>INICIAIS</label><input id='dIni' value='"+(ed?esc(ed.ini):"")+"' maxlength='2'></div></div>"+
-    "<div class='field'><label>E-MAIL</label><input id='dEmail' type='email' value='"+(ed&&ed.em?esc(ed.em):"")+"' placeholder='dentista@email.com'></div>"+
+    "<div class='field'><label>E-MAIL</label><input id='dEmail' type='email' value='"+(ed&&ed.em?esc(String(ed.em).toLowerCase()):"")+"' placeholder='dentista@email.com'></div>"+
     "<div class='fg2'><div class='field'><label>NIVEL</label><select id='dNv'>";
   ["Bronze","Prata","Ouro","Diamante"].forEach(function(n){
     b+="<option value='"+n+"'"+(ed&&ed.nv===n?" selected":"")+">"+n+"</option>";
