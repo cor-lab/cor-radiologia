@@ -2630,6 +2630,46 @@ window.abrirWhatsApp = function(tel, msg) {
   return true;
 };
 
+// ═══ HELPER GLOBAL: envia a confirmação de AGENDAMENTO pela CORA ═══
+// (17/07/2026) Antes, ao salvar um agendamento, o sistema abria o WhatsApp Web no
+// número PESSOAL. Agora a confirmação sai pelo número oficial da CORA (Cloud API),
+// via /enviar_manual — que já registra no histórico e centraliza tudo num canal só.
+//
+// REGRA DA JANELA DE 24h (Meta): só dá para enviar texto livre se o paciente escreveu
+// nas últimas 24h. Fora disso o envio FALHA (não é punível, só não entrega). Por isso:
+//   dentro da janela  -> envia pela CORA (retorna true)
+//   fora / erro / rede -> retorna false; quem chama cai pro WhatsApp Web (plano B do
+//                         número pessoal, que não passa pela Cloud API e não tem risco).
+// NÃO faz throw: sempre resolve true/false para o chamador decidir o fallback.
+window.CORA_BOT_URL = "https://wa.corsm.com.br";
+window.enviarConfirmacaoPelaCora = async function(tel, msg) {
+  try {
+    var t = String(tel || "").replace(/\D/g, "");
+    if (t.length === 10 || t.length === 11) t = "55" + t;
+    if (t.length < 12 || t.length > 13) return false;
+    if (!msg) return false;
+    // JWT do usuário logado (mesma sessão que o supaFetch usa)
+    var jwt = null, quem = "";
+    if (supa && supa.auth && supa.auth.getSession) {
+      var sess = await supa.auth.getSession();
+      if (sess && sess.data && sess.data.session) {
+        jwt = sess.data.session.access_token || null;
+        if (sess.data.session.user) quem = sess.data.session.user.email || "";
+      }
+    }
+    if (!jwt) return false;  // sem sessão: cai pro plano B
+    var r = await fetch(window.CORA_BOT_URL + "/enviar_manual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + jwt },
+      body: JSON.stringify({ numero: t, texto: msg, atendente: quem })
+    });
+    return !!(r && r.ok);  // 200 = enviou pela CORA; 502/erro = falha -> fallback
+  } catch (e) {
+    console.warn("[enviarConfirmacaoPelaCora] falhou, cai pro WhatsApp Web:", e);
+    return false;
+  }
+};
+
 // ═══ HELPER GLOBAL: fetch autenticado ao Supabase REST API ═══
 // Usa JWT do usuário logado (authenticated) ao invés da publishable key (anon)
 // Essencial pois as RLS exigem role authenticated pra SELECT/INSERT/UPDATE/DELETE
@@ -2873,7 +2913,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.32 - 2026-07-14";
+var APP_VERSION = "v3.33 - 2026-07-17";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8961,7 +9001,20 @@ async function confAg(isAtendimento) {
       if (tl) {
         var waNum = tl.replace(/\D/g, "");
         if (waNum) {
-          abrirWhatsApp(waNum, wm);
+          // (17/07/2026) Confirmação sai pela CORA (número oficial, Cloud API).
+          // Se falhar (fora da janela de 24h da Meta, sem sessão ou erro de rede),
+          // cai pro WhatsApp Web do número pessoal — plano B sem risco de punição.
+          enviarConfirmacaoPelaCora(waNum, wm).then(function(ok){
+            if (ok) {
+              toast("✅", "Confirmação enviada pela CORA!");
+            } else {
+              toast("↪️", "CORA fora da janela — abrindo WhatsApp Web…");
+              abrirWhatsApp(waNum, wm);
+            }
+          }).catch(function(e){
+            console.error("Erro envio CORA, fallback WhatsApp Web:", e);
+            abrirWhatsApp(waNum, wm);
+          });
         } else {
           toast("Atenção", "Agendamento confirmado, mas o telefone é inválido para WhatsApp.");
         }
