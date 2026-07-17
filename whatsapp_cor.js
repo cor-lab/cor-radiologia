@@ -204,7 +204,7 @@ var WHATSAPP = (function () {
 
   // Abre o formulário "Novo Agendamento" no App COR já pré-preenchido com o
   // que a CORA coletou. A recepção confere, completa (exame/dentista) e salva.
-  function criarAgendamento(numero) {
+  async function criarAgendamento(numero) {
     var n = numero || _sel;
     if (!n) return;
     var conv = null;
@@ -214,6 +214,11 @@ var WHATSAPP = (function () {
       if (typeof toast === "function") toast("⚠️", "Sem dados de agendamento nesta conversa");
       return;
     }
+    // TRAVA (17/07/2026): antes de abrir o formulário, ASSUME a conversa. Assim ela
+    // fica travada para os outros atendentes (não dá para dois mexerem no mesmo
+    // paciente ao mesmo tempo). Se outro já assumiu, _assumir() barra e não abre.
+    var ok = await _assumir(n);
+    if (!ok) return;   // outra pessoa detém a conversa; toast já foi mostrado
     if (typeof window.preencherAgDaCora === "function") {
       window.preencherAgDaCora(dados);
     } else {
@@ -252,26 +257,47 @@ var WHATSAPP = (function () {
     });
   }
 
-  async function assumirConversa() {
-    if (!_sel) return;
-    // Se outro atendente já assumiu, não deixa "roubar" (evita dois ao mesmo tempo).
+  // Adquire a trava da conversa (assume). Retorna true se conseguiu (ou já era minha),
+  // false se outra pessoa detém. Trata a resposta 409 do backend (aquisição atômica).
+  async function _assumir(numero) {
+    var n = numero || _sel;
+    if (!n) return false;
+    // Checagem rápida no cache local (falha cedo, sem ir ao servidor).
     var conv = null;
-    for (var i = 0; i < _convs.length; i++) if (_convs[i].numero === _sel) { conv = _convs[i]; break; }
+    for (var i = 0; i < _convs.length; i++) if (_convs[i].numero === n) { conv = _convs[i]; break; }
     if (conv && conv.modo_humano && conv.humano_por && conv.humano_por !== _quemSou()) {
       if (typeof toast === "function") toast("🔒", esc(conv.humano_por) + " já está atendendo esta conversa");
-      return;
+      return false;
     }
     try {
-      var r = await _chamarBot("/modo_humano", { numero: _sel, ativar: true, atendente: _quemSou() });
+      var r = await _chamarBot("/modo_humano", { numero: n, ativar: true, atendente: _quemSou() });
       if (r && r.ok) {
-        if (typeof toast === "function") toast("🙋", "Você assumiu — CORA pausada");
         await _refresh();
-      } else {
-        var t = r ? await r.text() : "";
-        console.error("assumirConversa:", r && r.status, t);
-        if (typeof toast === "function") toast("⚠️", "Falha ao assumir (HTTP " + (r ? r.status : "?") + ")");
+        return true;
       }
-    } catch (e) { console.error("assumirConversa:", e); if (typeof toast === "function") toast("⚠️", "Erro ao assumir"); }
+      // 409 = outra pessoa assumiu no meio do caminho (aquisição atômica no backend).
+      if (r && r.status === 409) {
+        var quem = "";
+        try { var d = await r.json(); quem = (d.detail || "").replace("ja_assumida:", ""); } catch (e) {}
+        if (typeof toast === "function") toast("🔒", (quem || "Outro atendente") + " assumiu esta conversa primeiro");
+        await _refresh();
+        return false;
+      }
+      var t = r ? await r.text() : "";
+      console.error("_assumir:", r && r.status, t);
+      if (typeof toast === "function") toast("⚠️", "Falha ao assumir (HTTP " + (r ? r.status : "?") + ")");
+      return false;
+    } catch (e) {
+      console.error("_assumir:", e);
+      if (typeof toast === "function") toast("⚠️", "Erro ao assumir");
+      return false;
+    }
+  }
+
+  async function assumirConversa() {
+    if (!_sel) return;
+    var ok = await _assumir(_sel);
+    if (ok && typeof toast === "function") toast("🙋", "Você assumiu — CORA pausada");
   }
 
   async function devolverCora() {
@@ -422,6 +448,12 @@ var WHATSAPP = (function () {
       // pré-preenchido (a recepção confere e salva no App COR).
       if (conv && conv.agendamento_dados) {
         h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;font-weight:600' onclick='WHATSAPP.criarAgendamento()'>📅 Criar agendamento</button>";
+      }
+      // Se EU assumi (ex.: cliquei em Criar agendamento, que trava a conversa),
+      // mostro o botão de devolver aqui no cabeçalho também, para liberar fácil.
+      // Se esquecer, o job de fim de expediente (18:30) devolve automaticamente.
+      if (emHumano && conv.humano_por && conv.humano_por === _quemSou()) {
+        h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:#243049;color:#e6e6e6' onclick='WHATSAPP.devolverCora()'>↩️ Devolver para a CORA</button>";
       }
       if (!jaResolvida) {
         h += "<button class='btn btng' style='padding:5px 12px;font-size:.8rem' onclick='WHATSAPP.resolver()'>✓ Resolver</button>";
