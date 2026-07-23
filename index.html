@@ -8304,32 +8304,45 @@ function agEV(ev, id) {
 
   if((a.status_clinico || a.st)=="realizado"){
   (function(ag){
-    btns.push({
-      lbl:"↩️ Reverter p/ Agendado",
-      cls:"btnr",
-      fn:async function(){
-        var pw = prompt("Digite sua senha para confirmar a reversão:");
-        if(!pw) return;
-        try{
-          var authCheck = await supa.auth.signInWithPassword({email:CU.email, password:pw});
-          if(authCheck.error){toast("Erro","Senha incorreta.");return;}
-        }catch(e){toast("Erro","Falha na verificação.");return;}
-        if(!confirm("Confirma reverter para Agendado?\nIsso vai desfazer a realização no Firebird.")) return;
-        try{
-          var r = await supaFetch("/rest/v1/agendamentos?id=eq."+ag.id,{
-            method:"PATCH",
-            headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
-            body:JSON.stringify({status:"agendado",status_clinico:"agendado",pending_revert:true,firebird_seq_atend:null})
-          });
-          if(r.ok){
-            ag.st="agendado";ag.status="agendado";ag.status_clinico="agendado";ag.firebird_seq_atend=null;
-            closeM();rndAg();
-            if(typeof renderAtendimento==="function") renderAtendimento();
-            toast("✅","Revertido para Agendado. Firebird será atualizado em breve.");
-          }else{toast("Erro","Falha ao reverter: "+r.status);}
-        }catch(e){toast("Erro","Falha: "+e.message);}
-      }
-    });
+    // Reversao com ESCOLHA explicita do operador sobre o codigo do paciente:
+    //  - MANTER  (liberarCodigo=false) -> preserva firebird_seq_atend.
+    //            Usar quando o paciente JA TEM imagens arquivadas nesse numero.
+    //  - LIBERAR (liberarCodigo=true)  -> zera firebird_seq_atend. Usar quando foi
+    //            engano/sem imagens: o codigo volta a ser o proximo livre e, se for
+    //            o topo, e reaproveitado no proximo atendimento (sem pular).
+    // O banco NAO decide mais sozinho na reversao (gatilho so atribui ao ATENDER).
+    async function doReverter(liberarCodigo){
+      var pw = prompt("Digite sua senha para confirmar a reversão:");
+      if(!pw) return;
+      try{
+        var authCheck = await supa.auth.signInWithPassword({email:CU.email, password:pw});
+        if(authCheck.error){toast("Erro","Senha incorreta.");return;}
+      }catch(e){toast("Erro","Falha na verificação.");return;}
+      var cod = ag.firebird_seq_atend || "";
+      var msg = liberarCodigo
+        ? ("Reverter para Agendado e LIBERAR o código "+cod+"?\n\nUse quando foi engano / sem imagens.\nO código volta a ficar livre para o próximo atendimento.")
+        : ("Reverter para Agendado MANTENDO o código "+cod+"?\n\nUse quando o paciente já tem imagens nesse número.");
+      if(!confirm(msg)) return;
+      try{
+        var body = liberarCodigo
+          ? {status:"agendado",status_clinico:"agendado",pending_revert:true,firebird_seq_atend:null}
+          : {status:"agendado",status_clinico:"agendado"};
+        var r = await supaFetch("/rest/v1/agendamentos?id=eq."+ag.id,{
+          method:"PATCH",
+          headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
+          body:JSON.stringify(body)
+        });
+        if(r.ok){
+          ag.st="agendado";ag.status="agendado";ag.status_clinico="agendado";
+          if(liberarCodigo) ag.firebird_seq_atend=null;
+          closeM();rndAg();
+          if(typeof renderAtendimento==="function") renderAtendimento();
+          toast("✅", liberarCodigo ? "Revertido para Agendado. Código liberado." : ("Revertido para Agendado. Código "+cod+" mantido."));
+        }else{toast("Erro","Falha ao reverter: "+r.status);}
+      }catch(e){toast("Erro","Falha: "+e.message);}
+    }
+    btns.push({ lbl:"↩️ Reverter (manter código)",  cls:"btnr", fn:function(){ return doReverter(false); } });
+    btns.push({ lbl:"↩️ Reverter (liberar código)", cls:"btnr", fn:function(){ return doReverter(true);  } });
   })(a);
 
   // ⚡ FIX 13/05/2026 — botão "Forçar Sync" pra destravar agendamento
