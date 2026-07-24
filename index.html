@@ -235,6 +235,23 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-07-24 (v3.37): RECARGA do atendimento após REVERTER. doReverter agora
+              chama recarregarAgFresh(ag.id) logo após a reversão, reidratando
+              exames/valores do banco no cache em memória. Evita editar/salvar
+              sobre cache velho (a raiz do R$ -12,00 e de exames faltando após
+              reverter+editar). O salvamento em si já era ATÔMICO (RPC
+              salvar_agendamento_com_exames: header + exames na mesma transação);
+              o problema era a origem (cache) desatualizada, não a gravação.
+
+  2026-07-24 (v3.36): FIX valor NEGATIVO em calcValoresAg. Atendimento com
+              item só de convênio "fora do faturamento" (ex.: Tomografia UNIMED)
+              + desconto_valor legado salvo (sobra de uma Particular anterior)
+              exibia faturado NEGATIVO (caso DEBORA 216443 = R$ -12,00). Agora o
+              desconto nunca excede o bruto e o faturado nunca fica negativo.
+              Obs.: o registro no banco estava íntegro (2 exames, valor 48,00);
+              o -12 era só recálculo on-the-fly sobre cache com 1 exame após
+              reverter+editar. Ctrl+F5 + reabrir mostra os 2 exames e R$ 48,00.
+
   2026-07-24 (v3.35): LOG DE REVERSÕES (admin-only). Nova aba "↩️ Reversões"
               ao lado de Aprendizado CORA, visível só para role=admin. Lista
               toda reversão de atendimento com ANTES→DEPOIS de código, status e
@@ -2598,6 +2615,16 @@ window.calcValoresAg = function(ag){
     faturado = bruto;
   }
 
+  // ⚡ FIX (2026-07-24) — GUARDA ANTI-NEGATIVO. Se o(s) item(ns) carregado(s)
+  // forem só de convênio "fora do faturamento" (ex.: Tomografia UNIMED), o
+  // bruto faturável fica 0, mas um desconto_valor legado salvo (sobra de uma
+  // Particular anterior) ainda era subtraído -> faturado NEGATIVO
+  // (caso DEBORA 216443 = R$ -12,00). O desconto nunca pode exceder o bruto e
+  // o faturado nunca pode ficar negativo.
+  if(desconto > bruto) desconto = bruto;
+  faturado = bruto - desconto;
+  if(faturado < 0) faturado = 0;
+
   return {
     bruto: Number(bruto.toFixed(2)),
     faturado: Number(faturado.toFixed(2)),
@@ -2934,7 +2961,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.35 - 2026-07-24";
+var APP_VERSION = "v3.37 - 2026-07-24";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8359,6 +8386,11 @@ function agEV(ev, id) {
         if(r.ok){
           ag.st="agendado";ag.status="agendado";ag.status_clinico="agendado";
           if(liberarCodigo) ag.firebird_seq_atend=null;
+          // ⚡ v3.37 — reidrata o atendimento do banco (exames/valores) LOGO após
+          // reverter, pra a próxima edição/salvamento partir de dados frescos e
+          // não sobre cache velho (origem do R$ -12,00 e de exames faltando
+          // após reverter+editar).
+          if(typeof recarregarAgFresh==="function"){ try{ await recarregarAgFresh(ag.id); }catch(e){} }
           closeM();rndAg();
           if(typeof renderAtendimento==="function") renderAtendimento();
           toast("✅", liberarCodigo ? "Revertido para Agendado. Código liberado." : ("Revertido para Agendado. Código "+cod+" mantido."));
