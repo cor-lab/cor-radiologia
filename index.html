@@ -235,6 +235,15 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-07-24 (v3.35): LOG DE REVERSÕES (admin-only). Nova aba "↩️ Reversões"
+              ao lado de Aprendizado CORA, visível só para role=admin. Lista
+              toda reversão de atendimento com ANTES→DEPOIS de código, status e
+              valor (R$), além de paciente, data/hora e QUEM reverteu. Fonte:
+              tabela public.reversoes_atendimento, populada por um gatilho
+              AFTER UPDATE em agendamentos (dispara quando status_clinico sai de
+              'realizado'); RLS deixa só admin ler. A reversão no APPCOR passa a
+              enviar updated_by (reforça o "quem", junto do auth.uid()).
+
   2026-07-23 (v3.34): Reversão de atendimento com ESCOLHA do código. O botão
               único "↩️ Reverter p/ Agendado" (que SEMPRE zerava firebird_seq_atend)
               virou DOIS botões: "Reverter (manter código)" preserva o código
@@ -2925,7 +2934,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.34 - 2026-07-23";
+var APP_VERSION = "v3.35 - 2026-07-24";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -6067,6 +6076,7 @@ async function dbResgatar(dentId,premId,pts){
   <button data-p="reportes">🚩 Reportes<span id="rpNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
   <button data-p="whatsapp">💬 WhatsApp<span id="waNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
   <button data-p="aprendizado">🎓 Aprendizado CORA<span id="aprNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
+  <button data-p="reversoes">↩️ Reversões</button>
 </nav>
 <div class="hr">
   <div class="upill">
@@ -6284,12 +6294,13 @@ async function dbResgatar(dentId,premId,pts){
 <div class="page" id="page-reportes"><div class="pi pg-scroll" id="pgRp"></div></div>
 <div class="page" id="page-whatsapp"><div class="pi pg-scroll" id="pgWa"></div></div>
 <div class="page" id="page-aprendizado"><div class="pi pg-scroll" id="pgApr"></div></div>
+<div class="page" id="page-reversoes"><div class="pi pg-scroll" id="pgRev"></div></div>
 <script>
 // ══ AUTH & USERS ══
 var USERS = [];
 // Dados reais vêm do Supabase via loadAllData()
 var PERMS = {
-  admin:    {dashboard:1,atendimento:1,historico:1,agendar:1,exames:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1,reportes:1,whatsapp:1,aprendizado:1},
+  admin:    {dashboard:1,atendimento:1,historico:1,agendar:1,exames:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1,reportes:1,whatsapp:1,aprendizado:1,reversoes:1},
   agenda:   {dashboard:1,atendimento:1,historico:1,agendar:1,exames:1,convenios:0,cashback:0,dentistas:0,usuarios:0,config:0,reportes:0,whatsapp:1},
   cashback: {dashboard:1,atendimento:0,historico:0,agendar:0,exames:0,convenios:0,cashback:1,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:0},
   dentista: {dashboard:0,atendimento:0,historico:0,agendar:0,exames:0,convenios:0,cashback:1,dentistas:0,usuarios:0,config:0,reportes:0,whatsapp:0}
@@ -6500,7 +6511,7 @@ function navTo(page) {
     dashboard: rdash, atendimento: ratendimento, historico: rhistorico, agendar: ragendar, exames: rexames,
     convenios: rconv, cashback: rcash, dentistas: rdent,
     usuarios: rusrs, config: rcfg, reportes: window.rReportes, whatsapp: window.rWhatsApp,
-    aprendizado: rAprendizado
+    aprendizado: rAprendizado, reversoes: rReversoes
   };
   if (map[page]) map[page]();
 }
@@ -8336,9 +8347,10 @@ function agEV(ev, id) {
         : ("Reverter para Agendado MANTENDO o código "+cod+"?\n\nUse quando o paciente já tem imagens nesse número.");
       if(!confirm(msg)) return;
       try{
+        var _revUid = (typeof CU !== "undefined" && CU && CU.id) ? CU.id : null;
         var body = liberarCodigo
-          ? {status:"agendado",status_clinico:"agendado",pending_revert:true,firebird_seq_atend:null}
-          : {status:"agendado",status_clinico:"agendado"};
+          ? {status:"agendado",status_clinico:"agendado",pending_revert:true,firebird_seq_atend:null,updated_by:_revUid}
+          : {status:"agendado",status_clinico:"agendado",updated_by:_revUid};
         var r = await supaFetch("/rest/v1/agendamentos?id=eq."+ag.id,{
           method:"PATCH",
           headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
@@ -11377,6 +11389,82 @@ function _aprEhRotina(motivo){
   return false;
 }
 var _aprCasos = [];       // casos carregados (para o clique dos botões)
+// ══ REVERSÕES (log admin-only) ══
+// Lê public.reversoes_atendimento (RLS: só role=admin lê). Mostra antes→depois
+// de código, status e valor, e quem reverteu.
+var _revCache = [];
+async function rReversoes(){
+  var el = document.getElementById("pgRev");
+  if(!canAcc("reversoes")){ deny(el); return; }
+  el.innerHTML = "<div style='padding:40px;text-align:center;color:var(--gr)'>Carregando reversões…</div>";
+  try {
+    var r = await supaFetch("/rest/v1/reversoes_atendimento?select=*&order=revertido_em.desc&limit=1000");
+    _revCache = r.ok ? await r.json() : [];
+    _revRender("");
+  } catch(e){
+    console.error("rReversoes:", e);
+    el.innerHTML = "<div style='padding:40px;text-align:center;color:#e66'>Erro ao carregar. Tente novamente.</div>";
+  }
+}
+function _revFmtData(iso){
+  if(!iso) return "";
+  try{ var d=new Date(iso); if(isNaN(d.getTime())) return "";
+    var p=function(n){return String(n).padStart(2,"0");};
+    return p(d.getDate())+"/"+p(d.getMonth()+1)+"/"+d.getFullYear()+" "+p(d.getHours())+":"+p(d.getMinutes());
+  }catch(e){return "";}
+}
+function _revBRL(v){
+  if(v===null||v===undefined||v==="") return "—";
+  var n=Number(v); if(isNaN(n)) return "—";
+  return "R$ "+n.toFixed(2).replace(".",",");
+}
+function _revEsc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+function _revRender(filtro){
+  var el = document.getElementById("pgRev");
+  var f = (filtro||"").trim().toLowerCase();
+  var linhas = _revCache.filter(function(x){
+    if(!f) return true;
+    return String(x.paciente_nome||"").toLowerCase().indexOf(f)>=0
+        || String(x.codigo_antes||"").indexOf(f)>=0
+        || String(x.revertido_por_nome||"").toLowerCase().indexOf(f)>=0;
+  });
+  var h = "";
+  h += "<div style='margin-bottom:16px'>";
+  h += "<h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>↩️ Reversões de Atendimento</h2>";
+  h += "<p style='color:var(--gr);font-size:.82rem;margin-top:3px'>Registro de todas as reversões (realizado → agendado/cancelado): antes e depois de código, status e valor, e quem fez. Visível só para administradores.</p>";
+  h += "</div>";
+  h += "<div class='sr'><div class='sw'><span class='swi'>🔍</span><input type='text' placeholder='Filtrar por paciente, código ou quem reverteu…' oninput='_revRender(this.value)' value='"+_revEsc(filtro||"")+"'></div></div>";
+  if(!linhas.length){
+    h += "<div style='padding:40px;text-align:center;color:var(--gr)'>Nenhuma reversão registrada"+(f?" para esse filtro":"")+".</div>";
+    el.innerHTML = h; return;
+  }
+  h += "<div class='card' style='overflow-x:auto'>";
+  h += "<table style='width:100%;border-collapse:collapse;font-size:.82rem'>";
+  h += "<thead><tr style='text-align:left;color:var(--gr);border-bottom:1px solid var(--border)'>"
+     + "<th style='padding:8px'>Quando</th><th style='padding:8px'>Paciente</th>"
+     + "<th style='padding:8px'>Código (antes→depois)</th><th style='padding:8px'>Status (antes→depois)</th>"
+     + "<th style='padding:8px'>Valor (antes→depois)</th><th style='padding:8px'>Código</th>"
+     + "<th style='padding:8px'>Quem reverteu</th></tr></thead><tbody>";
+  linhas.forEach(function(x){
+    var cod = (x.codigo_antes==null?"—":"#"+x.codigo_antes) + " → " + (x.codigo_depois==null?"livre":"#"+x.codigo_depois);
+    var st = _revEsc(x.status_antes)+" → "+_revEsc(x.status_depois);
+    var mudouVal = Number(x.valor_antes)!==Number(x.valor_depois);
+    var val = _revBRL(x.valor_antes) + (mudouVal ? (" → "+_revBRL(x.valor_depois)) : "");
+    var lib = x.codigo_liberado ? "<span style='color:#e6a700'>liberado</span>" : "<span style='color:#4ab848'>mantido</span>";
+    h += "<tr style='border-bottom:1px solid var(--border)'>"
+       + "<td style='padding:8px;white-space:nowrap'>"+_revFmtData(x.revertido_em)+"</td>"
+       + "<td style='padding:8px'>"+_revEsc(x.paciente_nome)+"</td>"
+       + "<td style='padding:8px;white-space:nowrap;font-family:monospace'>"+cod+"</td>"
+       + "<td style='padding:8px;white-space:nowrap'>"+st+"</td>"
+       + "<td style='padding:8px;white-space:nowrap'>"+val+"</td>"
+       + "<td style='padding:8px'>"+lib+"</td>"
+       + "<td style='padding:8px'>"+_revEsc(x.revertido_por_nome||"—")+"</td>"
+       + "</tr>";
+  });
+  h += "</tbody></table></div>";
+  el.innerHTML = h;
+}
+
 async function rAprendizado(){
   var el = document.getElementById("pgApr");
   if(!canAcc("aprendizado")){ deny(el); return; }
