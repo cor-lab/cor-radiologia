@@ -235,6 +235,18 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-07-24 (v3.38): FIX CRÍTICO — atendimentos recentes perdiam os exames
+              (caíam no exame legado do cabeçalho: ex. Tomografia mostrando o
+              valor do cabeçalho, R$ 48/−12/0, periapical sumindo). CAUSA: o
+              backfill de exames históricos levou agendamento_exames a ~73k
+              linhas, e o fetchAllAgEx tinha teto de 30 páginas (30k linhas) —
+              os exames dos atendimentos recentes (ids altos) não eram
+              carregados. Pior: o AUTO-REFRESH (15s) reaplicava o bug, então
+              "salvava certo e voltava errado sozinho". FIX: loadAllData e o
+              auto-refresh agora trazem os exames EMBUTIDOS na query de
+              agendamentos (select "*,agendamento_exames(*)"), só dos 2000
+              carregados — correto e mais leve (não puxa as 73k linhas).
+
   2026-07-24 (v3.37): RECARGA do atendimento após REVERTER. doReverter agora
               chama recarregarAgFresh(ag.id) logo após a reversão, reidratando
               exames/valores do banco no cache em memória. Evita editar/salvar
@@ -2961,7 +2973,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.37 - 2026-07-24";
+var APP_VERSION = "v3.38 - 2026-07-24";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5077,8 +5089,8 @@ async function loadAllData(){
       supa.from("convenios").select("*").eq("ativo",true).order("nome"),
       supa.from("convenio_precos").select("*").limit(5000),
       supa.from("dentistas").select("*").eq("ativo",true).order("nome").range(0,999),
-      supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(2000),
-      fetchAllAgEx(),
+      supa.from("agendamentos").select("*,agendamento_exames(*)").order("data_exame",{ascending:false}).limit(2000),
+      Promise.resolve({data:[],error:null}),
       supa.from("premios").select("*").eq("ativo",true).order("pontos_necessarios"),
       supa.from("usuarios").select("*").eq("ativo",true).order("nome"),
       supa.from("cashback_ajustes").select("*").order("created_at",{ascending:false}),
@@ -5086,6 +5098,18 @@ async function loadAllData(){
     ]);
 
     var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7], ajR = r[8], deR = r[9];
+
+    // ⚡ FIX (2026-07-24) — Exames vêm EMBUTIDOS na query de agendamentos, só dos
+    // 2000 carregados. Antes usava fetchAllAgEx() que puxava TODAS as linhas de
+    // agendamento_exames com teto de 30k; após o backfill de exames históricos
+    // (~73k linhas) os atendimentos recentes ficavam SEM exames (caíam no exame
+    // legado do cabeçalho — ex.: Tomografia mostrando o valor do cabeçalho).
+    agexR = { data: [], error: null };
+    (agR.data || []).forEach(function(a){
+      (a.agendamento_exames || []).forEach(function(e){
+        agexR.data.push({ agendamento_id: a.id, exame_id: e.exame_id, convenio_id: e.convenio_id, preco: e.preco, nome_exame: e.nome_exame, ordem: e.ordem });
+      });
+    });
 
     // ⚡ FIX v3.10.0 (27/05/2026) — Validar erros do Promise.all.
     // Antes: queries falhadas por RLS/rede/schema viravam r.data=null,
@@ -6647,8 +6671,16 @@ function iniciarAutoRefresh(){
     if(!CU) return;
     try{
       // Recarregar agendamentos
-      var agR = await supa.from("agendamentos").select("*").order("data_exame",{ascending:false}).limit(2000);
-      var agexR = await fetchAllAgEx();
+      var agR = await supa.from("agendamentos").select("*,agendamento_exames(*)").order("data_exame",{ascending:false}).limit(2000);
+      // ⚡ FIX (2026-07-24) — exames embutidos (só dos 2000 carregados). Ver nota
+      // em loadAllData: fetchAllAgEx tinha teto de 30k e, pós-backfill, sumia com
+      // os exames dos atendimentos recentes a cada auto-refresh (15s).
+      var agexR = { data: [] };
+      (agR.data || []).forEach(function(a){
+        (a.agendamento_exames || []).forEach(function(e){
+          agexR.data.push({ agendamento_id: a.id, exame_id: e.exame_id, convenio_id: e.convenio_id, preco: e.preco, nome_exame: e.nome_exame, ordem: e.ordem });
+        });
+      });
 
       if(agR.data){
         var mapAgEx = {};
