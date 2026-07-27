@@ -235,6 +235,15 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-07-25 (v3.39): MÉTODO DE PAGAMENTO (Cartão/Dinheiro/Pix). Nova coluna
+              agendamentos.metodo_pagamento e um seletor no modal do atendimento
+              (logo abaixo do status), pra registrar na hora de atender. Clicar
+              grava na hora (PATCH direto, seta updated_by) e destaca a opção.
+              É separado da "forma de pagamento" (à vista/3x/4x, que é prazo/
+              desconto). Não some no caixa ainda (só registro). A RPC
+              salvar_agendamento_com_exames não mexe nesse campo, então editar o
+              atendimento depois não apaga o método.
+
   2026-07-24 (v3.38): FIX CRÍTICO — atendimentos recentes perdiam os exames
               (caíam no exame legado do cabeçalho: ex. Tomografia mostrando o
               valor do cabeçalho, R$ 48/−12/0, periapical sumindo). CAUSA: o
@@ -2973,7 +2982,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.38 - 2026-07-24";
+var APP_VERSION = "v3.39 - 2026-07-25";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5315,6 +5324,7 @@ async function loadAllData(){
           ,firebird_sync: a.firebird_sync || null
           ,firebird_atend_id: a.firebird_atend_id || null
           ,firebird_seq_atend: a.firebird_seq_atend || null
+          ,metodo_pagamento: a.metodo_pagamento || null
           ,obs: a.observacoes || ''
           ,observacoes: a.observacoes || ''
           ,forma_entrega: a.forma_entrega || null
@@ -6739,6 +6749,7 @@ function iniciarAutoRefresh(){
             firebird_sync:a.firebird_sync||null,
             firebird_atend_id:a.firebird_atend_id||null,
             firebird_seq_atend:a.firebird_seq_atend||null,
+            metodo_pagamento:a.metodo_pagamento||null,
             obs:a.observacoes||'', observacoes:a.observacoes||'',
             forma_entrega:a.forma_entrega||null,
             previsao_entrega:a.previsao_entrega||null,
@@ -7571,6 +7582,7 @@ function _mapAgFromRow(a, itens) {
     firebird_sync: a.firebird_sync || null,
     firebird_atend_id: a.firebird_atend_id || null,
     firebird_seq_atend: a.firebird_seq_atend || null,
+    metodo_pagamento: a.metodo_pagamento || null,
     obs: a.observacoes || "",
     observacoes: a.observacoes || "",
     forma_entrega: a.forma_entrega || null,
@@ -8046,6 +8058,34 @@ function agCC(ds,ts) {
   if(sd) sd.scrollTop=0;
 }
 
+// ══ MÉTODO DE PAGAMENTO (Cartão/Dinheiro/Pix) — registrado na hora de atender ══
+function _btnMetodoPg(a, val, label){
+  var sel = (a && a.metodo_pagamento === val);
+  var st = sel
+    ? "background:linear-gradient(135deg,#4ab848,#7dcf6e);color:#08240f;border:1px solid #4ab848;font-weight:700;"
+    : "background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.15);";
+  return "<button type=\"button\" style=\"" + st + "padding:5px 10px;border-radius:8px;cursor:pointer;font-size:.8rem\" onclick=\"setMetodoPagamento(" + a.id + ",'" + val + "')\">" + label + "</button>";
+}
+async function setMetodoPagamento(id, metodo){
+  try{
+    var _uid = (typeof CU !== "undefined" && CU && CU.id) ? CU.id : null;
+    var r = await supaFetch("/rest/v1/agendamentos?id=eq." + id, {
+      method:"PATCH",
+      headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
+      body:JSON.stringify({ metodo_pagamento: metodo, updated_by: _uid })
+    });
+    if(r.ok){
+      var a = (ags || []).find(function(x){ return x.id === id; });
+      if(a) a.metodo_pagamento = metodo;
+      var nomes = {cartao:"Cartão", dinheiro:"Dinheiro", pix:"Pix"};
+      toast("💰", "Pagamento: " + (nomes[metodo] || metodo));
+      if(typeof agEV === "function") agEV(id);   // re-renderiza o modal com a seleção
+    } else {
+      toast("Erro", "Não foi possível salvar o método (" + r.status + ").");
+    }
+  }catch(e){ toast("Erro", "Falha: " + (e && e.message ? e.message : e)); }
+}
+
 function agEV(ev, id) {
   if (typeof ev === "number" && id === undefined) {
     id = ev;
@@ -8101,6 +8141,8 @@ function agEV(ev, id) {
   else if(a.status_fiscal==="cancelada") b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🚫</span> <span style=\"color:var(--or)\">Nota cancelada</span></div>";
   b += "</div>";
   b += "<span class=\"badge " + (sc[a.st] || "bgr") + "\" style=\"align-self:flex-start\">" + (sl[a.st] || a.st) + "</span></div>";
+  // Método de pagamento (Cartão/Dinheiro/Pix) — grava na hora, no atendimento
+  b += "<div style=\"display:flex;align-items:center;gap:8px;margin:8px 0 2px;flex-wrap:wrap\"><span style=\"opacity:.7;font-size:.82rem\">💰 Pagamento:</span>" + _btnMetodoPg(a, "cartao", "💳 Cartão") + _btnMetodoPg(a, "dinheiro", "💵 Dinheiro") + _btnMetodoPg(a, "pix", "📱 Pix") + "</div>";
 
   var btns = [{lbl:"Fechar", cls:"btno", fn:closeM}];
 
