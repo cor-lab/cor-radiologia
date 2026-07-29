@@ -2982,7 +2982,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.39 - 2026-07-25";
+var APP_VERSION = "v3.40 - 2026-07-29";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8764,7 +8764,11 @@ function openEditAg(id) {
       // ════════════════════════════════════════════════════════════════
       var statusOriginal = a._statusOriginal || a.status_clinico_original;
       var examesOriginais = a._examesOriginais;
-      if (statusOriginal === "realizado" && Array.isArray(examesOriginais)) {
+      // ⚡ FIX v3.40 — só bloqueia se HAVIA exames originais para proteger.
+      // Atendimento histórico sem linhas de exame (backfill não achou) tinha
+      // _examesOriginais=[]; ao selecionar o exame obrigatório a assinatura
+      // divergia de vazio e travava a edição do endereço (caso 174862).
+      if (statusOriginal === "realizado" && Array.isArray(examesOriginais) && examesOriginais.length > 0) {
         var assinaturaAtual = (itensEdit || [])
           .map(function(it){ return it.exame_id+"|"+(it.convenio_id||"")+"|"+Number(it.preco||0).toFixed(2); })
           .sort().join(";");
