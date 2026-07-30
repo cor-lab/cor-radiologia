@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v18-busca-ampla-20260710";
+  var _VERSAO = "whatsapp-web-v19-agendamento-familia-20260730";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -30,6 +30,18 @@ var WHATSAPP = (function () {
   var _BOT_URL = "https://wa.corsm.com.br";
 
   // ── util ──
+  // Normaliza conversas.agendamento_dados para uma LISTA de pedidos.
+  // A CORA pode gravar um OBJETO (1 paciente, formato antigo) ou uma LISTA
+  // (agendamento de família, 2-3 pacientes). Aqui unificamos: sempre devolve
+  // um array (vazio se não houver dados). (30/07/2026)
+  function _agsLista(ad) {
+    if (!ad) return [];
+    if (Array.isArray(ad)) {
+      return ad.filter(function (x) { return x && typeof x === "object"; });
+    }
+    if (typeof ad === "object" && ad.paciente_nome) return [ad];
+    return [];
+  }
   function esc(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -132,9 +144,14 @@ var WHATSAPP = (function () {
   // usado para a busca por nome/palavra encontrar em qualquer lugar da conversa.
   function _textoBuscavel(c) {
     var partes = [];
-    // nome do paciente, se a CORA coletou num agendamento
-    if (c.agendamento_dados && c.agendamento_dados.paciente_nome) {
-      partes.push(String(c.agendamento_dados.paciente_nome));
+    // nome do paciente, se a CORA coletou num agendamento.
+    // agendamento_dados pode ser um OBJETO (1 paciente, formato antigo) ou uma
+    // LISTA (agendamento de família, 2-3 pacientes). Normaliza para lista.
+    var _ags = _agsLista(c.agendamento_dados);
+    if (_ags.length && _ags[0].paciente_nome) {
+      var _nomes = _ags.map(function(a){ return String(a.paciente_nome || ""); })
+                       .filter(function(x){ return x; });
+      partes.push(_nomes.join(", "));
     }
     // conteúdo das mensagens (texto que o paciente/CORA trocaram)
     var h = c.historico;
@@ -204,16 +221,20 @@ var WHATSAPP = (function () {
 
   // Abre o formulário "Novo Agendamento" no App COR já pré-preenchido com o
   // que a CORA coletou. A recepção confere, completa (exame/dentista) e salva.
-  async function criarAgendamento(numero) {
+  async function criarAgendamento(numero, indice) {
     var n = numero || _sel;
     if (!n) return;
     var conv = null;
     for (var i = 0; i < _convs.length; i++) if (_convs[i].numero === n) { conv = _convs[i]; break; }
-    var dados = conv && conv.agendamento_dados;
-    if (!dados) {
+    // agendamento_dados pode ser objeto (1 paciente) ou lista (família). Normaliza.
+    var lista = _agsLista(conv && conv.agendamento_dados);
+    if (!lista.length) {
       if (typeof toast === "function") toast("⚠️", "Sem dados de agendamento nesta conversa");
       return;
     }
+    // Qual paciente? Se veio índice (botão "Criar agendamento N"), usa ele; senão o 1º.
+    var idx = (typeof indice === "number" && indice >= 0 && indice < lista.length) ? indice : 0;
+    var dados = lista[idx];
     // TRAVA (17/07/2026): antes de abrir o formulário, ASSUME a conversa. Assim ela
     // fica travada para os outros atendentes (não dá para dois mexerem no mesmo
     // paciente ao mesmo tempo). Se outro já assumiu, _assumir() barra e não abre.
@@ -443,11 +464,19 @@ var WHATSAPP = (function () {
       }
       h += "</div>";
       // botões do cabeçalho
-      h += "<div style='display:flex;gap:6px'>";
+      h += "<div style='display:flex;gap:6px;flex-wrap:wrap'>";
       // Se a CORA coletou dados de agendamento, oferece criar o agendamento
       // pré-preenchido (a recepção confere e salva no App COR).
-      if (conv && conv.agendamento_dados) {
+      // Se for FAMÍLIA (2+ pacientes), mostra um botão por paciente:
+      // "Criar agendamento 1", "Criar agendamento 2", etc.
+      var _agsBtn = _agsLista(conv && conv.agendamento_dados);
+      if (_agsBtn.length === 1) {
         h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;font-weight:600' onclick='WHATSAPP.criarAgendamento()'>📅 Criar agendamento</button>";
+      } else if (_agsBtn.length > 1) {
+        for (var _ia = 0; _ia < _agsBtn.length; _ia++) {
+          var _nomeCurto = String(_agsBtn[_ia].paciente_nome || "").split(" ")[0];
+          h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;font-weight:600' onclick='WHATSAPP.criarAgendamento(null," + _ia + ")' title='" + esc(_agsBtn[_ia].paciente_nome || "") + "'>📅 Criar agendamento " + (_ia + 1) + (_nomeCurto ? " (" + esc(_nomeCurto) + ")" : "") + "</button>";
+        }
       }
       // Se EU assumi (ex.: cliquei em Criar agendamento, que trava a conversa),
       // mostro o botão de devolver aqui no cabeçalho também, para liberar fácil.
