@@ -1888,7 +1888,7 @@
 -->
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>COR — Centro Odontológico de Radiologia</title>
 <!-- ⚡ FIX 19/05/2026 — Favicon + PWA -->
 <link rel="icon" type="image/x-icon" href="favicon.ico">
@@ -2527,6 +2527,544 @@ tr:last-child td{border-bottom:none}
   font-size:.78rem;
   text-align:right;
 }
+
+/* ══════════════════════════════════════════════════════
+   LAYOUT MÓVEL — iPhone / telas compactas
+   Mantém o desktop intacto e reorganiza a interface abaixo de 760px.
+   ══════════════════════════════════════════════════════ */
+@supports (height:100dvh){
+  #LS{min-height:100dvh}
+  .mb{max-height:92dvh}
+}
+
+@media(max-width:760px){
+  html{
+    -webkit-text-size-adjust:100%;
+    scroll-padding-top:112px;
+  }
+
+  body{
+    min-width:0;
+    overflow-x:hidden;
+  }
+
+  button,
+  input,
+  select,
+  textarea{
+    touch-action:manipulation;
+  }
+
+  /* Login */
+  #LS{
+    overflow-y:auto;
+    padding:
+      max(16px,env(safe-area-inset-top))
+      max(16px,env(safe-area-inset-right))
+      max(16px,env(safe-area-inset-bottom))
+      max(16px,env(safe-area-inset-left));
+  }
+
+  .lcrd{
+    max-width:420px;
+    padding:28px 20px;
+    border-radius:18px;
+  }
+
+  .llogo img{
+    max-width:100%;
+    height:44px;
+  }
+
+  /* Cabeçalho: primeira linha compacta + navegação horizontal */
+  header{
+    height:auto;
+    min-height:0;
+    padding:
+      max(8px,env(safe-area-inset-top))
+      max(12px,env(safe-area-inset-right))
+      0
+      max(12px,env(safe-area-inset-left));
+    display:grid;
+    grid-template-columns:auto minmax(0,1fr) auto;
+    grid-template-areas:
+      "logo version user"
+      "nav nav nav";
+    align-items:center;
+    gap:8px 10px;
+  }
+
+  .hlogo{
+    grid-area:logo;
+    min-width:0;
+  }
+
+  .hlogo img{
+    display:block;
+    width:auto;
+    max-width:126px;
+    height:32px;
+  }
+
+  .app-ver-badge{
+    grid-area:version;
+    display:none;
+  }
+
+  header nav,
+  #nav{
+    grid-area:nav;
+    width:auto;
+    max-width:none;
+    margin:0 -12px;
+    padding:0 12px 8px;
+    display:flex;
+    flex-wrap:nowrap;
+    justify-content:flex-start;
+    gap:6px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
+    scroll-snap-type:x proximity;
+    scrollbar-width:none;
+  }
+
+  header nav::-webkit-scrollbar,
+  #nav::-webkit-scrollbar{
+    display:none;
+  }
+
+  header nav button,
+  #nav button{
+    flex:0 0 auto;
+    min-height:44px;
+    padding:8px 13px;
+    border:1px solid rgba(255,255,255,.07);
+    background:rgba(255,255,255,.035);
+    scroll-snap-align:start;
+    white-space:nowrap;
+  }
+
+  header nav button.active,
+  #nav button.active{
+    border-color:rgba(74,184,72,.32);
+    background:rgba(74,184,72,.15);
+  }
+
+  .hr{
+    grid-area:user;
+    gap:6px;
+  }
+
+  .upill{
+    min-height:36px;
+    padding:4px;
+  }
+
+  .uav{
+    width:28px;
+    height:28px;
+  }
+
+  .uname,
+  .upill .rb{
+    display:none;
+  }
+
+  .logoutb{
+    min-height:36px;
+    padding:6px 10px;
+  }
+
+  /* Estrutura geral das páginas */
+  #AS,
+  .page,
+  .pi,
+  .card{
+    min-width:0;
+    max-width:100%;
+  }
+
+  .pi{
+    padding:
+      14px
+      max(12px,env(safe-area-inset-right))
+      calc(24px + env(safe-area-inset-bottom))
+      max(12px,env(safe-area-inset-left));
+  }
+
+  .pg-scroll{
+    max-height:none;
+    overflow-y:visible;
+  }
+
+  .card{
+    padding:16px;
+    border-radius:12px;
+  }
+
+  .card-sm{
+    padding:13px;
+  }
+
+  .ctitle,
+  .mh,
+  .hist-result-info,
+  .hist-pac-card{
+    flex-wrap:wrap;
+  }
+
+  .ctitle{
+    align-items:flex-start;
+    line-height:1.35;
+  }
+
+  .btn{
+    min-height:44px;
+    justify-content:center;
+  }
+
+  .bsm{
+    min-height:38px;
+    padding:7px 11px;
+  }
+
+  .bico{
+    width:40px;
+    min-width:40px;
+    height:40px;
+  }
+
+  .mx{
+    min-width:44px;
+    min-height:44px;
+  }
+
+  .field input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+  .field select,
+  .field textarea,
+  .lf input,
+  .sw input,
+  .ag-dr,
+  .exck-search input,
+  .exck-conv select,
+  .exck-price input{
+    min-height:44px;
+    font-size:16px!important;
+  }
+
+  .field textarea{
+    min-height:96px;
+  }
+
+  .fg2,
+  .fg3,
+  .cfgs,
+  .cw,
+  .ph{
+    grid-template-columns:minmax(0,1fr);
+  }
+
+  .stats-row,
+  .at-stats,
+  .hist-stats,
+  .exgr,
+  .rwgr{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:10px;
+  }
+
+  .sc,
+  .at-stat,
+  .hist-stat{
+    min-width:0;
+    padding:14px 12px;
+  }
+
+  .sv{
+    font-size:1.55rem;
+  }
+
+  .ph::after{
+    display:none;
+  }
+
+  /* Busca, filtros e tabelas */
+  .sr,
+  .hist-search{
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .sw,
+  .hist-search .field{
+    width:100%;
+    min-width:0;
+  }
+
+  .ftabs{
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    padding-bottom:4px;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+  }
+
+  .ftabs::-webkit-scrollbar{
+    display:none;
+  }
+
+  .ftab{
+    flex:0 0 auto;
+    min-height:38px;
+    display:flex;
+    align-items:center;
+  }
+
+  .tw{
+    width:100%;
+    max-width:100%;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
+  }
+
+  .tw>table{
+    min-width:640px;
+  }
+
+  .hist-table{
+    min-width:680px;
+  }
+
+  /* Atendimento */
+  .at-wrap{
+    grid-template-columns:minmax(0,1fr);
+    gap:14px;
+  }
+
+  .at-cal{
+    position:static;
+    top:auto;
+  }
+
+  .at-hour-grid{
+    grid-template-columns:minmax(0,1fr);
+    padding-left:8px;
+  }
+
+  .at-card{
+    grid-template-columns:44px minmax(0,1fr);
+    gap:10px;
+  }
+
+  .at-actions{
+    grid-column:1/-1;
+    justify-content:flex-end;
+    flex-wrap:wrap;
+  }
+
+  .at-flt-caixa{
+    margin-left:0;
+  }
+
+  /* Agenda: calendário em cima e formulário abaixo */
+  .ag-toolbar{
+    padding:10px 12px;
+    gap:8px;
+    align-items:stretch;
+  }
+
+  .ag-nav{
+    flex:1 1 100%;
+    display:flex;
+  }
+
+  .ag-nav button{
+    flex:1 1 auto;
+    min-height:42px;
+    margin-right:4px;
+  }
+
+  .ag-dr{
+    flex:1 1 58%;
+    width:auto;
+    min-width:0;
+  }
+
+  .ag-vb{
+    flex:1 1 100%;
+    width:100%;
+    margin-left:0;
+  }
+
+  .ag-vb button{
+    flex:1 1 50%;
+    min-height:42px;
+    padding:7px 10px;
+  }
+
+  .ag-wrap2{
+    display:flex;
+    flex-direction:column;
+    height:auto;
+    min-height:0;
+    overflow:visible;
+  }
+
+  .ag-main2{
+    height:58dvh;
+    min-height:410px;
+    max-height:620px;
+    border-right:none;
+    border-bottom:1px solid rgba(255,255,255,.08);
+  }
+
+  .ag-gw{
+    overscroll-behavior:contain;
+  }
+
+  .ag-tc{
+    width:44px;
+  }
+
+  .ag-dc{
+    min-width:120px;
+  }
+
+  .ag-sd{
+    max-height:none;
+    overflow:visible;
+    padding:
+      18px
+      max(12px,env(safe-area-inset-right))
+      calc(26px + env(safe-area-inset-bottom))
+      max(12px,env(safe-area-inset-left));
+    border-left:none;
+  }
+
+  .ag-sd .field input,
+  .ag-sd .field select,
+  .ag-sd .field textarea{
+    min-height:44px;
+    padding:10px 12px;
+    font-size:16px!important;
+  }
+
+  .ag-sd .field textarea#pObs{
+    min-height:120px;
+  }
+
+  #pExWrap{
+    max-height:300px;
+  }
+
+  .exck-row{
+    grid-template-columns:22px minmax(0,1fr) 104px;
+    gap:8px;
+    padding:8px;
+  }
+
+  .exck-price{
+    grid-column:2/-1;
+  }
+
+  /* Modais viram painéis inferiores, mais naturais no iPhone */
+  .mo,
+  #fcModal{
+    align-items:flex-end;
+    padding:
+      12px
+      max(8px,env(safe-area-inset-right))
+      0
+      max(8px,env(safe-area-inset-left));
+  }
+
+  .mb,
+  .mb.msm,
+  .mb.mb-wide,
+  .fc-box{
+    width:100%;
+    max-width:none;
+    max-height:92dvh;
+    margin:0;
+    padding:20px 16px calc(18px + env(safe-area-inset-bottom));
+    border-radius:18px 18px 0 0;
+  }
+
+  .mf{
+    align-items:stretch;
+  }
+
+  .mf .btn{
+    flex:1 1 140px;
+  }
+
+  /* Avisos e mensagens sem ultrapassar a tela */
+  .toast{
+    left:max(12px,env(safe-area-inset-left));
+    right:max(12px,env(safe-area-inset-right));
+    bottom:calc(12px + env(safe-area-inset-bottom));
+    width:auto;
+    min-width:0;
+  }
+
+  .escala-alerta{
+    top:env(safe-area-inset-top);
+    width:calc(100% - 24px);
+    min-width:0;
+    max-width:none;
+    padding:13px 14px;
+  }
+}
+
+@media(max-width:380px){
+  .hlogo img{
+    max-width:112px;
+    height:29px;
+  }
+
+  .logoutb{
+    padding:6px 8px;
+  }
+
+  .stats-row,
+  .at-stats,
+  .hist-stats{
+    gap:8px;
+  }
+
+  .sc,
+  .at-stat,
+  .hist-stat{
+    padding:12px 9px;
+  }
+
+  .exck-row{
+    grid-template-columns:22px minmax(0,1fr);
+  }
+
+  .exck-conv,
+  .exck-price{
+    grid-column:2/-1;
+  }
+}
+
+@media(max-width:760px) and (max-height:600px){
+  #LS{
+    align-items:flex-start;
+  }
+
+  .lcrd{
+    margin:8px 0;
+  }
+
+  .ag-main2{
+    height:70dvh;
+    min-height:340px;
+  }
+}
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -2982,7 +3520,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.40 - 2026-07-29";
+var APP_VERSION = "v3.41 - 2026-07-30";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
