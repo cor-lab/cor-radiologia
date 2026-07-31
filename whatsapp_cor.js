@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v19-agendamento-familia-20260730";
+  var _VERSAO = "whatsapp-web-v20-limpa-agendamento-ao-resolver-20260731";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -209,7 +209,19 @@ var WHATSAPP = (function () {
     var n = numero || _sel;
     if (!n) return;
     try {
-      await _patchConversa(n, { resolvida: true, resolvida_em: new Date().toISOString(), resolvida_por: _quemSou(), escalada: false });
+      // Ao resolver, LIMPA agendamento_dados (30/07/2026). Sem isso, o pedido da
+      // paciente anterior ficava preso na conversa: quando a mesma pessoa (ex.: uma
+      // secretária que agenda vários pacientes) voltava para agendar OUTRO paciente,
+      // o botão "Criar agendamento" abria o formulário com os dados da paciente
+      // ANTERIOR, e a recepção tinha que corrigir tudo à mão (caso Jeanne/Teresinha).
+      // Resolver = "terminei com esta conversa", então zerar o pedido é o certo.
+      await _patchConversa(n, {
+        resolvida: true,
+        resolvida_em: new Date().toISOString(),
+        resolvida_por: _quemSou(),
+        escalada: false,
+        agendamento_dados: null
+      });
       if (n === _sel) _sel = null;   // fecha o chat: a conversa saiu de "Pendentes"
       if (typeof toast === "function") toast("✅", "Resolvida — veja em 'Resolvidas'");
       await _refresh();
