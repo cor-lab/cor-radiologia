@@ -3520,7 +3520,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.41 - 2026-07-30";
+var APP_VERSION = "v3.42 - 2026-08-04";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -11560,19 +11560,19 @@ function dentEndRender(){
       (e.principal?"⭐ ":"")+"Endereco "+(i+1)+(e.principal?" (Principal)":"")+"</label>"+
       "<button onclick='dentEndRemove("+i+")' style='background:none;border:none;color:#f66;cursor:pointer;font-size:13px' title='Remover'>✕</button></div>"+
       "<div class='field' style='margin-bottom:4px'><label style='font-size:10px'>DESCRICAO</label>"+
-      "<input id='deDesc"+i+"' value='"+esc(e.descricao)+"' placeholder='Ex: Consultorio Centro' style='font-size:12px;padding:5px 8px'></div>"+
+      "<input id='deDesc"+i+"' value='"+esc(e.descricao)+"' placeholder='Ex: Consultorio Centro' oninput='dentEndCollectFromForm()' style='font-size:12px;padding:5px 8px'></div>"+
       "<div class='fg2' style='gap:6px'>"+
       "<div class='field' style='flex:2'><label style='font-size:10px'>ENDERECO</label>"+
-      "<input id='deEnd"+i+"' value='"+esc(e.endereco)+"' placeholder='Rua, numero' style='font-size:12px;padding:5px 8px'></div>"+
+      "<input id='deEnd"+i+"' value='"+esc(e.endereco)+"' placeholder='Rua, numero' oninput='dentEndCollectFromForm()' style='font-size:12px;padding:5px 8px'></div>"+
       "<div class='field' style='flex:1'><label style='font-size:10px'>COMPLEMENTO</label>"+
-      "<input id='deCompl"+i+"' value='"+esc(e.complemento)+"' placeholder='Sala, bloco' style='font-size:12px;padding:5px 8px'></div></div>"+
+      "<input id='deCompl"+i+"' value='"+esc(e.complemento)+"' placeholder='Sala, bloco' oninput='dentEndCollectFromForm()' style='font-size:12px;padding:5px 8px'></div></div>"+
       "<div class='fg2' style='gap:6px;margin-top:4px'>"+
       "<div class='field'><label style='font-size:10px'>BAIRRO</label>"+
-      "<input id='deBairro"+i+"' value='"+esc(e.bairro)+"' style='font-size:12px;padding:5px 8px'></div>"+
+      "<input id='deBairro"+i+"' value='"+esc(e.bairro)+"' oninput='dentEndCollectFromForm()' style='font-size:12px;padding:5px 8px'></div>"+
       "<div class='field'><label style='font-size:10px'>CIDADE</label>"+
-      "<input id='deCidade"+i+"' value='"+esc(e.cidade)+"' placeholder='Santa Maria' style='font-size:12px;padding:5px 8px'></div>"+
+      "<input id='deCidade"+i+"' value='"+esc(e.cidade)+"' placeholder='Santa Maria' oninput='dentEndCollectFromForm()' style='font-size:12px;padding:5px 8px'></div>"+
       "<div class='field' style='max-width:90px'><label style='font-size:10px'>CEP</label>"+
-      "<input id='deCep"+i+"' value='"+esc(e.cep)+"' style='font-size:12px;padding:5px 8px'></div></div>"+
+      "<input id='deCep"+i+"' value='"+esc(e.cep)+"' oninput='dentEndCollectFromForm()' style='font-size:12px;padding:5px 8px'></div></div>"+
       "</div>";
   });
   el.innerHTML=h;
