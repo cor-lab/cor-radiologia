@@ -83,7 +83,15 @@
       "#pgProto .li .t{display:flex;justify-content:space-between;gap:8px;align-items:baseline}",
       "#pgProto .li .w{font-weight:700;font-size:14px}#pgProto .li .wh{font-size:12px;color:var(--muted);white-space:nowrap}",
       "#pgProto .li .e{font-size:13px;margin-top:4px}#pgProto .li .b{font-size:12px;color:var(--muted);margin-top:3px}",
-      "#pgProto .lie{color:var(--muted);text-align:center;padding:16px 0;font-size:13px}"
+      "#pgProto .lie{color:var(--muted);text-align:center;padding:16px 0;font-size:13px}",
+      "#pgProto .phtoggle{cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding-bottom:15px;user-select:none}",
+      "#pgProto .phtoggle:hover{color:var(--pcd)}",
+      "#pgProto .chev{color:var(--muted);transition:transform .18s;font-size:11px}",
+      "#pgProto .chev.open{transform:rotate(90deg)}",
+      "#pgProto .phbody{display:none}#pgProto .phbody.open{display:block}",
+      "#pgProto .srow2{display:flex;gap:8px;margin-bottom:8px}",
+      "#pgProto .phq{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;outline:none;color:#0f172a}",
+      "#pgProto .phq:focus{border-color:var(--pc)}"
     ].join("");
     document.head.appendChild(st);
   }
@@ -177,9 +185,15 @@
             '</div>' +
           '</div>' +
         '</div>' +
-        '<div class="pcard">' +
-          '<div class="pch">Protocolos registrados hoje</div>' +
-          '<div class="pcb"><div id="protoLog"><div class="lie">Carregando...</div></div></div>' +
+        '<div class="pcard" id="protoHistCard">' +
+          '<div class="pch phtoggle" id="protoHistToggle"><span>🔎 Consultar protocolos</span><span class="chev" id="protoHistChev">▸</span></div>' +
+          '<div class="pcb phbody" id="protoHistBody">' +
+            '<div class="srow2">' +
+              '<input id="protoHistQ" class="phq" placeholder="Nome ou telefone" autocomplete="off">' +
+              '<button class="pbtn pri" id="protoHistBtn" style="padding:0 16px">Buscar</button>' +
+            '</div>' +
+            '<div id="protoHistResults"></div>' +
+          '</div>' +
         '</div>' +
       '</div>';
 
@@ -204,7 +218,14 @@
       if (e.key === "Enter") buscar();
     });
     document.getElementById("protoReg").onclick = registrar;
-    carregarLog();
+
+    document.getElementById("protoHistToggle").onclick = toggleHist;
+    document.getElementById("protoHistBtn").onclick = function () {
+      consultaHist(document.getElementById("protoHistQ").value);
+    };
+    document.getElementById("protoHistQ").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") consultaHist(document.getElementById("protoHistQ").value);
+    });
   }
 
   /* ── 5. Buscar no Supabase ──────────────────────────────────────────────── */
@@ -305,18 +326,47 @@
     toast("Retirada registrada (" + sel.length + " exame" + (sel.length > 1 ? "s" : "") + ").");
     document.getElementById("protoQuem").value = "";
     await buscar();       // recarrega — os retirados somem da lista
-    carregarLog();
+    refreshHistIfOpen();
   }
 
-  /* ── 7. Log do dia ──────────────────────────────────────────────────────── */
-  async function carregarLog() {
-    var log = document.getElementById("protoLog");
-    if (!log) return;
-    var res = await supa.rpc("protocolo_do_dia");
-    if (res.error) { log.innerHTML = '<div class="lie">Erro ao carregar.</div>'; return; }
-    var rows = res.data || [];
-    if (rows.length === 0) { log.innerHTML = '<div class="lie">Nenhuma retirada registrada ainda.</div>'; return; }
-    log.innerHTML = rows.map(function (r) {
+  /* ── 7. Consulta de protocolos (painel recolhível) ──────────────────────── */
+  function toggleHist() {
+    var body = document.getElementById("protoHistBody");
+    var chev = document.getElementById("protoHistChev");
+    if (!body) return;
+    var aberto = body.classList.toggle("open");
+    if (chev) chev.classList.toggle("open", aberto);
+    if (aberto && !body._carregou) {
+      body._carregou = true;
+      consultaHist("");   // primeira abertura mostra as retiradas de hoje
+    }
+  }
+
+  async function consultaHist(q) {
+    var box = document.getElementById("protoHistResults");
+    if (!box) return;
+    box.innerHTML = '<div class="lie">Buscando...</div>';
+    var termo = (q || "").trim();
+    var res = termo
+      ? await supa.rpc("protocolo_consultar", { p_busca: termo })
+      : await supa.rpc("protocolo_do_dia");
+    if (res.error) { box.innerHTML = '<div class="lie">Erro: ' + esc(res.error.message) + "</div>"; return; }
+    renderLog(res.data || [], box, termo);
+  }
+
+  function renderLog(rows, box, termo) {
+    if (!rows.length) {
+      box.innerHTML = '<div class="lie">' +
+        (termo ? "Nada encontrado para “" + esc(termo) + "”." : "Nenhuma retirada registrada hoje.") +
+        "</div>";
+      return;
+    }
+    if (!termo) {
+      box.innerHTML = '<div class="lie" style="padding:2px 0 10px">Retiradas de hoje (' + rows.length + "):</div>";
+    } else {
+      box.innerHTML = '<div class="lie" style="padding:2px 0 10px">' + rows.length + " resultado(s):</div>";
+    }
+    box.innerHTML += rows.map(function (r) {
       var dt = new Date(r.retirado_em);
       var hora = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
       var dia = dt.toLocaleDateString("pt-BR");
@@ -327,6 +377,15 @@
         (r.vinculo ? " · " + esc(r.vinculo) : "") +
         (r.usuario_nome ? " · conf. " + esc(r.usuario_nome) : "") + "</div></div>";
     }).join("");
+  }
+
+  // recarrega a consulta se o painel estiver aberto (após registrar)
+  function refreshHistIfOpen() {
+    var body = document.getElementById("protoHistBody");
+    if (body && body.classList.contains("open")) {
+      var q = document.getElementById("protoHistQ");
+      consultaHist(q ? q.value : "");
+    }
   }
 
   /* ── 8. Toast ───────────────────────────────────────────────────────────── */
