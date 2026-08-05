@@ -44,7 +44,7 @@
     var st = document.createElement("style");
     st.id = "proto-css";
     st.textContent = [
-      "#pgProto{--pc:#0e7490;--pcd:#155e75;--psoft:#ecfeff;--ok:#15803d;--muted:#64748b;--line:#e2e8f0}",
+      "#pgProto{--pc:#0e7490;--pcd:#155e75;--psoft:#ecfeff;--ok:#15803d;--muted:#64748b;--line:#e2e8f0;color:#0f172a}",
       "#pgProto .pcard{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 2px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.06);margin-bottom:18px;overflow:hidden}",
       "#pgProto .pch{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;margin:0;padding:15px 18px 0}",
       "#pgProto .pcb{padding:16px 18px}",
@@ -66,11 +66,11 @@
       "#pgProto .pat{border:1px solid var(--line);border-radius:14px;margin-top:14px;overflow:hidden}",
       "#pgProto .path{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#f8fafc;border-bottom:1px solid var(--line)}",
       "#pgProto .pav{width:34px;height:34px;border-radius:50%;background:var(--psoft);color:var(--pcd);display:grid;place-items:center;font-weight:800;font-size:14px}",
-      "#pgProto .pnm{font-weight:700}#pgProto .pmt{font-size:12px;color:var(--muted)}",
+      "#pgProto .pnm{font-weight:700;color:#0f172a;font-size:15px}#pgProto .pmt{font-size:12px;color:var(--muted)}",
       "#pgProto .ex{display:flex;align-items:center;gap:12px;padding:11px 14px;border-top:1px solid #f1f5f9}",
       "#pgProto .ex label{display:flex;align-items:center;gap:12px;cursor:pointer;flex:1}",
       "#pgProto .ex input{width:22px;height:22px;accent-color:var(--pc);cursor:pointer}",
-      "#pgProto .exn{font-weight:600}#pgProto .exm{font-size:12px;color:var(--muted);margin-top:1px}",
+      "#pgProto .exn{font-weight:600;color:#0f172a}#pgProto .exm{font-size:12px;color:var(--muted);margin-top:1px}",
       "#pgProto .pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#f0fdf4;color:var(--ok)}",
       "#pgProto .cbar{margin-top:16px;padding:14px;border:1px dashed var(--pc);border-radius:14px;background:var(--psoft);display:none}",
       "#pgProto .cbar.show{display:block}",
