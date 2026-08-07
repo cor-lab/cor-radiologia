@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v20-limpa-agendamento-ao-resolver-20260731";
+  var _VERSAO = "whatsapp-web-v21-relogin-em-401-403-20260806";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -277,17 +277,53 @@ var WHATSAPP = (function () {
   async function _jwt() {
     try {
       var s = await supa.auth.getSession();
-      return s && s.data && s.data.session ? s.data.session.access_token : null;
+      var sess = s && s.data ? s.data.session : null;
+      if (!sess) return null;
+      // (06/08/2026) getSession() às vezes devolve um access_token JÁ VENCIDO quando a
+      // aba ficou suspensa/fechada (o timer de auto-refresh não rodou). Se o token está
+      // expirado ou perto disso, força a renovação ANTES de usar — assim não mandamos
+      // token velho pro servidor (que responderia 403). Se o refresh falhar (ex.: sessão
+      // já morta no Supabase), seguimos com o que tem: o 403 é tratado em _chamarBot.
+      var agora = Math.floor(Date.now() / 1000);
+      if (sess.expires_at && (sess.expires_at - agora) < 60) {
+        try {
+          var rs = await supa.auth.refreshSession();
+          if (rs && rs.data && rs.data.session) sess = rs.data.session;
+        } catch (e) { /* refresh falhou: cai no tratamento de 401/403 abaixo */ }
+      }
+      return sess.access_token || null;
     } catch (e) { return null; }
+  }
+  // (06/08/2026) Sessão recusada pelo servidor: o Supabase apagou a sessão
+  // (session_not_found) ou o token venceu e não deu pra renovar. O token guardado no
+  // navegador ainda "parece" válido, então getSession() não acusa nada e o usuário ficava
+  // preso num "HTTP 403" sem explicação. Aqui a gente LIMPA a sessão morta (signOut zera o
+  // storage mesmo se o /logout falhar) e avisa pra refazer login — no próximo refresh a
+  // pessoa cai na tela de login em vez de repetir o 403 com a sessão morta restaurada.
+  var _tratandoSessaoMorta = false;
+  async function _sessaoMorta() {
+    if (typeof toast === "function") toast("🔒", "Sua sessão expirou. Recarregando para o login…");
+    if (_tratandoSessaoMorta) return;   // evita signOut/reload duplicado em chamadas simultâneas
+    _tratandoSessaoMorta = true;
+    try { if (typeof supa !== "undefined" && supa && supa.auth) await supa.auth.signOut(); } catch (e) {}
+    // Recarrega para cair na tela de login. Espera ~1,5s para o toast ser visto; o signOut
+    // acima já zerou a sessão morta do storage, então o reload não a restaura.
+    try {
+      if (typeof location !== "undefined") setTimeout(function () { location.reload(); }, 1500);
+    } catch (e) {}
   }
   async function _chamarBot(rota, corpo) {
     var jwt = await _jwt();
-    if (!jwt) { if (typeof toast === "function") toast("⚠️", "Sessão expirada, refaça login"); return null; }
-    return fetch(_BOT_URL + rota, {
+    if (!jwt) { await _sessaoMorta(); return null; }
+    var r = await fetch(_BOT_URL + rota, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + jwt },
       body: JSON.stringify(corpo)
     });
+    // 401/403 = o servidor recusou a autenticação. Trata como sessão morta (limpa + avisa).
+    // NÃO consome o corpo (só lê .status), então os callers seguem lendo r.text()/r.json().
+    if (r && (r.status === 401 || r.status === 403)) { await _sessaoMorta(); }
+    return r;
   }
 
   // Adquire a trava da conversa (assume). Retorna true se conseguiu (ou já era minha),
