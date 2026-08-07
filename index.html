@@ -3520,7 +3520,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.45 - 2026-08-07";
+var APP_VERSION = "v3.46 - 2026-08-07";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5185,8 +5185,10 @@ async function marcarRealizadoEEmitir(agendamentoId){
     }
 
     // 🔒 v3.45 — MÉTODO DE PAGAMENTO OBRIGATÓRIO antes de realizar
+    // v3.46: abre o atendimento com aviso destacado e trava.
     if (!String(ag.metodo_pagamento || "").trim()) {
-      toast("⚠️ Bloqueado", "Marque o método de pagamento antes de realizar (💰 no atendimento): Cartão, Dinheiro, Pix, Guia ou Pontos.");
+      window._mpgAlertaId = agendamentoId;
+      if (typeof agEV === "function") agEV(agendamentoId);
       return false;
     }
 
@@ -8245,8 +8247,10 @@ async function atMarkRealizado(id) {
   }
 
   // 🔒 v3.45 — MÉTODO DE PAGAMENTO OBRIGATÓRIO antes de realizar
+  // v3.46: em vez de só toast, ABRE o atendimento com aviso destacado e trava.
   if (aPre && !String(aPre.metodo_pagamento || "").trim()) {
-    toast("⚠️ Bloqueado", "Marque o método de pagamento antes de realizar (💰 no atendimento): Cartão, Dinheiro, Pix, Guia ou Pontos.");
+    window._mpgAlertaId = id;
+    if (typeof agEV === "function") agEV(id);
     return;
   }
 
@@ -8639,6 +8643,7 @@ async function setMetodoPagamento(id, metodo){
     });
     if(r.ok){
       if(a0) a0.metodo_pagamento = novo;
+      if(lista.length) window._mpgAlertaId = null;  // v3.46: marcou -> some o aviso
       var rot = lista.map(function(m){ return _MPG_NOMES[m] || m; }).join(" + ");
       toast("💰", lista.length ? ("Pagamento: " + rot) : "Pagamento desmarcado");
       if(typeof agEV === "function") agEV(id);   // re-renderiza o modal com a seleção
@@ -8704,7 +8709,13 @@ function agEV(ev, id) {
   b += "</div>";
   b += "<span class=\"badge " + (sc[a.st] || "bgr") + "\" style=\"align-self:flex-start\">" + (sl[a.st] || a.st) + "</span></div>";
   // Método de pagamento — múltipla escolha (v3.45: + Guia e Pontos)
-  b += "<div style=\"display:flex;align-items:center;gap:8px;margin:8px 0 2px;flex-wrap:wrap\"><span style=\"opacity:.7;font-size:.82rem\">💰 Pagamento:</span>" + _btnMetodoPg(a, "cartao", "💳 Cartão") + _btnMetodoPg(a, "dinheiro", "💵 Dinheiro") + _btnMetodoPg(a, "pix", "📱 Pix") + _btnMetodoPg(a, "guia", "📄 Guia") + _btnMetodoPg(a, "pontos", "🪙 Pontos") + "</div>";
+  // v3.46: aviso destacado quando tentou Realizar sem método marcado
+  var _mpgAlerta = (window._mpgAlertaId === a.id) && !String(a.metodo_pagamento || "").trim();
+  if(_mpgAlerta){
+    b += "<style>@keyframes mpgPulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.65)}50%{box-shadow:0 0 0 9px rgba(239,68,68,0)}}</style>";
+    b += "<div style=\"margin:10px 0 2px;padding:12px 14px;background:rgba(239,68,68,.16);border:2px solid #ef4444;border-radius:10px;font-weight:700;font-size:.95rem;display:flex;align-items:center;gap:9px;animation:mpgPulse 1.2s ease-in-out infinite\">⚠️ ESCOLHA O MÉTODO DE PAGAMENTO para marcar como Realizado</div>";
+  }
+  b += "<div style=\"display:flex;align-items:center;gap:8px;margin:8px 0 2px;flex-wrap:wrap" + (_mpgAlerta ? ";border:1px dashed #ef4444;border-radius:10px;padding:8px" : "") + "\"><span style=\"opacity:.7;font-size:.82rem\">💰 Pagamento:</span>" + _btnMetodoPg(a, "cartao", "💳 Cartão") + _btnMetodoPg(a, "dinheiro", "💵 Dinheiro") + _btnMetodoPg(a, "pix", "📱 Pix") + _btnMetodoPg(a, "guia", "📄 Guia") + _btnMetodoPg(a, "pontos", "🪙 Pontos") + "</div>";
 
   var btns = [{lbl:"Fechar", cls:"btno", fn:closeM}];
 
@@ -8727,6 +8738,13 @@ function agEV(ev, id) {
         lbl:"✅ Realizado",
         cls:"btng",
         fn:async function(){
+          // 🔒 v3.46 — sem método de pagamento: NÃO fecha o modal. Mostra o
+          // aviso destacado em cima dos botões de pagamento e trava ali.
+          if(!String(ag.metodo_pagamento || "").trim()){
+            window._mpgAlertaId = ag.id;
+            agEV(ag.id);
+            return;
+          }
           // ⚡ FIX 06/05/2026 — handler unificado.
           // Antes: chamava dbUpdAgSt direto, pulando bloqueio LGPD de data_nasc,
           // geração de token FotonWeb e aviso WhatsApp ao dentista. Agora delega
