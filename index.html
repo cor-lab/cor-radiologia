@@ -3520,7 +3520,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.44 - 2026-08-06";
+var APP_VERSION = "v3.45 - 2026-08-07";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5181,6 +5181,12 @@ async function marcarRealizadoEEmitir(agendamentoId){
     // Regra de cadastro/LGPD: não realizar exame sem identificação completa do paciente.
     if (!ag.paciente_data_nascimento || String(ag.paciente_data_nascimento).trim() === '') {
       toast("⚠️ Bloqueado", "Não é possível realizar o exame sem a data de nascimento do paciente. Edite o cadastro do paciente primeiro.");
+      return false;
+    }
+
+    // 🔒 v3.45 — MÉTODO DE PAGAMENTO OBRIGATÓRIO antes de realizar
+    if (!String(ag.metodo_pagamento || "").trim()) {
+      toast("⚠️ Bloqueado", "Marque o método de pagamento antes de realizar (💰 no atendimento): Cartão, Dinheiro, Pix, Guia ou Pontos.");
       return false;
     }
 
@@ -8238,6 +8244,12 @@ async function atMarkRealizado(id) {
     return;
   }
 
+  // 🔒 v3.45 — MÉTODO DE PAGAMENTO OBRIGATÓRIO antes de realizar
+  if (aPre && !String(aPre.metodo_pagamento || "").trim()) {
+    toast("⚠️ Bloqueado", "Marque o método de pagamento antes de realizar (💰 no atendimento): Cartão, Dinheiro, Pix, Guia ou Pontos.");
+    return;
+  }
+
   // 📲 Pré-abre janela do WhatsApp ANTES dos awaits (mantém vínculo com user click,
   // evita bloqueio de pop-up). Será preenchida com URL ao final ou fechada se não couber.
   var waWindow = null;
@@ -8596,9 +8608,16 @@ function agCC(ds,ts) {
   if(sd) sd.scrollTop=0;
 }
 
-// ══ MÉTODO DE PAGAMENTO (Cartão/Dinheiro/Pix) — registrado na hora de atender ══
+// ══ MÉTODO DE PAGAMENTO (Cartão/Dinheiro/Pix/Guia/Pontos) — múltipla escolha ══
+// ⚡ v3.45 — grava lista separada por vírgula em agendamentos.metodo_pagamento
+// (ex.: "cartao,pix"). Clique alterna liga/desliga. Realizar exige >= 1 marcado.
+var _MPG_NOMES = {cartao:"Cartão", dinheiro:"Dinheiro", pix:"Pix", guia:"Guia", pontos:"Pontos"};
+function _metodosPgList(a){
+  return String((a && a.metodo_pagamento) || "").split(",")
+    .map(function(s){ return s.trim(); }).filter(Boolean);
+}
 function _btnMetodoPg(a, val, label){
-  var sel = (a && a.metodo_pagamento === val);
+  var sel = _metodosPgList(a).indexOf(val) !== -1;
   var st = sel
     ? "background:linear-gradient(135deg,#4ab848,#7dcf6e);color:#08240f;border:1px solid #4ab848;font-weight:700;"
     : "background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.15);";
@@ -8606,17 +8625,22 @@ function _btnMetodoPg(a, val, label){
 }
 async function setMetodoPagamento(id, metodo){
   try{
+    var a0 = (ags || []).find(function(x){ return x.id === id; });
+    var lista = _metodosPgList(a0);
+    var ix = lista.indexOf(metodo);
+    if(ix === -1) lista.push(metodo); else lista.splice(ix, 1);
+    var novo = lista.length ? lista.join(",") : null;
+
     var _uid = (typeof CU !== "undefined" && CU && CU.id) ? CU.id : null;
     var r = await supaFetch("/rest/v1/agendamentos?id=eq." + id, {
       method:"PATCH",
       headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
-      body:JSON.stringify({ metodo_pagamento: metodo, updated_by: _uid })
+      body:JSON.stringify({ metodo_pagamento: novo, updated_by: _uid })
     });
     if(r.ok){
-      var a = (ags || []).find(function(x){ return x.id === id; });
-      if(a) a.metodo_pagamento = metodo;
-      var nomes = {cartao:"Cartão", dinheiro:"Dinheiro", pix:"Pix"};
-      toast("💰", "Pagamento: " + (nomes[metodo] || metodo));
+      if(a0) a0.metodo_pagamento = novo;
+      var rot = lista.map(function(m){ return _MPG_NOMES[m] || m; }).join(" + ");
+      toast("💰", lista.length ? ("Pagamento: " + rot) : "Pagamento desmarcado");
       if(typeof agEV === "function") agEV(id);   // re-renderiza o modal com a seleção
     } else {
       toast("Erro", "Não foi possível salvar o método (" + r.status + ").");
@@ -8679,8 +8703,8 @@ function agEV(ev, id) {
   else if(a.status_fiscal==="cancelada") b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🚫</span> <span style=\"color:var(--or)\">Nota cancelada</span></div>";
   b += "</div>";
   b += "<span class=\"badge " + (sc[a.st] || "bgr") + "\" style=\"align-self:flex-start\">" + (sl[a.st] || a.st) + "</span></div>";
-  // Método de pagamento (Cartão/Dinheiro/Pix) — grava na hora, no atendimento
-  b += "<div style=\"display:flex;align-items:center;gap:8px;margin:8px 0 2px;flex-wrap:wrap\"><span style=\"opacity:.7;font-size:.82rem\">💰 Pagamento:</span>" + _btnMetodoPg(a, "cartao", "💳 Cartão") + _btnMetodoPg(a, "dinheiro", "💵 Dinheiro") + _btnMetodoPg(a, "pix", "📱 Pix") + "</div>";
+  // Método de pagamento — múltipla escolha (v3.45: + Guia e Pontos)
+  b += "<div style=\"display:flex;align-items:center;gap:8px;margin:8px 0 2px;flex-wrap:wrap\"><span style=\"opacity:.7;font-size:.82rem\">💰 Pagamento:</span>" + _btnMetodoPg(a, "cartao", "💳 Cartão") + _btnMetodoPg(a, "dinheiro", "💵 Dinheiro") + _btnMetodoPg(a, "pix", "📱 Pix") + _btnMetodoPg(a, "guia", "📄 Guia") + _btnMetodoPg(a, "pontos", "🪙 Pontos") + "</div>";
 
   var btns = [{lbl:"Fechar", cls:"btno", fn:closeM}];
 
@@ -9232,6 +9256,15 @@ function openEditAg(id) {
       var hr2 = document.getElementById("eHr2").value;
       var dur3 = parseInt(document.getElementById("eDur2").value) || 30;
       var st3 = document.getElementById("eSt2").value;
+
+      // 🔒 v3.45 — mudar status p/ "realizado" pela EDIÇÃO também exige método
+      // de pagamento (mesma regra do botão Realizado). Atendimento que JÁ era
+      // realizado (histórico) segue editável sem método.
+      var _stOrig45 = a._statusOriginal || a.status_clinico_original || a.status_clinico || a.st;
+      if (st3 === "realizado" && _stOrig45 !== "realizado" && !String(a.metodo_pagamento || "").trim()) {
+        toast("⚠️ Bloqueado", "Marque o método de pagamento antes de realizar (💰 no atendimento): Cartão, Dinheiro, Pix, Guia ou Pontos.");
+        return;
+      }
       var itensEdit = getExamesSelecionados("eExames");
       var dId3 = parseInt(document.getElementById("eDent2").value) || a.dId;
 
