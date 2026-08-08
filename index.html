@@ -3580,7 +3580,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.50 - 2026-08-08";
+var APP_VERSION = "v3.51 - 2026-08-08";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8792,8 +8792,10 @@ function dpAtualizaSaldo(){
   var total = Number(window._dpTotalAtual || 0);
   if(!d){ info.innerHTML = ""; return; }
   var saldo = Number(d.pts || 0);
-  info.innerHTML = "Saldo de <b>" + esc(d.n) + "</b>: <b style='color:" + (saldo >= total ? "var(--g)" : "#f59e0b") + "'>" + fmtN(saldo) + " pts</b>" +
-    (saldo < total ? " <span style='color:#f59e0b;font-size:.78rem'>(pode negativar)</span>" : "");
+  var corS = saldo < 0 ? "#ef4444" : (saldo >= total ? "var(--g)" : "#f59e0b");
+  info.innerHTML = "Saldo de <b>" + esc(d.n) + "</b>: <b style='color:" + corS + "'>" + fmtN(saldo) + " pts</b>" +
+    (saldo < 0 ? " <span style='color:#ef4444;font-size:.78rem;font-weight:700'>(JÁ NEGATIVO)</span>"
+               : (saldo < total ? " <span style='color:#f59e0b;font-size:.78rem'>(pode negativar)</span>" : ""));
 }
 function abrirModalDescontoPontos(id){
   var a = (ags || []).find(function(x){ return x.id === id; });
@@ -11115,9 +11117,12 @@ function rportal(dId){
   h+="</div>";
 
   h+="<div class='cp'>";
-  h+="<div class='cbig'>"+fmtN(d.pts)+"</div>";
+  // v3.50 — saldo NEGATIVO em vermelho (pontos usados além do saldo)
+  var _negSty = (Number(d.pts) < 0) ? " style='color:#ef4444'" : "";
+  h+="<div class='cbig'"+_negSty+">"+fmtN(d.pts)+"</div>";
   h+="<div class='clbl'>pontos confirmados</div>";
-  h+="<div class='cval'>≈ R$ "+(d.pts*1).toFixed(2)+"</div>";
+  h+="<div class='cval'"+_negSty+">≈ R$ "+(d.pts*1).toFixed(2)+"</div>";
+  if(Number(d.pts) < 0) h+="<div style='margin-top:4px;font-size:.72rem;color:#ef4444;font-weight:700'>⚠️ SALDO NEGATIVO</div>";
   h+="<div style='margin-top:6px;font-size:.78rem;color:var(--gr)'>Pendentes: <strong style='color:var(--or)'>"+fmtN(ptsPend)+" pts</strong></div>";
   h+="<button class='btn btno' style='margin-top:11px;width:100%;justify-content:center;font-size:.74rem' onclick=\"abrirExtratoCashback("+d.id+")\">📄 Extrato</button>";
   h+="</div></div>";
@@ -11165,7 +11170,7 @@ function abrirExtratoCashback(dId){
   h += "<div style='background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px'>";
   h += "<div style='font-size:1rem;font-weight:700'>" + esc(d.n) + "</div>";
   h += "<div style='font-size:.82rem;color:var(--gr);margin-top:4px'>CRO " + esc(d.cro) + " • " + esc(d.esp) + "</div>";
-  h += "<div style='margin-top:10px;font-size:.9rem'>Saldo atual: <strong style='color:var(--g)'>" + fmtN(d.pts) + " pts</strong> ≈ <strong style='color:var(--tl)'>R$ " + (d.pts*1).toFixed(2) + "</strong></div>";
+  h += "<div style='margin-top:10px;font-size:.9rem'>Saldo atual: <strong style='color:" + (Number(d.pts)<0 ? "#ef4444" : "var(--g)") + "'>" + fmtN(d.pts) + " pts</strong> ≈ <strong style='color:" + (Number(d.pts)<0 ? "#ef4444" : "var(--tl)") + "'>R$ " + (d.pts*1).toFixed(2) + "</strong></div>";
   h += "</div>";
 
   h += "<div style='max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:8px'>";
@@ -11243,7 +11248,7 @@ function rdent(){
   h+="</tr></thead><tbody id='dtTb'></tbody></table></div></div>";
   document.getElementById("pgDt").innerHTML=h; bldDtRows();
 }
-function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong>"+(d.obs?"<span title='"+esc(d.obs)+"' style='cursor:help;font-size:.8rem;opacity:.75'>📝</span>":"")+"</div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:var(--g);font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button><button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button></div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
+function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong>"+(d.obs?"<span title='"+esc(d.obs)+"' style='cursor:help;font-size:.8rem;opacity:.75'>📝</span>":"")+"</div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:"+(Number(d.pts)<0?"#ef4444":"var(--g)")+";font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button><button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button></div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
 function filtDt(v){dtSrch=v.toLowerCase();bldDtRows();}
 function openDtM(eid){
   var ed=eid?fdent(eid):null;
