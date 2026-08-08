@@ -3580,7 +3580,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.51 - 2026-08-08";
+var APP_VERSION = "v3.52 - 2026-08-08";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -4949,7 +4949,9 @@ function abrirModalEmitirNota(agendamentoId){
   document.getElementById("nfPaciente").value = ag.pac || "";
   document.getElementById("nfDentistaId").value = ag.dId || "";
   document.getElementById("nfFormaPg").value = formaPgFinal;
-  document.getElementById("nfValorServico").value = Number(calcPgFinal.valor_faturado || 0).toFixed(2);
+  // v3.52 — nota já nasce LÍQUIDA do desconto de pontos (ex.: 88 − 60 pts = 28)
+  var _dpNota = Number(ag.desconto_pontos || 0);
+  document.getElementById("nfValorServico").value = Math.max(0, Number(calcPgFinal.valor_faturado || 0) - _dpNota).toFixed(2);
   document.getElementById("nfCpfCnpj").value = ag.paciente_cpf || "";
   document.getElementById("nfNumero").value = "";
   document.getElementById("nfProtocolo").value = "";
@@ -5022,10 +5024,16 @@ async function confirmarEmissaoNota() {
     // Antes: cálculo inline aqui, separado do preview — preview ficou
     // com fórmula bugada quando havia terceirizados. Agora helper único.
     var calcPgFinal = calcNotaPorItens(ag, formaPagamentoFinal);
-    var valorServico = calcPgFinal.valor_faturado;
+    // v3.52 — a NFS-e sai pelo valor LÍQUIDO do desconto de pontos.
+    // O valor cheio do exame continua gravado no atendimento (caixa/relatório).
+    var valorServico = Math.max(0, calcPgFinal.valor_faturado - Number(ag.desconto_pontos || 0));
 
     if (valorServico <= 0) {
-      toast("Erro", "Informe um valor de serviço válido.");
+      if (Number(ag.desconto_pontos || 0) > 0) {
+        toast("Atenção", "O desconto de pontos cobriu 100% do valor — não há valor a faturar nesta nota.");
+      } else {
+        toast("Erro", "Informe um valor de serviço válido.");
+      }
       return;
     }
 
@@ -10545,7 +10553,8 @@ function atualizarValorNota(){
   // v3.8 P3 fix: usa helper que separa itens com/sem desconto.
   var calc = calcNotaPorItens(ag, formaPg);
 
-  document.getElementById("nfValorServico").value = calc.valor_faturado.toFixed(2);
+  // v3.52 — abate o desconto de pontos do valor da nota
+  document.getElementById("nfValorServico").value = Math.max(0, calc.valor_faturado - Number(ag.desconto_pontos || 0)).toFixed(2);
 }
 function filtEx(v){exSrch=v.toLowerCase();bldExRows();}
 function setFlt(el,f){document.querySelectorAll(".ftab").forEach(function(x){x.classList.remove("active");});el.classList.add("active");exFlt=f;bldExRows();}
