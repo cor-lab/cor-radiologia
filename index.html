@@ -2007,6 +2007,10 @@ select:focus{
 .at-mini.st-realizado::before{background:#4ab848}
 .at-mini.st-aguardando::before{background:#c9a84c}
 .at-mini.st-cancelado::before{background:#8890a0}
+/* v3.47 — atendimento SEM REQUISIÇÃO anexada: card em vermelho */
+.at-mini.sem-req{background:rgba(190,30,45,.22)!important;border-color:rgba(239,68,68,.65)!important}
+.at-mini.sem-req::before{background:#ef4444!important}
+.at-mini.sem-req:hover{border-color:#ef4444!important}
 .at-mini-top{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px}
 .at-mini-nome{font-size:.84rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .at-mini-hr{font-family:"DM Mono",monospace;font-size:.72rem;color:var(--g);font-weight:600;flex-shrink:0}
@@ -3430,6 +3434,58 @@ async function renderDocsGuias(ag) {
   });
 }
 
+// ═══ v3.47 — DESTAQUE "SEM REQUISIÇÃO" nos cards do Atendimento ═══
+// A fonte da verdade é o FotonWeb (arquivos {SEQ}reqfrente.jpg etc., que também
+// chegam pelo scanner/bridge). Verificamos em lote, com cache de 2 min, e
+// pintamos de vermelho o card sem "Requisição frente/verso".
+var _reqDocsCache = {};      // seq -> { temReq: bool, t: ms }
+var _reqDocsPendentes = {};  // seq -> true (consulta em andamento)
+var _REQ_TTL_MS = 120000;
+
+function _reqTem(seq){
+  var c = _reqDocsCache[seq];
+  return c ? c.temReq : null;   // null = ainda não verificado
+}
+
+async function _reqVerificarLote(lista){
+  var agora = Date.now();
+  var alvos = [];
+  (lista || []).forEach(function(a){
+    var st = a.status_clinico || a.st;
+    var seq = a.firebird_seq_atend;
+    if(!seq || st === "cancelado") return;
+    var c = _reqDocsCache[seq];
+    if(c && (agora - c.t) < _REQ_TTL_MS) return;
+    if(_reqDocsPendentes[seq]) return;
+    _reqDocsPendentes[seq] = true;
+    alvos.push(seq);
+  });
+  if(!alvos.length) return;
+
+  var mudou = false;
+  for(var i = 0; i < alvos.length; i += 6){          // 6 consultas por vez
+    await Promise.all(alvos.slice(i, i+6).map(async function(seq){
+      try{
+        var r = await fwFetch("/api/agendamento/" + seq + "/documentos", { method: "GET" });
+        if(!r.ok) return;
+        var j = await r.json();
+        var docs = (j && j.documentos) || [];
+        var tem = docs.some(function(d){
+          return (d.slot === "reqfrente" || d.slot === "reqverso") && d.exists;
+        });
+        var antes = _reqDocsCache[seq] ? _reqDocsCache[seq].temReq : null;
+        _reqDocsCache[seq] = { temReq: tem, t: Date.now() };
+        if(antes !== tem) mudou = true;
+      }catch(_){ }
+      finally{ delete _reqDocsPendentes[seq]; }
+    }));
+  }
+  // repinta a tela de atendimento uma vez (cache quente ⇒ sem novo fetch/loop)
+  if(mudou && typeof renderAtendimento === "function" && document.getElementById("pgAt")){
+    renderAtendimento();
+  }
+}
+
 function docPick(seq, slot, ag) {
   var inp = document.createElement("input");
   inp.type = "file";
@@ -3458,7 +3514,9 @@ async function docUpload(seq, slot, file, ag) {
       return;
     }
     toast("✅", "Documento enviado.");
+    delete _reqDocsCache[seq];   // v3.47: revalida o destaque "sem requisição"
     renderDocsGuias(ag);
+    if(document.getElementById("pgAt") && typeof renderAtendimento === "function") renderAtendimento();
   } catch (e) {
     toast("Erro", e.message);
   }
@@ -3504,7 +3562,9 @@ async function docDelete(seq, slot, ag) {
     var r = await fwFetch("/api/agendamento/" + seq + "/documento/" + slot, { method: "DELETE" });
     if (!r.ok) { toast("Erro", "Falha ao excluir (" + r.status + ")"); return; }
     toast("🗑️", "Documento excluído.");
+    delete _reqDocsCache[seq];   // v3.47: revalida o destaque "sem requisição"
     renderDocsGuias(ag);
+    if(document.getElementById("pgAt") && typeof renderAtendimento === "function") renderAtendimento();
   } catch (e) {
     toast("Erro", e.message);
   }
@@ -3520,7 +3580,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.46 - 2026-08-07";
+var APP_VERSION = "v3.49 - 2026-08-08";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5871,6 +5931,8 @@ async function loadAllData(){
           ,firebird_atend_id: a.firebird_atend_id || null
           ,firebird_seq_atend: a.firebird_seq_atend || null
           ,metodo_pagamento: a.metodo_pagamento || null
+          ,desconto_pontos: Number(a.desconto_pontos || 0)
+          ,desconto_pontos_dentista_id: a.desconto_pontos_dentista_id || null
           ,obs: a.observacoes || ''
           ,observacoes: a.observacoes || ''
           ,forma_entrega: a.forma_entrega || null
@@ -7296,6 +7358,8 @@ function iniciarAutoRefresh(){
             firebird_atend_id:a.firebird_atend_id||null,
             firebird_seq_atend:a.firebird_seq_atend||null,
             metodo_pagamento:a.metodo_pagamento||null,
+            desconto_pontos:Number(a.desconto_pontos||0),
+            desconto_pontos_dentista_id:a.desconto_pontos_dentista_id||null,
             obs:a.observacoes||'', observacoes:a.observacoes||'',
             forma_entrega:a.forma_entrega||null,
             previsao_entrega:a.previsao_entrega||null,
@@ -7935,7 +7999,13 @@ function renderAtendimento() {
           exNomes = ex ? ex.n : "—";
         }
 
-        h += "<div class='at-mini st-" + st + "' onclick='agEV(" + a.id + ")'>";
+        // v3.47 — sem requisição anexada (frente/verso) => card vermelho.
+        // Sem SEQ ainda (sincronizando) também destaca: não há doc possível.
+        var _semReq = false;
+        if(st !== "cancelado"){
+          _semReq = a.firebird_seq_atend ? (_reqTem(a.firebird_seq_atend) === false) : true;
+        }
+        h += "<div class='at-mini st-" + st + (_semReq ? " sem-req" : "") + "' onclick='agEV(" + a.id + ")'>";
 
         // Linha 1: nome + hora
         h += "<div class='at-mini-top'>";
@@ -7950,6 +8020,7 @@ function renderAtendimento() {
         h += "<div class='at-mini-bottom'>";
         h += "<div class='at-mini-meta'>";
         h += "<span class='badge " + ({agendado:"bo",realizado:"bg",cancelado:"bgr",aguardando:"bgo"}[st] || "bgr") + "' style='font-size:.58rem;padding:1px 5px'>" + (sl[st] || st) + "</span>";
+        if(_semReq) h += "<span style='background:#ef4444;color:#fff;font-weight:700;font-size:.56rem;padding:1px 5px;border-radius:4px;flex-shrink:0'>SEM REQUISIÇÃO</span>";
         if(a.firebird_seq_atend) h += "<span style='color:var(--tl);font-weight:700;font-size:.7rem'>#" + a.firebird_seq_atend + "</span>";
         h += "<span>🦷 " + esc(d.n) + "</span>";
         // ⚡ Sessão 1 simplificação 06/05/2026 — usa fmtValorAg em vez de a.vl
@@ -7977,6 +8048,10 @@ function renderAtendimento() {
 
   h += "</div>";
   h += "</div>";
+
+  // v3.47 — verifica no FotonWeb quem está sem requisição (lote, com cache);
+  // quando o resultado muda, a lista repinta sozinha.
+  setTimeout(function(){ try{ _reqVerificarLote(dayAgs); }catch(e){ console.error("reqVerif:", e); } }, 0);
 
   // Calendário lateral
   h += "<div>";
@@ -8129,6 +8204,8 @@ function _mapAgFromRow(a, itens) {
     firebird_atend_id: a.firebird_atend_id || null,
     firebird_seq_atend: a.firebird_seq_atend || null,
     metodo_pagamento: a.metodo_pagamento || null,
+    desconto_pontos: Number(a.desconto_pontos || 0),
+    desconto_pontos_dentista_id: a.desconto_pontos_dentista_id || null,
     obs: a.observacoes || "",
     observacoes: a.observacoes || "",
     forma_entrega: a.forma_entrega || null,
@@ -8627,11 +8704,27 @@ function _btnMetodoPg(a, val, label){
     : "background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.15);";
   return "<button type=\"button\" style=\"" + st + "padding:5px 10px;border-radius:8px;cursor:pointer;font-size:.8rem\" onclick=\"setMetodoPagamento(" + a.id + ",'" + val + "')\">" + label + "</button>";
 }
-async function setMetodoPagamento(id, metodo){
+async function setMetodoPagamento(id, metodo, _pontosJaTratado){
   try{
     var a0 = (ags || []).find(function(x){ return x.id === id; });
     var lista = _metodosPgList(a0);
     var ix = lista.indexOf(metodo);
+
+    // ═══ v3.48 — "Pontos" tem fluxo próprio: pede o valor e debita do dentista ═══
+    if(metodo === "pontos" && !_pontosJaTratado){
+      if(ix === -1){ abrirModalDescontoPontos(id); return; }   // ligar => modal de valor
+      // desligar => estorna os pontos ao dentista
+      var vAtual = Number((a0 && a0.desconto_pontos) || 0);
+      if(!confirm("Remover o desconto de pontos?\n\nR$ " + vAtual.toFixed(2).replace(".", ",") +
+                  " serão ESTORNADOS aos pontos do dentista.")) return;
+      var rEst = await supa.rpc("aplicar_desconto_pontos", { p_ag_id: id, p_valor: 0 });
+      if(rEst.error){ toast("Erro", "Estorno falhou: " + rEst.error.message); return; }
+      if(a0){ a0.desconto_pontos = 0; a0.desconto_pontos_dentista_id = null; }
+      var dEst = (rEst.data && rEst.data.dentista_id) ? fdent(rEst.data.dentista_id) : null;
+      if(dEst && rEst.data.saldo_dentista !== undefined) dEst.pts = rEst.data.saldo_dentista;
+      toast("↩️", "Desconto estornado" + (dEst ? " — saldo de " + dEst.n + ": " + fmtN(rEst.data.saldo_dentista) + " pts" : ""));
+    }
+
     if(ix === -1) lista.push(metodo); else lista.splice(ix, 1);
     var novo = lista.length ? lista.join(",") : null;
 
@@ -8651,6 +8744,95 @@ async function setMetodoPagamento(id, metodo){
       toast("Erro", "Não foi possível salvar o método (" + r.status + ").");
     }
   }catch(e){ toast("Erro", "Falha: " + (e && e.message ? e.message : e)); }
+}
+
+// ═══ v3.48 — MODAL DESCONTO DE PONTOS (total ou parcial, 1 pt = R$ 1) ═══
+// Não mexe no valor do exame: grava agendamentos.desconto_pontos e debita os
+// pontos do dentista do atendimento via RPC atômica (com lançamento no razão).
+// v3.49 — o débito pode sair de OUTRO dentista (clínicas que trocam pontos,
+// ex.: Jamal e Debora Assaf). Seletor com busca, padrão = dentista do atendimento.
+function dpFiltrarDent(){
+  var q = String(document.getElementById("dpDentBusca").value || "").toLowerCase();
+  var sel = document.getElementById("dpDent");
+  if(!sel) return;
+  var atual = parseInt(sel.value) || window._dpPreselect || null;
+  var lista = (dents || []).filter(function(x){ return !q || String(x.n||"").toLowerCase().indexOf(q) !== -1; });
+  lista.sort(function(x,y){ return String(x.n||"").localeCompare(String(y.n||"")); });
+  var h = "";
+  lista.slice(0, 300).forEach(function(x){
+    h += "<option value='" + x.id + "'" + (x.id === atual ? " selected" : "") + ">" + esc(x.n) + "</option>";
+  });
+  sel.innerHTML = h;
+  dpAtualizaSaldo();
+}
+function dpAtualizaSaldo(){
+  var sel = document.getElementById("dpDent");
+  var info = document.getElementById("dpSaldoInfo");
+  if(!sel || !info) return;
+  var d = fdent(parseInt(sel.value));
+  var total = Number(window._dpTotalAtual || 0);
+  if(!d){ info.innerHTML = ""; return; }
+  var saldo = Number(d.pts || 0);
+  info.innerHTML = "Saldo de <b>" + esc(d.n) + "</b>: <b style='color:" + (saldo >= total ? "var(--g)" : "#f59e0b") + "'>" + fmtN(saldo) + " pts</b>" +
+    (saldo < total ? " <span style='color:#f59e0b;font-size:.78rem'>(pode negativar)</span>" : "");
+}
+function abrirModalDescontoPontos(id){
+  var a = (ags || []).find(function(x){ return x.id === id; });
+  if(!a) return;
+  var d = fdent(a.dId);
+  if(!d && !(dents || []).length){ toast("⚠️", "Nenhum dentista carregado."); return; }
+
+  var vals = (typeof calcValoresAg === "function") ? calcValoresAg(a) : null;
+  var total = vals ? (Number(vals.faturado || 0) + Number(vals.naoFaturavel || 0)) : Number(a.vl || 0);
+  window._dpTotalAtual = total;
+  var fmtR = function(v){ return "R$ " + Number(v).toFixed(2).replace(".", ","); };
+
+  var b = "<div style='display:flex;flex-direction:column;gap:12px;font-size:.9rem'>";
+  b += "<div style='padding:10px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:10px'>";
+  b += "Valor do atendimento: <b>" + fmtR(total) + "</b></div>";
+  b += "<div class='field'><label>Debitar pontos de</label>";
+  b += "<input id='dpDentBusca' placeholder='Buscar dentista...' oninput='dpFiltrarDent()' style='margin-bottom:6px'>";
+  b += "<select id='dpDent' onchange='dpAtualizaSaldo()'></select></div>";
+  b += "<div id='dpSaldoInfo' style='font-size:.84rem'></div>";
+  b += "<div style='display:flex;flex-direction:column;gap:8px'>";
+  b += "<label style='display:flex;align-items:center;gap:8px;cursor:pointer'><input type='radio' name='dpModo' value='total' checked onchange=\"document.getElementById('dpValorWrap').style.display='none'\"> Desconto <b>TOTAL</b> — " + fmtR(total) + "</label>";
+  b += "<label style='display:flex;align-items:center;gap:8px;cursor:pointer'><input type='radio' name='dpModo' value='parcial' onchange=\"document.getElementById('dpValorWrap').style.display='block';document.getElementById('dpValor').focus()\"> Desconto <b>PARCIAL</b></label>";
+  b += "<div id='dpValorWrap' style='display:none'><div class='field'><label>Valor do desconto (R$)</label><input id='dpValor' type='number' min='0.01' step='0.01' max='" + total.toFixed(2) + "' placeholder='0,00'></div></div>";
+  b += "</div>";
+  b += "<div style='font-size:.76rem;color:var(--gr)'>1 ponto = R$ 1,00. Os pontos são debitados do dentista na hora; desmarcar \"🪙 Pontos\" estorna. O valor do exame não muda — no caixa o desconto aparece separado do total líquido.</div>";
+  b += "</div>";
+
+  openM("🪙 Desconto de Pontos", b, [
+    {lbl:"Cancelar", cls:"btno", fn:function(){ closeM(); agEV(id); }},
+    {lbl:"Confirmar desconto", cls:"btng", fn:async function(){
+      var modoEl = document.querySelector("input[name='dpModo']:checked");
+      var modo = modoEl ? modoEl.value : "total";
+      var valor = total;
+      if(modo === "parcial"){
+        valor = parseFloat(String(document.getElementById("dpValor").value || "").replace(",", "."));
+        if(!(valor > 0)){ toast("⚠️", "Informe o valor do desconto parcial."); return; }
+        if(valor > total + 0.01){ toast("⚠️", "Desconto maior que o valor do atendimento (" + fmtR(total) + ")."); return; }
+      }
+      // v3.49 — debita do dentista ESCOLHIDO no seletor
+      var dSel = fdent(parseInt(document.getElementById("dpDent").value));
+      if(!dSel){ toast("⚠️", "Escolha o dentista de quem debitar os pontos."); return; }
+      var r = await supa.rpc("aplicar_desconto_pontos", { p_ag_id: id, p_valor: valor, p_dentista_id: dSel.id });
+      if(r.error){ toast("Erro", "Não foi possível aplicar: " + r.error.message); return; }
+      a.desconto_pontos = valor;
+      a.desconto_pontos_dentista_id = dSel.id;
+      var saldoNovo = (r.data && r.data.saldo_dentista !== undefined) ? Number(r.data.saldo_dentista) : null;
+      if(saldoNovo !== null) dSel.pts = saldoNovo;
+      closeM();
+      await setMetodoPagamento(id, "pontos", true);   // marca o método (sem reabrir o modal)
+      if(saldoNovo !== null && saldoNovo < 0){
+        toast("🔴 SALDO NEGATIVO", esc(dSel.n) + " ficou com " + fmtN(saldoNovo) + " pts após o débito de " + fmtN(Math.round(valor)) + " pts. Regularize com o dentista.");
+      } else {
+        toast("🪙", "Debitados " + fmtN(Math.round(valor)) + " pts de " + esc(dSel.n) + (saldoNovo !== null ? " — saldo: " + fmtN(saldoNovo) + " pts" : ""));
+      }
+    }}
+  ]);
+  window._dpPreselect = a.dId || null;
+  setTimeout(dpFiltrarDent, 0);
 }
 
 function agEV(ev, id) {
@@ -8716,6 +8898,11 @@ function agEV(ev, id) {
     b += "<div style=\"margin:10px 0 2px;padding:12px 14px;background:rgba(239,68,68,.16);border:2px solid #ef4444;border-radius:10px;font-weight:700;font-size:.95rem;display:flex;align-items:center;gap:9px;animation:mpgPulse 1.2s ease-in-out infinite\">⚠️ ESCOLHA O MÉTODO DE PAGAMENTO para marcar como Realizado</div>";
   }
   b += "<div style=\"display:flex;align-items:center;gap:8px;margin:8px 0 2px;flex-wrap:wrap" + (_mpgAlerta ? ";border:1px dashed #ef4444;border-radius:10px;padding:8px" : "") + "\"><span style=\"opacity:.7;font-size:.82rem\">💰 Pagamento:</span>" + _btnMetodoPg(a, "cartao", "💳 Cartão") + _btnMetodoPg(a, "dinheiro", "💵 Dinheiro") + _btnMetodoPg(a, "pix", "📱 Pix") + _btnMetodoPg(a, "guia", "📄 Guia") + _btnMetodoPg(a, "pontos", "🪙 Pontos") + "</div>";
+  // v3.48 — desconto de pontos aplicado (valor do exame intacto; caixa mostra separado)
+  if(Number(a.desconto_pontos || 0) > 0){
+    var _dpDent = a.desconto_pontos_dentista_id ? fdent(a.desconto_pontos_dentista_id) : fdent(a.dId);
+    b += "<div style=\"margin:6px 0 2px;padding:8px 12px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);border-radius:8px;font-size:.82rem\">🪙 Desconto de pontos: <b>R$ " + Number(a.desconto_pontos).toFixed(2).replace(".", ",") + "</b> <span style=\"opacity:.7\">(debitado de <b>" + (_dpDent ? esc(_dpDent.n) : "dentista") + "</b> — desmarque 🪙 Pontos para estornar)</span></div>";
+  }
 
   var btns = [{lbl:"Fechar", cls:"btno", fn:closeM}];
 
@@ -13156,6 +13343,8 @@ async function imprimirRelatorioDia() {
   var totalBruto = 0, totalDesc = 0, totalFat = 0;
   var porConvenio = {};
   var porDentista = {};
+  var porMetodo = {};   // v3.47 — fechamento por método de pagamento
+  var totalDescPontos = 0, qtdDescPontos = 0;   // v3.48 — desconto de pontos (fora do líquido)
 
   var linhas = "";
   dayAgs.forEach(function(a, idx){
@@ -13243,6 +13432,25 @@ async function imprimirRelatorioDia() {
     var formaPg = a.forma_pagamento_final || a.forma_pagamento_prevista || "-";
     var seq = a.firebird_seq_atend || "-";
 
+    // ═══ v3.47 — MÉTODO DE PAGAMENTO (Cartão/Dinheiro/Pix/Guia/Pontos) ═══
+    // metodo_pagamento é lista separada por vírgula ("cartao,pix").
+    // Agrupa pela COMBINAÇÃO exata (ex.: "Cartão + Pix") — sem inventar rateio.
+    var _mpgNomes = (typeof _MPG_NOMES !== "undefined") ? _MPG_NOMES
+      : {cartao:"Cartão", dinheiro:"Dinheiro", pix:"Pix", guia:"Guia", pontos:"Pontos"};
+    var metodosAg = String(a.metodo_pagamento || "").split(",")
+      .map(function(s){ return s.trim(); }).filter(Boolean);
+    var metodoRot = metodosAg.length
+      ? metodosAg.map(function(m){ return _mpgNomes[m] || m; }).join(" + ")
+      : "Sem método";
+    if(!porMetodo[metodoRot]) porMetodo[metodoRot] = {qtd:0, fat:0};
+    porMetodo[metodoRot].qtd++;
+    porMetodo[metodoRot].fat += vf + vnf;   // mesmo critério do total Faturado
+
+    // v3.48 — desconto de pontos: fora do líquido do caixa, informado à parte
+    var vDp = Number(a.desconto_pontos || 0);
+    totalDescPontos += vDp;
+    if(vDp > 0) qtdDescPontos++;
+
     // ===== Detectar se eh misto (Part + Conv) para destacar visualmente =====
     var ehMisto = false;
     var somaPartLinha = 0, somaConvLinha = 0;
@@ -13274,9 +13482,41 @@ async function imprimirRelatorioDia() {
       "<td style='text-align:right'>" + brutoDisplay + "</td>" +
       "<td style='text-align:right;color:#c00'>" + (vd > 0 ? "R$ " + vd.toFixed(2).replace(".",",") : "-") + "</td>" +
       "<td style='text-align:right;font-weight:bold'>R$ " + vf.toFixed(2).replace(".",",") + "</td>" +
-      "<td style='text-align:center;font-size:11px'>" + formaPg + "</td>" +
+      "<td style='text-align:center;font-size:11px'>" +
+        (metodosAg.length ? "<b>" + esc(metodoRot) + "</b>" : "<span style='color:#c00'>Sem método</span>") +
+        (formaPg !== "-" ? "<div style='font-size:9px;color:#888'>" + esc(formaPg) + "</div>" : "") +
+        (vDp > 0 ? "<div style='font-size:9px;color:#b45309;font-weight:bold'>🪙 pontos −R$ " + vDp.toFixed(2).replace(".",",") + "</div>" : "") +
+      "</td>" +
       "</tr>";
   });
+
+  // v3.47 — Resumo por método de pagamento ("Sem método" por último, em vermelho)
+  var resumoMetodo = "";
+  var _mKeys = Object.keys(porMetodo).sort(function(x,y){
+    if(x === "Sem método") return 1;
+    if(y === "Sem método") return -1;
+    return x.localeCompare(y);
+  });
+  var _mTotFat = 0;
+  _mKeys.forEach(function(mk){
+    var m = porMetodo[mk];
+    _mTotFat += m.fat;
+    var semM = (mk === "Sem método");
+    resumoMetodo += "<tr>" +
+      "<td" + (semM ? " style='color:#c00;font-weight:bold'" : "") + ">" + esc(mk) + "</td>" +
+      "<td style='text-align:center'>" + m.qtd + "</td>" +
+      "<td style='text-align:right;font-weight:bold'>R$ " + m.fat.toFixed(2).replace(".",",") + "</td>" +
+      "</tr>";
+  });
+  resumoMetodo += "<tr class='total-row'><td>TOTAL</td><td style='text-align:center'>" + dayAgs.length + "</td>" +
+    "<td style='text-align:right'>R$ " + _mTotFat.toFixed(2).replace(".",",") + "</td></tr>";
+  // v3.48 — desconto de pontos NÃO entra no líquido do caixa
+  if(totalDescPontos > 0){
+    resumoMetodo += "<tr><td style='color:#b45309'>(−) Desconto de pontos</td><td style='text-align:center'>" + qtdDescPontos + "</td>" +
+      "<td style='text-align:right;color:#b45309;font-weight:bold'>− R$ " + totalDescPontos.toFixed(2).replace(".",",") + "</td></tr>";
+    resumoMetodo += "<tr class='total-row'><td>TOTAL LÍQUIDO (caixa)</td><td></td>" +
+      "<td style='text-align:right'>R$ " + (_mTotFat - totalDescPontos).toFixed(2).replace(".",",") + "</td></tr>";
+  }
 
   // Resumo por convênio
   var resumoConv = "";
@@ -13346,6 +13586,13 @@ async function imprimirRelatorioDia() {
     "</tbody></table>" +
 
     "<div class='resumos'>" +
+    "<div>" +
+    "<div class='resumo-titulo'>💰 Fechamento por Método de Pagamento</div>" +
+    "<table><thead><tr><th>Método</th><th>Qtd</th><th style='text-align:right'>Faturado</th></tr></thead><tbody>" +
+    resumoMetodo +
+    "</tbody></table>" +
+    "</div>" +
+
     "<div>" +
     "<div class='resumo-titulo'>Resumo por Convênio (por exame)</div>" +
     "<table><thead><tr><th>Convênio</th><th>Qtd</th><th style='text-align:right'>Bruto</th><th style='text-align:right'>Desc.</th><th style='text-align:right'>Faturado</th></tr></thead><tbody>" +
@@ -13550,6 +13797,9 @@ async function abrirFechamentoCaixa() {
 
   var totalGeral = totalFat + totalNaoFat;
   var ticketMedio = ags.length ? (totalGeral / ags.length) : 0;
+  // v3.48 — desconto de pontos: informado à parte, FORA do total líquido do caixa
+  var totalDescPontosFC = 0;
+  ags.forEach(function(a){ totalDescPontosFC += Number(a.desconto_pontos || 0); });
 
   var dots = {"particular":"#1D9E75","tabela":"#1D9E75","convenio":"#378ADD","sus":"#7F77DD","unimed":"#BA7517","syns":"#888780"};
   function getDot(nome) {
@@ -13674,6 +13924,12 @@ async function abrirFechamentoCaixa() {
   if (totalDescontos > 0) {
     h += "<div class='fc-total' style='margin-bottom:6px'><div class='fc-total-label' style='font-size:13px;color:var(--muted)'>Bruto</div><div style='font-size:16px;font-weight:500;color:var(--txt)'>" + fmt(totalGeral + totalDescontos) + "</div></div>";
     h += "<div class='fc-total' style='margin-bottom:6px'><div class='fc-total-label' style='font-size:13px;color:#854F0B'>Descontos</div><div style='font-size:16px;font-weight:500;color:#854F0B'>- " + fmt(totalDescontos) + "</div></div>";
+  }
+  // v3.48 — desconto de pontos SEMPRE fora do líquido (informado à parte)
+  if (totalDescPontosFC > 0) {
+    h += "<div class='fc-total' style='margin-bottom:6px'><div class='fc-total-label' style='font-size:13px;color:#b45309'>🪙 Desconto de pontos</div><div style='font-size:16px;font-weight:500;color:#b45309'>- " + fmt(totalDescPontosFC) + "</div></div>";
+    h += "<div class='fc-total'><div class='fc-total-label'>Total líquido (caixa)</div><div class='fc-total-val'>" + fmt(totalGeral - totalDescPontosFC) + "</div></div>";
+  } else if (totalDescontos > 0) {
     h += "<div class='fc-total'><div class='fc-total-label'>Total líquido</div><div class='fc-total-val'>" + fmt(totalGeral) + "</div></div>";
   } else {
     h += "<div class='fc-total'><div class='fc-total-label'>Total geral</div><div class='fc-total-val'>" + fmt(totalGeral) + "</div></div>";
