@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.53 - 2026-08-08";
+var APP_VERSION = "v3.54 - 2026-08-08";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8807,6 +8807,20 @@ function dpFiltrarDent(){
   if(atual) sel.value = String(atual);
   dpAtualizaSaldo();
 }
+// v3.54 — PONTOS SÓ PAGAM VALORES PARTICULARES (Particular/Tabela).
+// Itens de convênio (preço de convênio) ficam FORA da base do desconto.
+function _somaParticularAg(a){
+  var itens = (a && (a.exames || a.itens)) || [];
+  if(!itens.length) return Number((a && (a.valor_bruto || a.vl)) || 0);  // legado sem itens
+  var s = 0;
+  itens.forEach(function(it){
+    var foraFat = (typeof itemEhConvenioForaDoFaturamento === "function") ? itemEhConvenioForaDoFaturamento(it) : false;
+    var particular = (typeof itemTemDesconto === "function") ? itemTemDesconto(it) : !it.convenio_id;
+    if(!foraFat && particular) s += Number(it.preco || 0);
+  });
+  return Number(s.toFixed(2));
+}
+
 // v3.53 — no parcial, mostra o saldo a pagar em dinheiro (esse sim com as
 // regras de desconto/parcelamento normais)
 function dpAtualizaRestante(){
@@ -8837,16 +8851,25 @@ function abrirModalDescontoPontos(id){
   var d = fdent(a.dId);
   if(!d && !(dents || []).length){ toast("⚠️", "Nenhum dentista carregado."); return; }
 
-  // v3.53 — pontos pagam o preço PARTICULAR CHEIO (bruto, sem desconto à
-  // vista/parcelamento — o paciente não paga essa parte).
+  // v3.53/v3.54 — pontos pagam o preço PARTICULAR CHEIO (sem desconto à
+  // vista/parcelamento), e SÓ os itens particulares (Particular/Tabela).
+  // Itens com preço de convênio não entram na base do desconto de pontos.
+  var total = _somaParticularAg(a);
   var vals = (typeof calcValoresAg === "function") ? calcValoresAg(a) : null;
-  var total = vals ? Number(vals.bruto || 0) : Number(a.valor_bruto || a.vl || 0);
-  window._dpTotalAtual = total;
+  var brutoTot = vals ? Number(vals.bruto || 0) + Number(vals.naoFaturavel || 0) : total;
   var fmtR = function(v){ return "R$ " + Number(v).toFixed(2).replace(".", ","); };
+
+  if(total <= 0.009){
+    toast("🪙 Bloqueado", "Desconto de pontos vale SÓ para exames com valor PARTICULAR (Particular/Tabela). Este atendimento só tem itens de convênio.");
+    return;
+  }
+  window._dpTotalAtual = total;
 
   var b = "<div style='display:flex;flex-direction:column;gap:12px;font-size:.9rem'>";
   b += "<div style='padding:10px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:10px'>";
-  b += "Valor do atendimento (particular, sem desconto): <b>" + fmtR(total) + "</b></div>";
+  b += "Valor <b>particular</b> do atendimento (sem desconto): <b>" + fmtR(total) + "</b>";
+  if(brutoTot > total + 0.009) b += "<div style='font-size:.76rem;color:#f59e0b;margin-top:4px'>⚠️ R$ " + (brutoTot - total).toFixed(2).replace(".", ",") + " em itens de convênio ficam FORA do desconto de pontos.</div>";
+  b += "</div>";
   b += "<div class='field'><label>Debitar pontos de</label>";
   b += "<input id='dpDentBusca' placeholder='Buscar dentista...' oninput='dpFiltrarDent()' style='margin-bottom:6px'>";
   b += "<select id='dpDent' onchange='dpAtualizaSaldo()'></select></div>";
@@ -8868,7 +8891,7 @@ function abrirModalDescontoPontos(id){
       if(modo === "parcial"){
         valor = parseFloat(String(document.getElementById("dpValor").value || "").replace(",", "."));
         if(!(valor > 0)){ toast("⚠️", "Informe o valor do desconto parcial."); return; }
-        if(valor > total + 0.01){ toast("⚠️", "Desconto maior que o valor do atendimento (" + fmtR(total) + ")."); return; }
+        if(valor > total + 0.01){ toast("⚠️", "Desconto maior que o valor PARTICULAR do atendimento (" + fmtR(total) + ")."); return; }
       }
       // v3.49 — debita do dentista ESCOLHIDO no seletor
       var dSel = fdent(parseInt(document.getElementById("dpDent").value));
