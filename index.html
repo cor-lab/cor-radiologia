@@ -3580,7 +3580,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.49 - 2026-08-08";
+var APP_VERSION = "v3.50 - 2026-08-08";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8508,6 +8508,16 @@ function ragendar() {
   h += "</select>";
   h += "</div>";
 
+  // v3.50 — Novo Atendimento (walk-in) também exige método de pagamento.
+  // A linha só aparece no modo atendimento (limparFormNovoAg controla).
+  h += "<div class=\"field\" id=\"pMetodoPgRow\" style=\"display:none\">";
+  h += "<label>💰 Método de pagamento <span style='color:#ef4444'>*</span></label>";
+  h += "<div style=\"display:flex;gap:10px;flex-wrap:wrap;padding:6px 2px\">";
+  [["cartao","💳 Cartão"],["dinheiro","💵 Dinheiro"],["pix","📱 Pix"],["guia","📄 Guia"],["pontos","🪙 Pontos"]].forEach(function(mp){
+    h += "<label style=\"display:flex;align-items:center;gap:5px;cursor:pointer;font-size:.85rem\"><input type=\"checkbox\" id=\"pMpg_" + mp[0] + "\" style=\"margin:0\">" + mp[1] + "</label>";
+  });
+  h += "</div></div>";
+
   h += "<div class=\"fg2\">";
   h += "<div class=\"field\"><label>Forma de Entrega</label><select id=\"pFormaEntrega\">";
   h += "<option value=\"digital\">Digital</option>";
@@ -8758,11 +8768,20 @@ function dpFiltrarDent(){
   var atual = parseInt(sel.value) || window._dpPreselect || null;
   var lista = (dents || []).filter(function(x){ return !q || String(x.n||"").toLowerCase().indexOf(q) !== -1; });
   lista.sort(function(x,y){ return String(x.n||"").localeCompare(String(y.n||"")); });
+  var vis = lista.slice(0, 300);
+  // v3.50 — o dentista pré-selecionado SEMPRE entra na lista (antes, se ficasse
+  // fora dos 300 primeiros, o select caía no 1º alfabético — o dentista "....",
+  // que parece em branco)
+  if(atual && !vis.some(function(x){ return x.id === atual; })){
+    var dAt = fdent(atual);
+    if(dAt) vis.unshift(dAt);
+  }
   var h = "";
-  lista.slice(0, 300).forEach(function(x){
+  vis.forEach(function(x){
     h += "<option value='" + x.id + "'" + (x.id === atual ? " selected" : "") + ">" + esc(x.n) + "</option>";
   });
   sel.innerHTML = h;
+  if(atual) sel.value = String(atual);
   dpAtualizaSaldo();
 }
 function dpAtualizaSaldo(){
@@ -9787,6 +9806,28 @@ async function confAg(isAtendimento) {
   if (!hr) { toast("!", "Informe o horario"); return null; }
   if (!dId) { toast("!", "Selecione o dentista"); return null; }
 
+  // 🔒 v3.50 — Novo Atendimento (walk-in) exige método de pagamento marcado,
+  // fechando a brecha da trava do "Realizar" (aqui já nasce realizado).
+  var metodosNovoAt = [];
+  if (isAtendimento === true) {
+    ["cartao","dinheiro","pix","guia","pontos"].forEach(function(m){
+      var el = document.getElementById("pMpg_" + m);
+      if (el && el.checked) metodosNovoAt.push(m);
+    });
+    if (!metodosNovoAt.length) {
+      toast("⚠️ Bloqueado", "Marque o método de pagamento antes de confirmar o atendimento: Cartão, Dinheiro, Pix, Guia ou Pontos.");
+      var _rowMpg = document.getElementById("pMetodoPgRow");
+      if (_rowMpg) {
+        _rowMpg.style.outline = "2px solid #ef4444";
+        _rowMpg.style.borderRadius = "10px";
+        _rowMpg.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(function(){ _rowMpg.style.outline = ""; }, 4000);
+      }
+      _agSaving = false;
+      return null;
+    }
+  }
+
   var pts3 = dtR.split("-");
   var df4 = pts3[2] + "/" + pts3[1] + "/" + pts3[0];
 
@@ -9841,6 +9882,11 @@ async function confAg(isAtendimento) {
     status: isAtendimento ? "realizado" : "agendado",
     status_clinico: isAtendimento ? "realizado" : "agendado",
     status_fiscal: "nao_emitida",
+    // v3.50 — método de pagamento do walk-in ("pontos" só entra depois de
+    // confirmar o valor no modal de desconto, aberto após o save)
+    metodo_pagamento: (isAtendimento && metodosNovoAt.length)
+      ? (metodosNovoAt.filter(function(m){ return m !== "pontos"; }).join(",") || null)
+      : null,
     _new: true
   };
 
@@ -9878,6 +9924,12 @@ async function confAg(isAtendimento) {
     "<div class=\"wapv\"><div class=\"wabl\">" + waHtml(wm) + "</div></div>";
 
   toast("Sucesso", "Agendamento confirmado com sucesso.");
+
+  // v3.50 — Pontos no walk-in: abre o modal de desconto agora que o ag tem id.
+  // Confirmando, o método "pontos" é marcado e os pontos debitados do dentista.
+  if (isAtendimento === true && metodosNovoAt.indexOf("pontos") !== -1 && ag.id) {
+    setTimeout(function(){ try{ abrirModalDescontoPontos(ag.id); }catch(e){ console.error("descontoPontos walk-in:", e); } }, 400);
+  }
 
   document.getElementById("MA").classList.add("open");
 
@@ -10139,6 +10191,13 @@ function maskCEP(el){
 function limparFormNovoAg(modoAtendimento){
   // Marcar o modo globalmente
   window._modoAtendimento = (modoAtendimento === true);
+  // v3.50 — mostra/esconde a linha de método de pagamento e limpa as marcações
+  var _mpgRow = document.getElementById("pMetodoPgRow");
+  if(_mpgRow) _mpgRow.style.display = (modoAtendimento === true) ? "" : "none";
+  ["cartao","dinheiro","pix","guia","pontos"].forEach(function(m){
+    var el = document.getElementById("pMpg_" + m);
+    if(el) el.checked = false;
+  });
 
   // Limpar todos os campos do formulário de novo agendamento
   var ids = ["pNome","pTel","pEmail","pCpf","pDataNasc","pCep","pLogradouro","pNumero","pComplemento","pBairro","pMunicipio","pUf","pObs","pPrevisaoEntrega"];
