@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.54 - 2026-08-08";
+var APP_VERSION = "v3.55 - 2026-08-08";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8808,17 +8808,30 @@ function dpFiltrarDent(){
   dpAtualizaSaldo();
 }
 // v3.54 — PONTOS SÓ PAGAM VALORES PARTICULARES (Particular/Tabela).
-// Itens de convênio (preço de convênio) ficam FORA da base do desconto.
+// v3.55 — e SEMPRE pelo preço OFICIAL da tabela (fex(id).p = exames_tipos.
+// preco_particular). Edições manuais de valor no atendimento são ignoradas
+// na base do desconto — e a RPC revalida no banco na hora de debitar.
 function _somaParticularAg(a){
   var itens = (a && (a.exames || a.itens)) || [];
-  if(!itens.length) return Number((a && (a.valor_bruto || a.vl)) || 0);  // legado sem itens
-  var s = 0;
+  if(!itens.length){
+    var vLeg = Number((a && (a.valor_bruto || a.vl)) || 0);
+    return { oficial: vLeg, editado: vLeg, difere: false };
+  }
+  var s = 0, sEd = 0, difere = false;
   itens.forEach(function(it){
     var foraFat = (typeof itemEhConvenioForaDoFaturamento === "function") ? itemEhConvenioForaDoFaturamento(it) : false;
     var particular = (typeof itemTemDesconto === "function") ? itemTemDesconto(it) : !it.convenio_id;
-    if(!foraFat && particular) s += Number(it.preco || 0);
+    if(!foraFat && particular){
+      var ex = fex(it.exame_id);
+      var editado = Number(it.preco || 0);
+      var oficial = Number((ex && ex.p) || 0);
+      if(!(oficial > 0)) oficial = editado;   // exame fora do catálogo: usa o do item
+      s += oficial;
+      sEd += editado;
+      if(Math.abs(oficial - editado) > 0.009) difere = true;
+    }
   });
-  return Number(s.toFixed(2));
+  return { oficial: Number(s.toFixed(2)), editado: Number(sEd.toFixed(2)), difere: difere };
 }
 
 // v3.53 — no parcial, mostra o saldo a pagar em dinheiro (esse sim com as
@@ -8854,7 +8867,8 @@ function abrirModalDescontoPontos(id){
   // v3.53/v3.54 — pontos pagam o preço PARTICULAR CHEIO (sem desconto à
   // vista/parcelamento), e SÓ os itens particulares (Particular/Tabela).
   // Itens com preço de convênio não entram na base do desconto de pontos.
-  var total = _somaParticularAg(a);
+  var basePart = _somaParticularAg(a);
+  var total = basePart.oficial;
   var vals = (typeof calcValoresAg === "function") ? calcValoresAg(a) : null;
   var brutoTot = vals ? Number(vals.bruto || 0) + Number(vals.naoFaturavel || 0) : total;
   var fmtR = function(v){ return "R$ " + Number(v).toFixed(2).replace(".", ","); };
@@ -8867,8 +8881,9 @@ function abrirModalDescontoPontos(id){
 
   var b = "<div style='display:flex;flex-direction:column;gap:12px;font-size:.9rem'>";
   b += "<div style='padding:10px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:10px'>";
-  b += "Valor <b>particular</b> do atendimento (sem desconto): <b>" + fmtR(total) + "</b>";
-  if(brutoTot > total + 0.009) b += "<div style='font-size:.76rem;color:#f59e0b;margin-top:4px'>⚠️ R$ " + (brutoTot - total).toFixed(2).replace(".", ",") + " em itens de convênio ficam FORA do desconto de pontos.</div>";
+  b += "Valor <b>particular OFICIAL</b> (tabela, sem desconto): <b>" + fmtR(total) + "</b>";
+  if(basePart.difere) b += "<div style='font-size:.76rem;color:#f59e0b;margin-top:4px'>⚠️ O atendimento tem valor editado (R$ " + basePart.editado.toFixed(2).replace(".", ",") + "), mas o desconto de pontos usa o preço OFICIAL da tabela.</div>";
+  if(brutoTot > basePart.editado + 0.009) b += "<div style='font-size:.76rem;color:#f59e0b;margin-top:4px'>⚠️ Itens de convênio ficam FORA do desconto de pontos.</div>";
   b += "</div>";
   b += "<div class='field'><label>Debitar pontos de</label>";
   b += "<input id='dpDentBusca' placeholder='Buscar dentista...' oninput='dpFiltrarDent()' style='margin-bottom:6px'>";
