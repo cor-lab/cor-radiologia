@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.55 - 2026-08-08";
+var APP_VERSION = "v3.56 - 2026-08-08";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8875,6 +8875,9 @@ function abrirModalDescontoPontos(id){
 
   if(total <= 0.009){
     toast("🪙 Bloqueado", "Desconto de pontos vale SÓ para exames com valor PARTICULAR (Particular/Tabela). Este atendimento só tem itens de convênio.");
+    // v3.56 — se o atendimento ficou sem nenhum método, reabre com aviso vermelho
+    if(!String((a.metodo_pagamento || "")).trim()){ window._mpgAlertaId = id; }
+    agEV(id);
     return;
   }
   window._dpTotalAtual = total;
@@ -8898,7 +8901,12 @@ function abrirModalDescontoPontos(id){
   b += "</div>";
 
   openM("🪙 Desconto de Pontos", b, [
-    {lbl:"Cancelar", cls:"btno", fn:function(){ closeM(); agEV(id); }},
+    {lbl:"Cancelar", cls:"btno", fn:function(){
+      // v3.56 — cancelou sem aplicar: se o atendimento ficou sem método,
+      // volta com o aviso vermelho (não deixa passar batido)
+      if(!String((a.metodo_pagamento || "")).trim()){ window._mpgAlertaId = id; }
+      closeM(); agEV(id);
+    }},
     {lbl:"Confirmar desconto", cls:"btng", fn:async function(){
       var modoEl = document.querySelector("input[name='dpModo']:checked");
       var modo = modoEl ? modoEl.value : "total";
@@ -9901,6 +9909,24 @@ async function confAg(isAtendimento) {
       }
       _agSaving = false;
       return null;
+    }
+
+    // 🔒 v3.56 — Pontos marcado no walk-in: valida ANTES de criar o atendimento.
+    // Pontos só vale para exames com valor PARTICULAR (preço oficial de tabela).
+    if (metodosNovoAt.indexOf("pontos") !== -1) {
+      var _basePts = _somaParticularAg({ exames: itens });
+      if (_basePts.oficial <= 0.009) {
+        toast("🪙 Bloqueado", "Desconto de pontos vale SÓ para exames com valor PARTICULAR (Particular/Tabela). Desmarque 🪙 Pontos ou ajuste o convênio dos exames.");
+        var _rowMpg2 = document.getElementById("pMetodoPgRow");
+        if (_rowMpg2) {
+          _rowMpg2.style.outline = "2px solid #ef4444";
+          _rowMpg2.style.borderRadius = "10px";
+          _rowMpg2.scrollIntoView({ behavior: "smooth", block: "center" });
+          setTimeout(function(){ _rowMpg2.style.outline = ""; }, 4000);
+        }
+        _agSaving = false;
+        return null;
+      }
     }
   }
 
