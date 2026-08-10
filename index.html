@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.59 - 2026-08-10";
+var APP_VERSION = "v3.61 - 2026-08-10";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -6305,6 +6305,13 @@ async function dbSaveAg(ag){
   forma_pagamento_prevista: ag.forma_pagamento_prevista || "avista",
   forma_pagamento_final: ag.forma_pagamento_final || null,
 
+  // ⚡ v3.61 (parecer Codex 10/08 #1) — metodo_pagamento AGORA PERSISTE no
+  // save (RPC e fallback). Antes o payload DROPAVA o campo: o walk-in (Novo
+  // Atendimento) criava o registro REALIZADO sem o método que a secretária
+  // tinha marcado na tela — a origem real dos "Sem método" de 10/08 (não era
+  // burla, era o app descartando a escolha dela).
+  metodo_pagamento: ag.metodo_pagamento || null,
+
   cashback_pts: ag.cb,
   status: ag.st,
   status_clinico: ag.status_clinico || ag.st || "agendado",
@@ -8761,6 +8768,16 @@ async function setMetodoPagamento(id, metodo, _pontosJaTratado){
     var lista = _metodosPgList(a0);
     var ix = lista.indexOf(metodo);
 
+    // 🔒 v3.61 — trava do último método ANTES de qualquer efeito colateral.
+    // (Parecer Codex 10/08 #3: na v3.60 a checagem ficava DEPOIS do estorno —
+    // remover "pontos" como último método de um realizado ESTORNAVA os pontos
+    // ao dentista e só então bloqueava o PATCH, deixando estado inconsistente.)
+    var _stAtualMpg = a0 ? (a0.status_clinico || a0.st || a0.status) : null;
+    if (ix !== -1 && lista.length === 1 && _stAtualMpg === "realizado") {
+      toast("🔒", "Atendimento REALIZADO não pode ficar sem método de pagamento. Para trocar: marque o método novo primeiro e depois desmarque o antigo.");
+      return;
+    }
+
     // ═══ v3.48 — "Pontos" tem fluxo próprio: pede o valor e debita do dentista ═══
     if(metodo === "pontos" && !_pontosJaTratado){
       if(ix === -1){ abrirModalDescontoPontos(id); return; }   // ligar => modal de valor
@@ -8778,6 +8795,8 @@ async function setMetodoPagamento(id, metodo, _pontosJaTratado){
 
     if(ix === -1) lista.push(metodo); else lista.splice(ix, 1);
     var novo = lista.length ? lista.join(",") : null;
+    // (a trava do último método está NO TOPO da função — antes do estorno de
+    // pontos — desde a v3.61; ver comentário lá.)
 
     var _uid = (typeof CU !== "undefined" && CU && CU.id) ? CU.id : null;
     var r = await supaFetch("/rest/v1/agendamentos?id=eq." + id, {
@@ -8923,6 +8942,12 @@ function abrirModalDescontoPontos(id){
       // v3.56 — cancelou sem aplicar: se o atendimento ficou sem método,
       // volta com o aviso vermelho (não deixa passar batido)
       if(!String((a.metodo_pagamento || "")).trim()){ window._mpgAlertaId = id; }
+      // v3.61 — walk-in só-pontos cancelado: fica AGENDADO (nunca realizado
+      // sem débito). Avisa a atendente do estado.
+      if (window._walkinPontosId === id) {
+        window._walkinPontosId = null;
+        toast("ℹ️", "Atendimento ficou como AGENDADO — defina o pagamento e marque Realizado quando confirmar.");
+      }
       closeM(); agEV(id);
     }},
     {lbl:"Confirmar desconto", cls:"btng", fn:async function(){
@@ -8945,6 +8970,21 @@ function abrirModalDescontoPontos(id){
       if(saldoNovo !== null) dSel.pts = saldoNovo;
       closeM();
       await setMetodoPagamento(id, "pontos", true);   // marca o método (sem reabrir o modal)
+      // v3.61 — walk-in só-pontos: AGORA vira realizado (débito confirmado e
+      // método gravado — nesta ordem, senão o trigger do banco rejeita).
+      if (window._walkinPontosId === id) {
+        window._walkinPontosId = null;
+        var _updWk = await supa.from("agendamentos")
+          .update({ status: "realizado", status_clinico: "realizado" })
+          .eq("id", id);
+        if (_updWk.error) {
+          toast("⚠️", "Pontos aplicados, mas não consegui marcar como realizado: " + _updWk.error.message);
+        } else {
+          a.st = "realizado"; a.status = "realizado"; a.status_clinico = "realizado";
+          if (typeof rndAg === "function") rndAg();
+          if (typeof renderAtendimento === "function") renderAtendimento();
+        }
+      }
       if(saldoNovo !== null && saldoNovo < 0){
         toast("🔴 SALDO NEGATIVO", esc(dSel.n) + " ficou com " + fmtN(saldoNovo) + " pts após o débito de " + fmtN(Math.round(valor)) + " pts. Regularize com o dentista.");
       } else {
@@ -9965,6 +10005,10 @@ async function confAg(isAtendimento) {
   calcPg.valor_bruto += prSemDesconto;
   calcPg.valor_faturado += prSemDesconto;
 
+  // v3.61 — walk-in pagando SÓ com pontos? (nenhum outro método marcado)
+  var _soPontosWk = isAtendimento === true && metodosNovoAt.length > 0 &&
+    metodosNovoAt.every(function(m){ return m === "pontos"; });
+
   var ag = {
     pac: nm,
     tel: tl,
@@ -9998,9 +10042,14 @@ async function confAg(isAtendimento) {
     observacoes: document.getElementById("pObs")?.value?.trim() || null,
     obs: document.getElementById("pObs")?.value?.trim() || null,
     cb: pts4,
-    st: isAtendimento ? "realizado" : "agendado",
-    status: isAtendimento ? "realizado" : "agendado",
-    status_clinico: isAtendimento ? "realizado" : "agendado",
+    // v3.61 (parecer Codex 10/08 #2) — walk-in SÓ-PONTOS entra como AGENDADO
+    // e vira realizado apenas DEPOIS que o débito de pontos é confirmado no
+    // modal (quem confirma é o handler do modal). Se cancelar, fica agendado
+    // — nunca mais "realizado sem método/sem débito". _soPontosWk é calculado
+    // logo antes deste objeto.
+    st: (isAtendimento && !_soPontosWk) ? "realizado" : "agendado",
+    status: (isAtendimento && !_soPontosWk) ? "realizado" : "agendado",
+    status_clinico: (isAtendimento && !_soPontosWk) ? "realizado" : "agendado",
     status_fiscal: "nao_emitida",
     // v3.50 — método de pagamento do walk-in ("pontos" só entra depois de
     // confirmar o valor no modal de desconto, aberto após o save)
@@ -10048,6 +10097,9 @@ async function confAg(isAtendimento) {
   // v3.50 — Pontos no walk-in: abre o modal de desconto agora que o ag tem id.
   // Confirmando, o método "pontos" é marcado e os pontos debitados do dentista.
   if (isAtendimento === true && metodosNovoAt.indexOf("pontos") !== -1 && ag.id) {
+    // v3.61 — só-pontos: o registro entrou como AGENDADO; o handler de
+    // confirmação do modal promove a realizado após o débito (flag abaixo).
+    if (_soPontosWk) window._walkinPontosId = ag.id;
     setTimeout(function(){ try{ abrirModalDescontoPontos(ag.id); }catch(e){ console.error("descontoPontos walk-in:", e); } }, 400);
   }
 
