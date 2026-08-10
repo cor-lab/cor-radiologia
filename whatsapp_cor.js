@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v21-relogin-em-401-403-20260806";
+  var _VERSAO = "whatsapp-web-v22-criar-do-resumo-20260810";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -228,6 +228,110 @@ var WHATSAPP = (function () {
     } catch (e) {
       console.error("resolver:", e);
       if (typeof toast === "function") toast("⚠️", "Falha ao resolver");
+    }
+  }
+
+  // ── "Criar do resumo" (10/08/2026) — REDE DE SEGURANÇA ──
+  // Caso real (Gláucia, 10/08): a CORA escreveu o resumo completo no chat
+  // ("Prontinho! Encaminhei o pedido... - Paciente: ... - Exame: ...") mas NÃO
+  // chamou escalar_humano — agendamento_dados ficou vazio e o botão "Criar
+  // agendamento" não apareceu; o pedido teve que ser inserido à mão no banco.
+  // Estas funções detectam esse estado (resumo no chat + sem dados gravados) e
+  // oferecem um botão que PARSEIA o resumo e abre o formulário pré-preenchido.
+  // O parse é heurístico: campo que não casar vai vazio e a recepção completa
+  // no formulário (que ela SEMPRE confere antes de salvar — nada é gravado
+  // automaticamente).
+  function _resumoCoraTexto(conv) {
+    // Procura, da última para a primeira, uma mensagem da CORA com cara de
+    // resumo de agendamento (tem "Paciente:" e "Exame:" ou "Data/Horário:").
+    var h = conv && Array.isArray(conv.historico) ? conv.historico : [];
+    for (var i = h.length - 1; i >= 0; i--) {
+      var m = h[i];
+      if (!m || m.role !== "assistant" || typeof m.content !== "string") continue;
+      var t = m.content.replace(/\*/g, "");   // tira o negrito markdown
+      if (/Paciente\s*:/i.test(t) && (/Exame\s*:/i.test(t) || /Data\/?Hor[áa]rio\s*:/i.test(t))) {
+        return t;
+      }
+    }
+    return null;
+  }
+
+  function _campoResumo(txt, rotulos) {
+    // Extrai "Rótulo: valor" (linha iniciada ou não por "- "). Primeiro rótulo
+    // que casar vence. Devolve string vazia se não achar.
+    for (var i = 0; i < rotulos.length; i++) {
+      var re = new RegExp("(?:^|\\n)\\s*-?\\s*" + rotulos[i] + "\\s*:\\s*([^\\n]+)", "i");
+      var m = txt.match(re);
+      if (m && m[1]) return m[1].trim();
+    }
+    return "";
+  }
+
+  function _dataBRparaISO(s) {
+    // "01/11/1963" -> "1963-11-01"; "11/08" -> ISO com ano inferido (ano atual;
+    // se a data já passou há mais de 30 dias, assume ano que vem). Se não
+    // parsear, devolve "" (recepção preenche no formulário).
+    var m = String(s || "").match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+    if (!m) return "";
+    var d = parseInt(m[1], 10), mo = parseInt(m[2], 10);
+    var ano = m[3] ? parseInt(m[3], 10) : null;
+    if (ano !== null && ano < 100) ano += (ano > 30 ? 1900 : 2000);
+    if (ano === null) {
+      var hoje = new Date();
+      ano = hoje.getFullYear();
+      var tent = new Date(ano, mo - 1, d);
+      if ((hoje - tent) > 30 * 86400000) ano += 1;   // já passou faz tempo: ano que vem
+    }
+    if (!(d >= 1 && d <= 31 && mo >= 1 && mo <= 12)) return "";
+    return ano + "-" + String(mo).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+  }
+
+  function _parseResumoCora(conv) {
+    var t = _resumoCoraTexto(conv);
+    if (!t) return null;
+    var dataHor = _campoResumo(t, ["Data\\/?Hor[áa]rio", "Data e hor[áa]rio", "Hor[áa]rio"]);
+    var hora = "";
+    var mh = dataHor.match(/(\d{1,2})[:h](\d{2})/);
+    if (mh) hora = String(parseInt(mh[1], 10)).padStart(2, "0") + ":" + mh[2];
+    return {
+      paciente_nome: _campoResumo(t, ["Paciente", "Nome"]),
+      data_nascimento: _dataBRparaISO(_campoResumo(t, ["Nascimento", "Data de nascimento"])),
+      email: _campoResumo(t, ["E-?mail"]),
+      exame: _campoResumo(t, ["Exame"]),
+      convenio: _campoResumo(t, ["Conv[êe]nio", "Modalidade"]),
+      indicacao: _campoResumo(t, ["Dentista", "Indica[çc][ãa]o"]),
+      data_horario: dataHor,
+      data_exame: _dataBRparaISO(dataHor),
+      hora_exame: hora,
+      telefone: (conv && conv.numero) || ""
+    };
+  }
+
+  function _temResumoSemDados(conv) {
+    // Só oferece o botão quando NÃO há agendamento_dados gravado mas EXISTE um
+    // resumo da CORA no chat — o cenário exato do bug "encaminhei sem gravar".
+    if (_agsLista(conv && conv.agendamento_dados).length) return false;
+    return !!_resumoCoraTexto(conv);
+  }
+
+  async function criarDoResumo(numero) {
+    var n = numero || _sel;
+    if (!n) return;
+    var conv = null;
+    for (var i = 0; i < _convs.length; i++) if (_convs[i].numero === n) { conv = _convs[i]; break; }
+    var dados = _parseResumoCora(conv);
+    if (!dados || (!dados.paciente_nome && !dados.exame)) {
+      if (typeof toast === "function") toast("⚠️", "Não encontrei um resumo da CORA nesta conversa");
+      return;
+    }
+    // Mesma trava do botão normal: assume a conversa antes de abrir o formulário.
+    var ok = await _assumir(n);
+    if (!ok) return;
+    if (typeof window.preencherAgDaCora === "function") {
+      window.preencherAgDaCora(dados);
+      if (typeof toast === "function") toast("📋", "Dados extraídos do resumo — confira TUDO antes de salvar");
+    } else {
+      if (typeof toast === "function") toast("⚠️", "Função de agendamento indisponível");
     }
   }
 
@@ -525,6 +629,10 @@ var WHATSAPP = (function () {
           var _nomeCurto = String(_agsBtn[_ia].paciente_nome || "").split(" ")[0];
           h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;font-weight:600' onclick='WHATSAPP.criarAgendamento(null," + _ia + ")' title='" + esc(_agsBtn[_ia].paciente_nome || "") + "'>📅 Criar agendamento " + (_ia + 1) + (_nomeCurto ? " (" + esc(_nomeCurto) + ")" : "") + "</button>";
         }
+      } else if (_temResumoSemDados(conv)) {
+        // (10/08/2026) A CORA escreveu o resumo no chat mas NÃO gravou o pedido
+        // (caso Gláucia): oferece extrair do texto. Âmbar = atenção, conferir tudo.
+        h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:linear-gradient(135deg,#e6a700,#c98d00);color:#fff;font-weight:600' title='A CORA escreveu o resumo mas não gravou o pedido — extrai os dados do texto do chat' onclick='WHATSAPP.criarDoResumo()'>📋 Criar do resumo</button>";
       }
       // Se EU assumi (ex.: cliquei em Criar agendamento, que trava a conversa),
       // mostro o botão de devolver aqui no cabeçalho também, para liberar fácil.
@@ -703,6 +811,7 @@ var WHATSAPP = (function () {
     resolver: resolver,
     reabrir: reabrir,
     criarAgendamento: criarAgendamento,
+    criarDoResumo: criarDoResumo,
     abrirMidia: abrirMidia,
     assumirConversa: assumirConversa,
     devolverCora: devolverCora,
