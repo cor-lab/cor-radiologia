@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.56 - 2026-08-08";
+var APP_VERSION = "v3.59 - 2026-08-10";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -6253,6 +6253,24 @@ async function dbSaveAg(ag){
     if (_diasDif > 7) _exameAntigo = true;
   }
   var _precisaRepropagar = !ag._new && (_exameAntigo || ag._forcarRepropagacao === true);
+
+  // ⚡ FIX 10/08/2026 (parecer Codex) — NORMALIZA os campos monetários NA
+  // GRAVAÇÃO, matando a fábrica de valor_faturado ÓRFÃO. Caso ERICA (hoje):
+  // criada como particular (110 − 20% = 88 em valor_faturado), depois editada
+  // para SUS (bruto 40) — o 88 ficava gravado e o Fechamento somava +R$48.
+  // Mesmo padrão no cluster de 25-26/05 (5 registros UNIMED com 88/204/304
+  // órfãos). Agora, TODO save recalcula bruto/desconto/faturado pela FONTE
+  // ÚNICA (calcValoresAg) a partir dos itens ATUAIS — o que se persiste é
+  // sempre coerente com o que as telas calculam. (desconto_percentual não é
+  // tocado: ele codifica a forma de pagamento escolhida; os guards do
+  // calcValoresAg já o ignoram quando não há item descontável.)
+  if (typeof calcValoresAg === "function") {
+    var _valsSave = calcValoresAg(ag);
+    ag.valor_bruto = _valsSave.bruto;
+    ag.desconto_valor = _valsSave.desconto;
+    ag.valor_faturado = _valsSave.faturado;
+    ag.vl = _valsSave.faturado;   // `valor` = líquido faturável (padrão da base)
+  }
 
   var d = {
   paciente_nome: ag.pac,
@@ -13506,6 +13524,12 @@ async function imprimirRelatorioDia() {
   dayAgs.sort(function(a,b){ return (a.hr||"").localeCompare(b.hr||""); });
 
   var totalBruto = 0, totalDesc = 0, totalFat = 0;
+  // v3.59 — totais EM CAMADAS: caixa (o que as linhas mostram) separado das
+  // guias de convênio (não faturável). Antes, a linha TOTAIS somava as guias
+  // "invisíveis" (linhas UNIMED mostram R$ 0,00) e quem conferia a coluna à
+  // mão achava 4.905 vs TOTAIS 6.008,75. Agora o rodapé reconcilia: TOTAIS
+  // (caixa) -> + Não faturável (guias) -> TOTAL GERAL.
+  var totalBrutoCx = 0, totalFatCx = 0, totalNaoFatRel = 0;
   var porConvenio = {};
   var porDentista = {};
   var porMetodo = {};   // v3.47 — fechamento por método de pagamento
@@ -13559,6 +13583,10 @@ async function imprimirRelatorioDia() {
     totalBruto += vb + vnf;
     totalDesc += vd;
     totalFat += vf + vnf;
+    // v3.59 — camadas do rodapé (caixa × guias)
+    totalBrutoCx += vb;
+    totalFatCx += vf;
+    totalNaoFatRel += vnf;
 
     // ===== CORRECAO: Resumo por convenio ITEM A ITEM =====
     // Antes: agrupava agendamento inteiro por itens[0] (bug com mistos)
@@ -13575,6 +13603,36 @@ async function imprimirRelatorioDia() {
         porConvenio[itCvNome].bruto += itPreco;
         porConvenio[itCvNome].fat += itPreco;
       });
+      // v3.59 — ALOCA O DESCONTO no resumo por convênio. Antes o desconto do
+      // atendimento não entrava em bucket nenhum: o resumo mostrava Faturado
+      // = preço cheio (ex.: Particular 4.165,00) e a soma dos buckets nunca
+      // batia com o TOTAIS Faturado da tabela (diferença = os descontos do
+      // dia). Agora o desconto é rateado entre os itens DESCONTÁVEIS
+      // (particular/tabela; guias e SUS ficam de fora), proporcional ao preço.
+      if(vd > 0){
+        var _itensDescveis = itens.filter(function(it){
+          var _fora = (typeof itemEhConvenioForaDoFaturamento === "function")
+            ? itemEhConvenioForaDoFaturamento(it) : false;
+          var _temD = (typeof itemTemDesconto === "function")
+            ? itemTemDesconto(it) : true;
+          return !_fora && _temD;
+        });
+        var _somaDescveis = _itensDescveis.reduce(function(s, it){
+          return s + Number(it.preco || 0);
+        }, 0);
+        if(_somaDescveis > 0){
+          _itensDescveis.forEach(function(it){
+            var _nm = "Particular";
+            if(it.convenio_id){
+              var _cvO = fconv(it.convenio_id);
+              _nm = _cvO ? _cvO.n : it.convenio_id;
+            }
+            var _quota = vd * (Number(it.preco || 0) / _somaDescveis);
+            porConvenio[_nm].desc += _quota;
+            porConvenio[_nm].fat -= _quota;
+          });
+        }
+      }
     } else {
       // Fallback: agendamento sem itens (dados legados)
       var cvLeg = "Particular";
@@ -13743,7 +13801,19 @@ async function imprimirRelatorioDia() {
     "</tr></thead><tbody>" +
     linhas +
     "<tr class='total-row'>" +
-    "<td colspan='7' style='text-align:right'>TOTAIS</td>" +
+    "<td colspan='7' style='text-align:right'>TOTAIS (caixa — soma das linhas)</td>" +
+    "<td style='text-align:right'>R$ " + totalBrutoCx.toFixed(2).replace(".",",") + "</td>" +
+    "<td style='text-align:right;color:#c00'>R$ " + totalDesc.toFixed(2).replace(".",",") + "</td>" +
+    "<td style='text-align:right'>R$ " + totalFatCx.toFixed(2).replace(".",",") + "</td>" +
+    "<td></td></tr>" +
+    "<tr class='total-row' style='font-weight:normal'>" +
+    "<td colspan='7' style='text-align:right;color:#854F0B'>+ Não faturável (guias de convênio)</td>" +
+    "<td style='text-align:right;color:#854F0B'>R$ " + totalNaoFatRel.toFixed(2).replace(".",",") + "</td>" +
+    "<td style='text-align:right'>-</td>" +
+    "<td style='text-align:right;color:#854F0B'>R$ " + totalNaoFatRel.toFixed(2).replace(".",",") + "</td>" +
+    "<td></td></tr>" +
+    "<tr class='total-row'>" +
+    "<td colspan='7' style='text-align:right'>TOTAL GERAL</td>" +
     "<td style='text-align:right'>R$ " + totalBruto.toFixed(2).replace(".",",") + "</td>" +
     "<td style='text-align:right;color:#c00'>R$ " + totalDesc.toFixed(2).replace(".",",") + "</td>" +
     "<td style='text-align:right'>R$ " + totalFat.toFixed(2).replace(".",",") + "</td>" +
@@ -13908,21 +13978,32 @@ async function abrirFechamentoCaixa() {
       });
     }
 
-    // Para a parte particular, descontar proporcionalmente o desconto do agendamento
-    // (desconto so se aplica a parte particular/faturavel)
-    // ⚡ FIX 06/05/2026 — usa descontoEfetivo (recalculado quando desc_valor=0
-    // mas desc_pct>0) em vez de a.desconto_valor direto.
-    var valorFatComDesconto = valorBrutoParticularItens;
-    if (valorBrutoParticularItens > 0 && descontoEfetivo > 0) {
-      // Aplica desconto na parte particular (em mistos, desc só vai aqui)
-      valorFatComDesconto = valorBrutoParticularItens - descontoEfetivo;
-    } else if (!temNaoFat && a.valor_faturado) {
-      // Sem desconto, 100% particular: usa valor_faturado salvo
-      valorFatComDesconto = Number(a.valor_faturado);
+    // ⚡ FIX 10/08/2026 (v2, parecer Codex) — FONTE ÚNICA: calcValoresAg.
+    // O fechamento mantinha um RECÁLCULO PARALELO do faturado, e cada cópia
+    // da matemática era um lugar pra divergir do Relatório Diário:
+    //  - CASO ERICA (hoje): valor_faturado ÓRFÃO de edição antiga (pano
+    //    particular 110−20%=88 gravado; depois trocada pra SUS 40) inflava o
+    //    Faturável em +R$48 — Fechamento 88, Relatório 40.
+    //  - LEGADO SEM ITENS + desconto: o pseudo-item entra com preço já
+    //    LÍQUIDO (88) e o desconto (22) era subtraído DE NOVO → 66.
+    // calcValoresAg já trata os dois (e mistos, pct órfão, pontos, guarda
+    // anti-negativo). Aqui só CONSOME o resultado; o loop de itens acima
+    // continua alimentando os DETALHES (por convênio/exame, mistos, qtds).
+    var valorFatComDesconto, valorNaoFatCx;
+    if (_calcCx) {
+      valorFatComDesconto = Number(_calcCx.faturado || 0);
+      valorNaoFatCx = Number(_calcCx.naoFaturavel || 0);
+    } else {
+      // Fallback raro (calcValoresAg indisponível): itens − desconto, nunca
+      // o valor_faturado salvo (pode estar órfão).
+      valorFatComDesconto = valorBrutoParticularItens
+        - (descontoEfetivo > 0 ? descontoEfetivo : 0);
+      if (valorFatComDesconto < 0) valorFatComDesconto = 0;
+      valorNaoFatCx = valorNaoFatItens;
     }
 
     totalFat += valorFatComDesconto;
-    totalNaoFat += valorNaoFatItens;
+    totalNaoFat += valorNaoFatCx;
 
     // ===== Resumo por convenio: ITEM A ITEM =====
     itens.forEach(function(it){
@@ -13954,7 +14035,7 @@ async function abrirFechamentoCaixa() {
       var dentNome = (dentObj && dentObj.n) ? dentObj.n : (a.dentista_nome || "");
       if (dentNome) {
         if (!porDentista[dentNome]) porDentista[dentNome] = {val:0, qtd:0};
-        porDentista[dentNome].val += (valorFatComDesconto + valorNaoFatItens);
+        porDentista[dentNome].val += (valorFatComDesconto + valorNaoFatCx);
         porDentista[dentNome].qtd++;
       }
     }
