@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.61 - 2026-08-10";
+var APP_VERSION = "v3.63 - 2026-08-11";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -6433,7 +6433,11 @@ async function creditarCashbackSeElegivel(agendamentoId){
       nfse_id: row.nfse_id,
       tipo: "credito",
       pontos: pontos,
-      motivo: "Cashback confirmado por NFS-e emitida"
+      motivo: "Cashback confirmado por NFS-e emitida",
+      // v3.63 — rastreabilidade: quem lançou e saldo resultante
+      created_by: (typeof CU !== "undefined" && CU && CU.id) || null,
+      usuario_email: (typeof CU !== "undefined" && CU && CU.email) || null,
+      saldo_apos: novoSaldo
     });
 
     if(ins.error){
@@ -6507,7 +6511,11 @@ async function estornarCashbackSeNecessario(agendamentoId){
       nfse_id: row.nfse_id,
       tipo: "estorno",
       pontos: pontos,
-      motivo: "Estorno por cancelamento da NFS-e"
+      motivo: "Estorno por cancelamento da NFS-e",
+      // v3.63 — rastreabilidade: quem lançou e saldo resultante
+      created_by: (typeof CU !== "undefined" && CU && CU.id) || null,
+      usuario_email: (typeof CU !== "undefined" && CU && CU.email) || null,
+      saldo_apos: novoSaldo
     });
 
     if(ins.error){
@@ -11328,12 +11336,44 @@ function rportal(dId){
 
 function rsgtr(dId,pId,pts,nm){var d=fdent(dId);if(!d||d.pts<pts){toast("⚠️","Pontos insuficientes");return;}openM("Confirmar Resgate","<p style='color:var(--gr);margin-bottom:7px'>Resgatar <strong>"+esc(nm)+"</strong>?</p><p style='color:#f87171;font-size:.85rem'>Serao descontados <strong>"+fmtN(pts)+" pts</strong>.</p>",[{lbl:"Cancelar",cls:"btno",fn:closeM},{lbl:"Confirmar",cls:"btng",fn:function(){dbResgatar(dId,pId,pts).then(function(ok){if(ok){rportal(dId);toast("🎁",nm+" resgatado!");}else{toast("⚠️","Erro ao resgatar");}});closeM();}}]);}
 
-function abrirExtratoCashback(dId){
+// v3.62 — EXTRATO COMPLETO (caso Tatiele, 11/08/2026): a tela lia SÓ a tabela
+// cashback_ajustes (ajustes manuais de admin). Os lançamentos REAIS — créditos
+// de NFS-e e débitos de desconto de pontos em atendimento — ficam em
+// cashback_lancamentos e NUNCA apareciam: a Andressa debitou 300 pts da
+// Tatiele, o razão registrou, o saldo mudou, e o extrato não mostrava nada.
+// Agora o extrato une as DUAS tabelas, ordenado do mais recente pro mais antigo.
+function _dtBRcb(s){
+  try{
+    var str = String(s || "");
+    // created_at de cashback_lancamentos é UTC sem timezone ("2026-08-11 11:15:03")
+    var iso = str.replace(" ", "T");
+    if(!/Z|\+/.test(iso)) iso += "Z";
+    var d = new Date(iso);
+    if(!isNaN(d)) return d.toLocaleDateString("pt-BR") + " " +
+      d.toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"});
+  }catch(e){}
+  return String(s || "").split(/[T ]/)[0];
+}
+
+async function abrirExtratoCashback(dId){
   var d = fdent(dId);
   if(!d) return;
 
-  var ext = (AJUSTES_CB || []).filter(function(x){
+  // Ajustes manuais (cache local, como antes)
+  var ajustes = (AJUSTES_CB || []).filter(function(x){
     return x.dentista_id === d.id;
+  }).map(function(x){ x = Object.assign({}, x); x._origem = "ajuste"; return x; });
+
+  // Lançamentos do razão (NFS-e, desconto de pontos, estornos) — direto do banco
+  var lanc = [];
+  try{
+    var rl = await supa.from("cashback_lancamentos").select("*")
+      .eq("dentista_id", d.id).order("created_at", {ascending:false}).limit(300);
+    lanc = (rl && rl.data ? rl.data : []).map(function(x){ x._origem = "razao"; return x; });
+  }catch(e){ console.error("extrato lancamentos:", e); }
+
+  var ext = ajustes.concat(lanc).sort(function(a, b){
+    return String(b.created_at || "").localeCompare(String(a.created_at || ""));
   });
 
   var h = "";
@@ -11347,25 +11387,37 @@ function abrirExtratoCashback(dId){
   h += "<div style='max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:8px'>";
 
   if(!ext.length){
-    h += "<div style='text-align:center;color:var(--gr);padding:20px;font-size:.85rem'>Nenhum ajuste manual registrado.</div>";
+    h += "<div style='text-align:center;color:var(--gr);padding:20px;font-size:.85rem'>Nenhuma movimentação registrada.</div>";
   }else{
     ext.forEach(function(e){
       var credito = e.tipo === "credito";
       var corBg = credito ? "rgba(74,184,72,.10)" : "rgba(224,82,82,.10)";
       var corTx = credito ? "var(--g)" : "#f87171";
       var sinal = credito ? "+" : "-";
-      var dt = "";
-      if(e.created_at){
-        var p = String(e.created_at).split("T")[0];
-        dt = iso2br(p);
+      var dt = e.created_at ? _dtBRcb(e.created_at) : "";
+
+      // v3.62 — título conforme a origem/motivo do lançamento
+      var titulo;
+      if(e._origem === "razao"){
+        var mv = String(e.motivo || "").toLowerCase();
+        if(mv.indexOf("estorno") !== -1) titulo = "↩️ Estorno de pontos";
+        else if(mv.indexOf("desconto de pontos") !== -1) titulo = "🪙 Desconto de pontos (atendimento)";
+        else if(mv.indexOf("nfs") !== -1 || mv.indexOf("cashback") !== -1) titulo = "💚 Cashback (NFS-e)";
+        else titulo = credito ? "Crédito" : "Débito";
+      } else {
+        titulo = credito ? "Acréscimo manual" : "Desconto manual";
       }
 
       h += "<div style='border:1px solid rgba(255,255,255,.08);background:"+corBg+";border-radius:10px;padding:12px'>";
       h += "<div style='display:flex;justify-content:space-between;gap:10px;align-items:flex-start'>";
       h += "<div style='flex:1'>";
-      h += "<div style='font-size:.88rem;font-weight:700'>" + (credito ? "Acréscimo manual" : "Desconto manual") + "</div>";
+      h += "<div style='font-size:.88rem;font-weight:700'>" + titulo + "</div>";
       h += "<div style='font-size:.78rem;color:var(--gr);margin-top:4px'>" + esc(e.motivo || "Sem motivo informado") + "</div>";
-      h += "<div style='font-size:.73rem;color:var(--gr);margin-top:6px'>" + esc(dt) + " • " + esc(e.usuario_email || "") + "</div>";
+      // v3.63 — linha de auditoria: quando, por quem, e saldo resultante
+      h += "<div style='font-size:.73rem;color:var(--gr);margin-top:6px'>" + esc(dt) +
+           (e.usuario_email ? " • por " + esc(e.usuario_email) : "") +
+           (e.saldo_apos !== null && e.saldo_apos !== undefined ? " • saldo após: <b>" + fmtN(e.saldo_apos) + " pts</b>" : "") +
+           "</div>";
       h += "</div>";
       h += "<div style='font-weight:700;color:"+corTx+";white-space:nowrap'>" + sinal + fmtN(e.pontos) + " pts</div>";
       h += "</div>";
