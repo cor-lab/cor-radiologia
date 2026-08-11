@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v22-criar-do-resumo-20260810";
+  var _VERSAO = "whatsapp-web-v23-cora-retoma-20260811";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -473,6 +473,47 @@ var WHATSAPP = (function () {
     if (ok && typeof toast === "function") toast("🙋", "Você assumiu — CORA pausada");
   }
 
+  // ── v23 — "CORA retoma" (11/08/2026): pede que a CORA VOLTE a falar ──
+  // Caso Maixner: o paciente pediu algo enquanto a conversa estava em modo
+  // humano; devolvida, a CORA fica MUDA até mensagem nova dele. Este botão
+  // chama /cora_retomar: a CORA relê o histórico e manda UMA mensagem que faz
+  // a conversa andar. Se a conversa estava assumida por MIM, o backend já
+  // devolve pra CORA no mesmo ato; assumida por OUTRO, ele recusa (409).
+  async function coraRetomar() {
+    if (!_sel) return;
+    var instrucao = prompt(
+      "Instrução para a CORA (opcional):\n" +
+      "Ex.: \"foque na remarcação para a semana que vem\".\n" +
+      "Deixe em branco para ela apenas retomar de onde parou.");
+    if (instrucao === null) return;   // cancelou
+    try {
+      var r = await _chamarBot("/cora_retomar", {
+        numero: _sel, instrucao: (instrucao || "").trim(), atendente: _quemSou()
+      });
+      if (r && r.ok) {
+        if (typeof toast === "function") toast("🔄", "CORA retomou — mensagem enviada ao paciente");
+        await _refresh();
+        return;
+      }
+      if (r && r.status === 409) {
+        var det = "";
+        try { var d = await r.json(); det = String(d.detail || ""); } catch (e) {}
+        if (det.indexOf("fora_da_janela_24h") !== -1) {
+          if (typeof toast === "function") toast("⚠️", "Fora da janela de 24h da Meta — o paciente precisa escrever primeiro.");
+        } else if (det.indexOf("ja_assumida") !== -1) {
+          if (typeof toast === "function") toast("🔒", det.replace("ja_assumida:", "") + " está com esta conversa.");
+        } else {
+          if (typeof toast === "function") toast("⚠️", "Não foi possível retomar (409).");
+        }
+        return;
+      }
+      if (typeof toast === "function") toast("⚠️", "Falha ao retomar (HTTP " + (r ? r.status : "?") + ")");
+    } catch (e) {
+      console.error("coraRetomar:", e);
+      if (typeof toast === "function") toast("⚠️", "Erro ao pedir retomada");
+    }
+  }
+
   async function devolverCora() {
     if (!_sel) return;
     try {
@@ -641,6 +682,8 @@ var WHATSAPP = (function () {
         h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:#243049;color:#e6e6e6' onclick='WHATSAPP.devolverCora()'>↩️ Devolver para a CORA</button>";
       }
       if (!jaResolvida) {
+        // v23 — pede que a CORA volte a falar (retomada); some em resolvidas
+        h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:#1d3a5f;color:#cfe3ff' title='A CORA relê a conversa e manda uma mensagem que faz o atendimento andar' onclick='WHATSAPP.coraRetomar()'>🔄 CORA retoma</button>";
         h += "<button class='btn btng' style='padding:5px 12px;font-size:.8rem' onclick='WHATSAPP.resolver()'>✓ Resolver</button>";
       } else {
         h += "<button class='btn' style='padding:5px 12px;font-size:.8rem' onclick='WHATSAPP.reabrir()'>↩️ Reabrir</button>";
@@ -814,6 +857,7 @@ var WHATSAPP = (function () {
     criarDoResumo: criarDoResumo,
     abrirMidia: abrirMidia,
     assumirConversa: assumirConversa,
+    coraRetomar: coraRetomar,
     devolverCora: devolverCora,
     enviarResposta: enviarResposta,
     versao: _VERSAO
