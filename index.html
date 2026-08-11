@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.63 - 2026-08-11";
+var APP_VERSION = "v3.65 - 2026-08-11";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -11288,6 +11288,20 @@ function rportal(dId){
   .reduce(function(t, a){
     return t + parseInt(a.cb || 0, 10);
   }, 0);
+  // v3.65 — PONTOS "A CONFIRMAR": atendimentos JÁ REALIZADOS aguardando a
+  // emissão da NFS-e (o crédito só entra no razão quando a nota sai). Antes
+  // esses pontos ficavam num limbo invisível: não eram "pendentes" (que só
+  // conta agendado/aguardando) nem "confirmados" — e a dentista perguntava
+  // "fiz a indicação, o exame aconteceu, cadê meus pontos?".
+  var ptsAConf = meus
+  .filter(function(a){
+    var st = a.status_clinico || a.st;
+    var sf = a.status_fiscal || "nao_emitida";
+    return st === "realizado" && sf !== "emitida" && sf !== "cancelada";
+  })
+  .reduce(function(t, a){
+    return t + parseInt(a.cb || 0, 10);
+  }, 0);
   var h="<div class='ph'><div>";
   h+="<div class='dpf'><div class='dav' style='background:"+d.bg+";color:"+d.cor+"'>"+esc(d.ini)+"</div><div class='di'><h2>"+esc(d.n)+"</h2><p>CRO "+esc(d.cro)+" &bull; "+esc(d.esp)+"</p><div class='lvc'>"+nc.em+" Nivel "+esc(d.nv)+"</div></div></div>";
   h+="<div style='font-size:.76rem;color:var(--gr);display:flex;justify-content:space-between;margin-bottom:4px'><span>Progresso para "+esc(nc.next)+"</span><span>"+fmtN(d.pts)+" / "+(nc.nxp?fmtN(nc.nxp):"MAX")+" pts</span></div>";
@@ -11303,6 +11317,10 @@ function rportal(dId){
   h+="<div class='cval'"+_negSty+">≈ R$ "+(d.pts*1).toFixed(2)+"</div>";
   if(Number(d.pts) < 0) h+="<div style='margin-top:4px;font-size:.72rem;color:#ef4444;font-weight:700'>⚠️ SALDO NEGATIVO</div>";
   h+="<div style='margin-top:6px;font-size:.78rem;color:var(--gr)'>Pendentes: <strong style='color:var(--or)'>"+fmtN(ptsPend)+" pts</strong></div>";
+  // v3.65 — faixa intermediária visível: realizado, aguardando NFS-e
+  if(ptsAConf > 0){
+    h+="<div style='margin-top:4px;font-size:.78rem;color:var(--gr)' title='Exames já realizados cujo cashback entra assim que a NFS-e for emitida'>A confirmar (NFS-e): <strong style='color:var(--tl)'>"+fmtN(ptsAConf)+" pts</strong></div>";
+  }
   h+="<button class='btn btno' style='margin-top:11px;width:100%;justify-content:center;font-size:.74rem' onclick=\"abrirExtratoCashback("+d.id+")\">📄 Extrato</button>";
   h+="</div></div>";
 
@@ -11313,7 +11331,16 @@ function rportal(dId){
     h+="<div style='color:var(--gr);text-align:center;padding:18px;font-size:.84rem'>Nenhum paciente ainda.</div>";
   }else{
     var sc2={agendado:"bt",realizado:"bg",cancelado:"br",aguardando:"bo"};
-    meus.slice().reverse().slice(0,6).forEach(function(a){
+    // v3.64 — MOSTRA OS 6 MAIS RECENTES DE VERDADE. O reverse() era herança de
+    // quando o cache vinha em ordem ASCendente; hoje loadAllData ordena
+    // data_exame DESC, então o reverse colocava os mais ANTIGOS na frente —
+    // a Tatiele via pacientes de julho com atendimento feito hoje de manhã.
+    // Ordenação explícita por data+hora, imune à ordem do cache:
+    meus.slice().sort(function(x, y){
+      var dx = String(br2iso(x.dt) || "") + " " + String(x.hr || "");
+      var dy = String(br2iso(y.dt) || "") + " " + String(y.hr || "");
+      return dy.localeCompare(dx);
+    }).slice(0,6).forEach(function(a){
       var ex=fex(a.ex);
       h+="<div class='ei'>";
       h+="<div class='eico' style='background:rgba(255,255,255,.06)'>"+(ex?ex.ico:"🩻")+"</div>";
