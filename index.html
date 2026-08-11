@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.65 - 2026-08-11";
+var APP_VERSION = "v3.66 - 2026-08-11";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -11350,6 +11350,8 @@ function rportal(dId){
     });
     h+="<div style='margin-top:7px;text-align:center;font-size:.77rem;color:var(--gr)'>Total: <strong style='color:var(--wh)'>"+meus.length+"</strong></div>";
   }
+  // v3.58 — listagem completa (todos os pacientes do dentista, direto do banco)
+  h+="<button class='btn btno' style='margin-top:9px;width:100%;justify-content:center;font-size:.76rem' onclick='verPacientesDentista("+d.id+")'>📋 Ver TODOS os pacientes</button>";
   h+="</div>";
 
   h+="<div class='card'><div class='ctitle'>💳 Extrato</div>";
@@ -11498,7 +11500,77 @@ function rdent(){
   h+="</tr></thead><tbody id='dtTb'></tbody></table></div></div>";
   document.getElementById("pgDt").innerHTML=h; bldDtRows();
 }
-function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong>"+(d.obs?"<span title='"+esc(d.obs)+"' style='cursor:help;font-size:.8rem;opacity:.75'>📝</span>":"")+"</div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:"+(Number(d.pts)<0?"#ef4444":"var(--g)")+";font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button><button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button></div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
+// ═══ v3.58 — LISTAGEM COMPLETA DE PACIENTES DE UM DENTISTA ═══
+// Busca TODOS os atendimentos do dentista direto do Supabase (não só o cache),
+// agrupa por paciente e mostra com busca. Clique abre o Histórico do paciente.
+async function verPacientesDentista(dId){
+  var d = fdent(dId);
+  if(!d){ toast("Erro", "Dentista não encontrado."); return; }
+  openM("📋 Pacientes de " + esc(d.n),
+    "<div><input id='vpdBusca' placeholder='Buscar paciente...' oninput='vpdRender()' style='width:100%;margin-bottom:8px'>" +
+    "<div id='vpdList' style='min-height:120px'>Carregando pacientes…</div></div>",
+    [{lbl:"Fechar", cls:"btno", fn:closeM}]);
+  var rows = [], offset = 0;
+  try{
+    while(true){
+      var r = await supaFetch("/rest/v1/agendamentos?select=paciente_nome,paciente_tel,data_exame,status_clinico&dentista_id=eq." + dId + "&order=data_exame.desc&limit=1000&offset=" + offset);
+      var j = await r.json();
+      if(!j || !j.length) break;
+      rows = rows.concat(j);
+      offset += 1000;
+      if(j.length < 1000 || offset >= 20000) break;
+    }
+  }catch(e){
+    var elErr = document.getElementById("vpdList");
+    if(elErr) elErr.innerHTML = "<div style='color:var(--or)'>Erro ao carregar: " + esc(e.message||e) + "</div>";
+    return;
+  }
+  var map = {};
+  rows.forEach(function(a){
+    var k = String(a.paciente_nome || "?").trim().toUpperCase();
+    if(!map[k]) map[k] = { nome: a.paciente_nome, tel: a.paciente_tel || "", qtd: 0, realizados: 0, ultimo: a.data_exame || "" };
+    map[k].qtd++;
+    if(a.status_clinico === "realizado") map[k].realizados++;
+    if(!map[k].tel && a.paciente_tel) map[k].tel = a.paciente_tel;
+    if(String(a.data_exame||"") > String(map[k].ultimo)) map[k].ultimo = a.data_exame;
+  });
+  window._vpdLista = Object.keys(map).map(function(k){ return map[k]; });
+  window._vpdLista.sort(function(x,y){ return String(y.ultimo).localeCompare(String(x.ultimo)); });
+  vpdRender();
+}
+function vpdRender(){
+  var el = document.getElementById("vpdList");
+  if(!el) return;
+  var f = String((document.getElementById("vpdBusca")||{}).value || "").trim().toUpperCase();
+  var lista = (window._vpdLista || []).filter(function(p){
+    return !f || String(p.nome||"").toUpperCase().indexOf(f) !== -1;
+  });
+  var h = "<div style='font-size:.78rem;color:var(--gr);margin-bottom:6px'>" + lista.length + " paciente(s)" + (f ? " no filtro" : "") + " — " + (window._vpdLista||[]).length + " no total</div>";
+  h += "<div style='max-height:52vh;overflow-y:auto'>";
+  lista.slice(0, 400).forEach(function(p){
+    var u = String(p.ultimo || "");
+    var dtBR = u.length >= 10 ? u.substring(8,10) + "/" + u.substring(5,7) + "/" + u.substring(0,4) : "—";
+    h += "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 9px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer' onclick='vpdAbrirHist(" + jsArg(p.nome || "") + ")' title='Abrir no Histórico'>";
+    h += "<div style='min-width:0'><div style='font-weight:600;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" + esc(p.nome || "?") + "</div>";
+    h += "<div style='font-size:.72rem;color:var(--gr)'>" + (p.tel ? "📲 " + esc(p.tel) + " · " : "") + "último: " + dtBR + "</div></div>";
+    h += "<div style='text-align:right;font-size:.72rem;color:var(--gr);flex-shrink:0'><b style='color:var(--g)'>" + p.realizados + "</b> realizado" + (p.realizados===1?"":"s") + "<br>" + p.qtd + " no total</div>";
+    h += "</div>";
+  });
+  if(lista.length > 400) h += "<div style='padding:8px;color:var(--gr);font-size:.75rem;text-align:center'>Mostrando 400 — use a busca para filtrar.</div>";
+  h += "</div>";
+  el.innerHTML = h;
+}
+function vpdAbrirHist(nome){
+  closeM();
+  navTo("historico");
+  setTimeout(function(){
+    var inp = document.getElementById("histBuscaInput");
+    if(inp){ inp.value = nome; }
+    if(typeof buscarHistorico === "function") buscarHistorico();
+  }, 150);
+}
+
+function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong>"+(d.obs?"<span title='"+esc(d.obs)+"' style='cursor:help;font-size:.8rem;opacity:.75'>📝</span>":"")+"</div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:"+(Number(d.pts)<0?"#ef4444":"var(--g)")+";font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btno bsm bico' onclick='verPacientesDentista("+d.id+")' title='Pacientes deste dentista'>📋</button><button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button><button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button></div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
 function filtDt(v){dtSrch=v.toLowerCase();bldDtRows();}
 function openDtM(eid){
   var ed=eid?fdent(eid):null;
@@ -11615,6 +11687,20 @@ function openDtM(eid){
     {lbl:ed?"Salvar":"Cadastrar",cls:"btng",fn:function(){
       var nm=document.getElementById("dNm").value.trim();
       if(!nm){toast("⚠️","Informe o nome");return;}
+      // ⚡ v3.57 — AVISO DE DUPLICATA no cadastro: se já existe dentista com o
+      // mesmo nome (ignorando acentos/caixa), mostra o existente e deixa o
+      // usuário DECIDIR se cria mesmo assim.
+      if(!ed){
+        var _normDup = function(s){ return String(s||"").toUpperCase()
+          .normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim(); };
+        var _jaExiste = (dents||[]).find(function(x){ return _normDup(x.n) === _normDup(nm); });
+        if(_jaExiste){
+          if(!confirm("⚠️ JÁ EXISTE um dentista com este nome:\n\n" + _jaExiste.n +
+              (_jaExiste.cro ? " — CRO " + _jaExiste.cro : "") +
+              " (" + (_jaExiste.ind||0) + " indicações)\n\n" +
+              "Criar um cadastro DUPLICADO mesmo assim?")) return;
+        }
+      }
       var cl=document.getElementById("dCl").value;
       var bg="linear-gradient(135deg,"+cl+","+cl+"cc)";
       var ini=document.getElementById("dIni").value.toUpperCase()||nm.split(" ").map(function(x){return x[0]||"";}).join("").slice(0,2).toUpperCase();
