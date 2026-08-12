@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.66 - 2026-08-11";
+var APP_VERSION = "v3.67 - 2026-08-12";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -6165,6 +6165,10 @@ async function propagarPacienteVinculado(pacienteId, form){
 
   // Campos a considerar e valores normalizados/trimados do form
   var camposForm = {
+    // ⚡ v3.67 — NOME agora propaga também (caso LOURDES 216873: corrigiam o
+    // nome no atendimento, o cadastro ficava com o antigo, e a próxima edição
+    // do cadastro trazia o nome errado de volta para TODOS os atendimentos).
+    nome:             (form.nome || "").trim(),
     cpf:              formCpfNorm,
     telefone:         formTelNorm,
     email:            (form.email || "").trim().toLowerCase(),
@@ -9747,6 +9751,7 @@ function openEditAg(id) {
       // o save do agendamento.
       if (a.pId) {
         await propagarPacienteVinculado(a.pId, {
+          nome:             a.pac,   // v3.67 — nome tambem propaga p/ cadastro
           cpf:              a.paciente_cpf,
           telefone:         a.tel,
           email:            a.paciente_email,
