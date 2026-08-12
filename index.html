@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.67 - 2026-08-12";
+var APP_VERSION = "v3.68 - 2026-08-12";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -11505,6 +11505,64 @@ function rdent(){
   h+="</tr></thead><tbody id='dtTb'></tbody></table></div></div>";
   document.getElementById("pgDt").innerHTML=h; bldDtRows();
 }
+// ═══ v3.68 — UNIFICAR DENTISTAS DUPLICADOS (pelo APPCOR) ═══
+// Move atendimentos, endereços, pontos e lançamentos do cadastro de ORIGEM
+// para o DESTINO (RPC atômica unificar_dentistas) e inativa a origem com
+// anotação de rastro. Quem decide o que unificar é o usuário.
+function udFiltrarDent(){
+  var q = String((document.getElementById("udBusca")||{}).value || "").toLowerCase();
+  var sel = document.getElementById("udDent");
+  if(!sel) return;
+  var atual = parseInt(sel.value) || null;
+  var lista = (dents || []).filter(function(x){
+    return x.id !== window._udOrigemId && (!q || String(x.n||"").toLowerCase().indexOf(q) !== -1);
+  });
+  lista.sort(function(x,y){ return String(x.n||"").localeCompare(String(y.n||"")); });
+  var vis = lista.slice(0, 300);
+  if(atual && atual !== window._udOrigemId && !vis.some(function(x){ return x.id === atual; })){
+    var dAt = fdent(atual);
+    if(dAt) vis.unshift(dAt);
+  }
+  var h = "<option value=''>— escolha o cadastro de DESTINO —</option>";
+  vis.forEach(function(x){
+    h += "<option value='" + x.id + "'" + (x.id === atual ? " selected" : "") + ">" + esc(x.n) + " (" + (x.ind||0) + " ind.)</option>";
+  });
+  sel.innerHTML = h;
+  if(atual) sel.value = String(atual);
+}
+function unificarDentistaUI(origId){
+  var o = fdent(origId);
+  if(!o){ toast("Erro", "Dentista não encontrado."); return; }
+  window._udOrigemId = origId;
+  var b = "<div style='display:flex;flex-direction:column;gap:12px;font-size:.9rem'>";
+  b += "<div style='padding:10px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.35);border-radius:10px'>";
+  b += "Cadastro a unificar (será <b>INATIVADO</b>):<br><b>" + esc(o.n) + "</b> — " + (o.ind||0) + " indicações, " + fmtN(o.pts||0) + " pts</div>";
+  b += "<div class='field'><label>Unificar DENTRO de</label>";
+  b += "<input id='udBusca' placeholder='Buscar cadastro de destino...' oninput='udFiltrarDent()' style='margin-bottom:6px'>";
+  b += "<select id='udDent'></select></div>";
+  b += "<div style='font-size:.76rem;color:var(--gr)'>Atendimentos, indicações, pontos, endereços e lançamentos passam para o destino. E-mail/CRO/telefone do destino são preservados (herda da origem só o que faltar). A origem fica inativa com anotação de rastro.</div>";
+  b += "</div>";
+  openM("🔀 Unificar Dentista", b, [
+    {lbl:"Cancelar", cls:"btno", fn:function(){ closeM(); openDtM(origId); }},
+    {lbl:"Unificar", cls:"btnr", fn:async function(){
+      var destId = parseInt((document.getElementById("udDent")||{}).value) || 0;
+      var dDest = fdent(destId);
+      if(!dDest || destId === origId){ toast("⚠️", "Escolha o cadastro de destino."); return; }
+      if(!confirm("UNIFICAR os cadastros?\n\nORIGEM (inativa): " + o.n + " — " + (o.ind||0) + " ind.\nDESTINO (fica): " + dDest.n + " — " + (dDest.ind||0) + " ind.\n\nTudo da origem passa para o destino. Esta ação não se desfaz pelo app.")) return;
+      var r = await supa.rpc("unificar_dentistas", { p_origem: origId, p_destino: destId });
+      if(r.error){ toast("Erro", "Falha ao unificar: " + r.error.message); return; }
+      var res = r.data || {};
+      dents = (dents || []).filter(function(x){ return x.id !== origId; });
+      if(res.destino_indicacoes !== undefined) dDest.ind = res.destino_indicacoes;
+      if(res.destino_pontos !== undefined) dDest.pts = res.destino_pontos;
+      closeM();
+      if(typeof rdent === "function") rdent();
+      toast("✅ Unificado", (res.atendimentos_movidos||0) + " atendimento(s) movidos para " + esc(dDest.n) + " (" + (res.destino_indicacoes||dDest.ind) + " indicações).");
+    }}
+  ]);
+  setTimeout(udFiltrarDent, 0);
+}
+
 // ═══ v3.58 — LISTAGEM COMPLETA DE PACIENTES DE UM DENTISTA ═══
 // Busca TODOS os atendimentos do dentista direto do Supabase (não só o cache),
 // agrupa por paciente e mostra com busca. Clique abre o Histórico do paciente.
@@ -11687,7 +11745,10 @@ function openDtM(eid){
         : "<div style='color:#666;font-size:12px;padding:6px'>Salve o dentista primeiro para gerenciar o acesso ao FotonWeb</div>")+
     "</div></div>";
 
-  openM(ed?"Editar Dentista":"Cadastrar Dentista",b,[
+  openM(ed?"Editar Dentista":"Cadastrar Dentista",b,(ed?[
+    // ⚡ v3.68 — unificar cadastro duplicado direto pelo APPCOR
+    {lbl:"🔀 Unificar", cls:"btno", fn:function(){ unificarDentistaUI(ed.id); }}
+  ]:[]).concat([
     {lbl:"Cancelar",cls:"btno",fn:closeM},
     {lbl:ed?"Salvar":"Cadastrar",cls:"btng",fn:function(){
       var nm=document.getElementById("dNm").value.trim();
@@ -11733,7 +11794,7 @@ function openDtM(eid){
       });
       closeM();rdent();toast("✅",nm+(ed?" atualizado":" cadastrado"));
     }}
-  ]);
+  ]));
 
   // Carregar endereços se editando
   if(ed) dentEndLoad(ed.id);
