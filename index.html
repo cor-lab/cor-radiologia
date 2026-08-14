@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.69 - 2026-08-12";
+var APP_VERSION = "v3.70 - 2026-08-14";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -11611,6 +11611,71 @@ function abrirCompartilharHist(){
   }, 0);
 }
 
+// ═══ v3.70 — VISÃO DO DENTISTA (admin confere o FotonWeb sem logar como ele) ═══
+// Mostra EXATAMENTE a lista de exames que o dentista vê no FotonWeb: os
+// atendimentos realizados dele + os COMPARTILHADOS com ele (marcados). Assim a
+// recepção/admin confere se um exame chegou sem precisar da senha do dentista.
+async function verExamesDentista(dId){
+  var d = fdent(dId);
+  if(!d){ toast("Erro", "Dentista não encontrado."); return; }
+  openM("👁️ Visão FotonWeb — " + esc(d.n),
+    "<div><input id='vedBusca' placeholder='Buscar paciente ou exame...' oninput='vedRender()' style='width:100%;margin-bottom:8px'>" +
+    "<div id='vedList' style='min-height:120px'>Carregando exames…</div></div>",
+    [{lbl:"Fechar", cls:"btno", fn:closeM}]);
+  var lista = [], vistos = {};
+  try{
+    // 1) atendimentos PRÓPRIOS realizados (com código), recentes primeiro
+    var r1 = await supaFetch("/rest/v1/agendamentos?select=firebird_seq_atend,paciente_nome,data_exame,agendamento_exames(nome_exame)&dentista_id=eq." + dId + "&firebird_seq_atend=not.is.null&order=data_exame.desc&limit=600");
+    (r1.ok ? await r1.json() : []).forEach(function(a){
+      if(vistos[a.firebird_seq_atend]) return; vistos[a.firebird_seq_atend] = true;
+      lista.push({ seq:a.firebird_seq_atend, pac:a.paciente_nome, dt:a.data_exame,
+        exames:(a.agendamento_exames||[]).map(function(e){return e.nome_exame;}).filter(Boolean).join(", "), comp:false });
+    });
+    // 2) atendimentos COMPARTILHADOS com ele
+    var rc = await supaFetch("/rest/v1/atendimento_compartilhamentos?select=seq_atend&dentista_id=eq." + dId);
+    var seqs = (rc.ok ? await rc.json() : []).map(function(x){return x.seq_atend;}).filter(function(s){return s && !vistos[s];});
+    if(seqs.length){
+      var r2 = await supaFetch("/rest/v1/agendamentos?select=firebird_seq_atend,paciente_nome,data_exame,dentista_id,agendamento_exames(nome_exame)&firebird_seq_atend=in.(" + seqs.join(",") + ")");
+      (r2.ok ? await r2.json() : []).forEach(function(a){
+        if(vistos[a.firebird_seq_atend]) return; vistos[a.firebird_seq_atend] = true;
+        var orig = fdent(a.dentista_id);
+        lista.push({ seq:a.firebird_seq_atend, pac:a.paciente_nome, dt:a.data_exame,
+          exames:(a.agendamento_exames||[]).map(function(e){return e.nome_exame;}).filter(Boolean).join(", "),
+          comp:true, origem:(orig?orig.n:"") });
+      });
+    }
+  }catch(e){
+    var elE = document.getElementById("vedList");
+    if(elE) elE.innerHTML = "<div style='color:var(--or)'>Erro ao carregar: " + esc(e.message||e) + "</div>";
+    return;
+  }
+  lista.sort(function(x,y){ return String(y.dt||"").localeCompare(String(x.dt||"")); });
+  window._vedLista = lista;
+  vedRender();
+}
+function vedRender(){
+  var el = document.getElementById("vedList");
+  if(!el) return;
+  var f = String((document.getElementById("vedBusca")||{}).value || "").trim().toUpperCase();
+  var lista = (window._vedLista || []).filter(function(a){
+    return !f || (String(a.pac||"").toUpperCase().indexOf(f) !== -1 || String(a.exames||"").toUpperCase().indexOf(f) !== -1);
+  });
+  var nComp = (window._vedLista||[]).filter(function(a){return a.comp;}).length;
+  var h = "<div style='font-size:.78rem;color:var(--gr);margin-bottom:6px'>" + lista.length + " exame(s)" + (f?" no filtro":"") + " — " + (window._vedLista||[]).length + " no total" + (nComp?" (" + nComp + " compartilhado" + (nComp>1?"s":"") + ")":"") + "</div>";
+  h += "<div style='max-height:52vh;overflow-y:auto'>";
+  lista.slice(0, 400).forEach(function(a){
+    var u = String(a.dt||"");
+    var dtBR = u.length>=10 ? u.substring(8,10)+"/"+u.substring(5,7)+"/"+u.substring(0,4) : "—";
+    h += "<div style='padding:7px 9px;border-bottom:1px solid rgba(255,255,255,.06)" + (a.comp?";background:rgba(74,184,72,.08)":"") + "'>";
+    h += "<div style='display:flex;justify-content:space-between;gap:8px'><div style='font-weight:600;font-size:.85rem'>" + esc(a.pac||"?") + (a.comp?" <span style='background:#4ab848;color:#08240f;font-weight:700;font-size:.58rem;padding:1px 5px;border-radius:4px'>COMPARTILHADO</span>":"") + "</div><div style='font-size:.72rem;color:var(--gr);flex-shrink:0'>#" + a.seq + " · " + dtBR + "</div></div>";
+    h += "<div style='font-size:.74rem;color:var(--gr)'>" + esc(a.exames||"—") + (a.comp&&a.origem?" · <i>indicado por " + esc(a.origem) + "</i>":"") + "</div>";
+    h += "</div>";
+  });
+  if(lista.length>400) h += "<div style='padding:8px;color:var(--gr);font-size:.75rem;text-align:center'>Mostrando 400 — use a busca.</div>";
+  h += "</div>";
+  el.innerHTML = h;
+}
+
 // ═══ v3.68 — UNIFICAR DENTISTAS DUPLICADOS (pelo APPCOR) ═══
 // Move atendimentos, endereços, pontos e lançamentos do cadastro de ORIGEM
 // para o DESTINO (RPC atômica unificar_dentistas) e inativa a origem com
@@ -11739,7 +11804,7 @@ function vpdAbrirHist(nome){
   }, 150);
 }
 
-function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong>"+(d.obs?"<span title='"+esc(d.obs)+"' style='cursor:help;font-size:.8rem;opacity:.75'>📝</span>":"")+"</div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:"+(Number(d.pts)<0?"#ef4444":"var(--g)")+";font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btno bsm bico' onclick='verPacientesDentista("+d.id+")' title='Pacientes deste dentista'>📋</button><button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button><button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button></div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
+function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong>"+(d.obs?"<span title='"+esc(d.obs)+"' style='cursor:help;font-size:.8rem;opacity:.75'>📝</span>":"")+"</div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:"+(Number(d.pts)<0?"#ef4444":"var(--g)")+";font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btno bsm bico' onclick='verPacientesDentista("+d.id+")' title='Pacientes deste dentista'>📋</button><button class='btn btno bsm bico' onclick='verExamesDentista("+d.id+")' title='Ver o que ele vê no FotonWeb'>👁️</button><button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button><button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button></div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
 function filtDt(v){dtSrch=v.toLowerCase();bldDtRows();}
 function openDtM(eid){
   var ed=eid?fdent(eid):null;
@@ -11852,6 +11917,8 @@ function openDtM(eid){
     "</div></div>";
 
   openM(ed?"Editar Dentista":"Cadastrar Dentista",b,(ed?[
+    // ⚡ v3.70 — conferir o que o dentista vê no FotonWeb (sem logar como ele)
+    {lbl:"👁️ Visão FotonWeb", cls:"btno", fn:function(){ verExamesDentista(ed.id); }},
     // ⚡ v3.68 — unificar cadastro duplicado direto pelo APPCOR
     {lbl:"🔀 Unificar", cls:"btno", fn:function(){ unificarDentistaUI(ed.id); }}
   ]:[]).concat([
