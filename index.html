@@ -3594,7 +3594,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.68 - 2026-08-12";
+var APP_VERSION = "v3.69 - 2026-08-12";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -7803,6 +7803,7 @@ function renderHistPaciente() {
   if (pac.cpf && String(pac.cpf).replace(/\D/g,"").length === 11) {
     h += "<button class='btn btng bsm' onclick='abrirAcessoFotonwebDoHistorico(" + jsArg(pac.cpf || "") + "," + jsArg(pac.nome || "") + ")' title='Gerar/visualizar senha de acesso ao FotonWeb'>🔑 Acesso FotonWeb</button>";
   }
+  h += "<button class='btn btno bsm' onclick='abrirCompartilharHist()' title='Compartilhar um exame deste paciente com outro dentista (visualização no FotonWeb)'>🔗 Compartilhar</button>";
   h += "<button class='btn btno bsm' onclick='histVoltarBusca()'>Voltar</button>";
   h += "</div>";
   h += "</div>";
@@ -9498,6 +9499,8 @@ function agEV(ev, id) {
     (function(ag){btns.push({lbl:"💿 Etiq. CD", cls:"btno", fn:function(){ imprimirEtiqueta(ag.id, "cd"); }});})(a);
     (function(ag){btns.push({lbl:"📄 Fichas", cls:"btno", fn:function(){ closeM(); imprimirFichas(ag.id); }});})(a);
     (function(ag){btns.push({lbl:"📋 Requisição", cls:"btno", fn:function(){ closeM(); imprimirRequisicao(ag.id); }});})(a);
+    // v3.69 — compartilhar o atendimento com outro dentista (view no FotonWeb)
+    (function(ag){btns.push({lbl:"🔗 Compartilhar", cls:"btno", fn:function(){ abrirCompartilharAg(ag.firebird_seq_atend, ag.pac); }});})(a);
     (function(ag){btns.push({lbl:"📷 Painel Fotos", cls:"btno", fn:function(){ closeM(); imprimirPainelFotos(ag.id); }});})(a);
     (function(ag){btns.push({lbl:"📷 Painel 9 Fotos", cls:"btno", fn:function(){ closeM(); imprimirPainelFotos9(ag.id); }});})(a);
     // ⚡ FIX 06/05/2026 — botão dedicado pra disparar aviso WhatsApp ao dentista.
@@ -11505,6 +11508,109 @@ function rdent(){
   h+="</tr></thead><tbody id='dtTb'></tbody></table></div></div>";
   document.getElementById("pgDt").innerHTML=h; bldDtRows();
 }
+// ═══ v3.69 — COMPARTILHAMENTO DE ATENDIMENTO ENTRE DENTISTAS ═══
+// Dá a um segundo dentista acesso de VISUALIZAÇÃO ao exame no FotonWeb dele.
+// Indicação e pontos seguem do dentista original. Chave: SEQ do atendimento
+// (tabela atendimento_compartilhamentos). Requer FotonWeb atualizado.
+function cmpFiltrarDent(){
+  var q = String((document.getElementById("cmpBusca")||{}).value || "").toLowerCase();
+  var sel = document.getElementById("cmpDent");
+  if(!sel) return;
+  var atual = parseInt(sel.value) || null;
+  var lista = (dents || []).filter(function(x){ return !q || String(x.n||"").toLowerCase().indexOf(q) !== -1; });
+  lista.sort(function(x,y){ return String(x.n||"").localeCompare(String(y.n||"")); });
+  var vis = lista.slice(0, 300);
+  if(atual && !vis.some(function(x){ return x.id === atual; })){
+    var dAt = fdent(atual); if(dAt) vis.unshift(dAt);
+  }
+  var h = "<option value=''>— escolha o dentista —</option>";
+  vis.forEach(function(x){ h += "<option value='" + x.id + "'" + (x.id === atual ? " selected" : "") + ">" + esc(x.n) + "</option>"; });
+  sel.innerHTML = h;
+  if(atual) sel.value = String(atual);
+}
+async function cmpRender(){
+  var el = document.getElementById("cmpLista");
+  if(!el || !window._cmpSeq) return;
+  try{
+    var r = await supaFetch("/rest/v1/atendimento_compartilhamentos?select=id,dentista_id,dentistas(nome)&seq_atend=eq." + window._cmpSeq + "&order=id.asc");
+    var arr = r.ok ? await r.json() : [];
+    if(!arr.length){ el.innerHTML = "<div style='color:var(--gr);font-size:.8rem;padding:6px 0'>Nenhum compartilhamento neste atendimento.</div>"; return; }
+    var h = "";
+    arr.forEach(function(c){
+      var nm = (c.dentistas && c.dentistas.nome) || ("dentista " + c.dentista_id);
+      h += "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.07)'>";
+      h += "<div style='font-size:.84rem'>🦷 " + esc(nm) + "</div>";
+      h += "<button class='btn btnr bsm bico' onclick='cmpDel(" + c.id + ")' title='Remover compartilhamento'>✕</button></div>";
+    });
+    el.innerHTML = h;
+  }catch(e){ el.innerHTML = "<div style='color:var(--or)'>Erro ao listar.</div>"; }
+}
+async function cmpAdd(){
+  var destId = parseInt((document.getElementById("cmpDent")||{}).value) || 0;
+  var d = fdent(destId);
+  if(!d){ toast("⚠️", "Escolha o dentista."); return; }
+  try{
+    var _uid = (typeof CU !== "undefined" && CU && CU.id) ? CU.id : null;
+    var r = await supaFetch("/rest/v1/atendimento_compartilhamentos", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "Prefer": "return=minimal"},
+      body: JSON.stringify({ seq_atend: window._cmpSeq, dentista_id: destId, criado_por: _uid })
+    });
+    if(r.ok){ toast("🔗", "Compartilhado com " + esc(d.n) + " — já aparece no FotonWeb dele."); cmpRender(); }
+    else if(r.status === 409){ toast("ℹ️", "Já estava compartilhado com " + esc(d.n) + "."); }
+    else toast("Erro", "Falha ao compartilhar (" + r.status + ").");
+  }catch(e){ toast("Erro", "Falha: " + (e && e.message ? e.message : e)); }
+}
+async function cmpDel(id){
+  try{
+    var r = await supaFetch("/rest/v1/atendimento_compartilhamentos?id=eq." + id, { method: "DELETE", headers: {"Prefer": "return=minimal"} });
+    if(r.ok){ toast("🗑️", "Compartilhamento removido."); cmpRender(); }
+    else toast("Erro", "Falha ao remover (" + r.status + ").");
+  }catch(e){ toast("Erro", "Falha: " + (e && e.message ? e.message : e)); }
+}
+function _cmpShellHtml(rotulo){
+  var b = "<div style='display:flex;flex-direction:column;gap:10px;font-size:.9rem'>";
+  b += rotulo;
+  b += "<div class='field'><label>Compartilhar com</label>";
+  b += "<input id='cmpBusca' placeholder='Buscar dentista...' oninput='cmpFiltrarDent()' style='margin-bottom:6px'>";
+  b += "<div style='display:flex;gap:6px'><select id='cmpDent' style='flex:1'></select>";
+  b += "<button class='btn btng bsm' onclick='cmpAdd()'>+ Compartilhar</button></div></div>";
+  b += "<div><label style='font-size:.74rem;color:var(--gr);text-transform:uppercase;letter-spacing:1px'>Compartilhado com</label><div id='cmpLista' style='margin-top:4px'>Carregando…</div></div>";
+  b += "<div style='font-size:.74rem;color:var(--gr)'>O dentista convidado VÊ este exame no FotonWeb dele. Indicação e pontos continuam do dentista original.</div>";
+  b += "</div>";
+  return b;
+}
+function abrirCompartilharAg(seq, pacNome){
+  if(!seq){ toast("⚠️", "Compartilhamento disponível após a sincronização do atendimento (código)."); return; }
+  window._cmpSeq = parseInt(seq);
+  openM("🔗 Compartilhar atendimento #" + seq,
+    _cmpShellHtml("<div style='padding:8px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:10px'>Paciente: <b>" + esc(pacNome || "") + "</b> — atendimento <b>#" + seq + "</b></div>"),
+    [{lbl:"Fechar", cls:"btno", fn:closeM}]);
+  setTimeout(function(){ cmpFiltrarDent(); cmpRender(); }, 0);
+}
+function abrirCompartilharHist(){
+  var lista = (histAtendimentos || []).filter(function(a){ return a.fb_seq_atend; });
+  if(!lista.length){ toast("⚠️", "Este paciente não tem atendimentos com código para compartilhar."); return; }
+  var opts = "";
+  var vistos = {};
+  lista.forEach(function(a){
+    if(vistos[a.fb_seq_atend]) return;
+    vistos[a.fb_seq_atend] = true;
+    var dt = String(a.data_atendimento || "").substring(0, 10);
+    var dtBR = dt.length === 10 ? dt.substring(8,10) + "/" + dt.substring(5,7) + "/" + dt.substring(0,4) : "";
+    opts += "<option value='" + a.fb_seq_atend + "'>#" + a.fb_seq_atend + " — " + esc((a.exame_nome || "exame").substring(0, 40)) + (dtBR ? " — " + dtBR : "") + "</option>";
+  });
+  var rotulo = "<div class='field'><label>Atendimento</label><select id='cmpSeqSel' onchange=\"window._cmpSeq=parseInt(this.value);cmpRender()\">" + opts + "</select></div>";
+  openM("🔗 Compartilhar exame de " + esc((histPaciente && histPaciente.nome) || "paciente"),
+    _cmpShellHtml(rotulo), [{lbl:"Fechar", cls:"btno", fn:closeM}]);
+  window._cmpSeq = lista[0].fb_seq_atend;
+  setTimeout(function(){
+    var s = document.getElementById("cmpSeqSel");
+    if(s && s.value) window._cmpSeq = parseInt(s.value);
+    cmpFiltrarDent(); cmpRender();
+  }, 0);
+}
+
 // ═══ v3.68 — UNIFICAR DENTISTAS DUPLICADOS (pelo APPCOR) ═══
 // Move atendimentos, endereços, pontos e lançamentos do cadastro de ORIGEM
 // para o DESTINO (RPC atômica unificar_dentistas) e inativa a origem com
