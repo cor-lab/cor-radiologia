@@ -291,6 +291,12 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-15 (v3.86): Recuperação fiscal explícita. "Verificar/Retomar" consulta
+              primeiro; após a janela de propagação, se a Focus não encontrar a
+              referência, o servidor reenvia exatamente a mesma reference, o
+              mesmo ambiente e o payload persistido. Polling agora consulta
+              imediatamente, informa timeout e não permite requisições sobrepostas.
+
   2026-08-15 (v3.85): Resume por CONSULTA (4ª revisão Codex, opção A — mais
               segura). Nota presa em 'emitindo' NÃO é reemitida (evita duplicar):
               a trava de reemissão voltou a bloquear 'emitindo', e ganhou um botão
@@ -4177,6 +4183,7 @@ function calcNotaPorItens(ag, formaPg){
 //   motivo="sem_email"     paciente sem email no banco
 //   motivo="sem_pdf"       NFS-e ainda processando (PDF não disponível)
 //   motivo="auth_required" sem sessão de usuário
+var _nfseEmailEmAndamento = {};
 async function enviarNFSePorEmail(nfseId, modo, emailOverride){
   if(!nfseId) return { ok:false, error:"nfse_id obrigatório" };
   modo = modo || "manual";
@@ -4201,7 +4208,16 @@ async function enviarNFSePorEmail(nfseId, modo, emailOverride){
 
   var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
 
-  var payload = { tipo:"nfse", nfse_id:nfseId, modo:modo };
+  var guardKey = String(nfseId)+"|"+modo+"|"+String(emailOverride||"");
+  if(_nfseEmailEmAndamento[guardKey]){
+    return { ok:true, em_andamento:true, motivo:"envio_em_andamento" };
+  }
+  var nonce = (typeof crypto !== "undefined" && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
+  _nfseEmailEmAndamento[guardKey] = nonce;
+
+  var payload = { tipo:"nfse", nfse_id:nfseId, modo:modo, idempotency_key:nonce };
   if(emailOverride) payload.email_override = emailOverride;
   // enviado_por NÃO é enviado no payload — vem do JWT na Edge.
 
@@ -4235,10 +4251,15 @@ async function enviarNFSePorEmail(nfseId, modo, emailOverride){
     return {
       ok:true,
       message_id:data.message_id,
-      destinatario:data.destinatario
+      destinatario:data.destinatario,
+      motivo:data.motivo,
+      ja_enviado:!!data.ja_enviado,
+      em_andamento:!!data.em_andamento
     };
   }catch(e){
     return { ok:false, error:e.message || String(e) };
+  }finally{
+    delete _nfseEmailEmAndamento[guardKey];
   }
 }
 
@@ -5143,9 +5164,9 @@ async function confirmarEmissaoNota() {
       return;
     }
 
-    // v3.85: reemissão bloqueada em emitida/emitindo/cancelada. Nota presa em
-    // 'emitindo' NÃO é reemitida (evita duplicar) — a recuperação é o botão
-    // "Verificar/Retomar" (chama a consultar, que sincroniza sem criar nota).
+    // Reemissão comum fica bloqueada em emitida/emitindo/cancelada. Uma nota
+    // pendente só é retomada pelo fluxo explícito que consulta primeiro e depois
+    // reutiliza reference/payload persistidos.
     if (["emitida", "emitindo", "cancelada"].includes(String(ag.status_fiscal || ""))) {
       toast("Atenção", "Agendamento com status fiscal inválido: " + ag.status_fiscal);
       return;
@@ -5245,8 +5266,8 @@ async function confirmarEmissaoNota() {
     // v3.84 (#2): estado PENDENTE (Focus instável — transporte/429/5xx). A nota
     // já foi RESERVADA no servidor; em vez de tratar como erro, inicia o polling
     // com a reference (idempotente). Se a Focus recebeu, o polling confirma;
-    // se não, dá pra emitir de novo — o servidor faz "resume" com a MESMA
-    // reference (a Focus deduplica, não gera nota dupla).
+    // se não, o botão "Verificar/Retomar" reutiliza a MESMA reference e o
+    // payload persistido; a tela nunca cria uma segunda emissão às cegas.
     if (data && data.pendente) {
       ag.status_fiscal = "emitindo";
       if(data.nfse_id) ag.nfse_id = data.nfse_id;
@@ -5254,7 +5275,7 @@ async function confirmarEmissaoNota() {
       if (typeof fecharModalEmitirNota === "function") fecharModalEmitirNota();
       if (typeof renderAgendamentos === "function") renderAgendamentos();
       if (typeof rndAg === "function") rndAg();
-      toast("Aguardando", "Focus instável agora — a nota foi reservada e estou acompanhando. Se não confirmar, pode emitir de novo (não duplica).");
+      toast("Aguardando", "Focus instável agora — a nota foi reservada e estou acompanhando. Se não confirmar, use “Verificar/Retomar nota”.");
       if(data.reference) iniciarPollingNfse(agendamentoId, data.nfse_id || ag.nfse_id, data.reference);
       return;
     }
@@ -5291,16 +5312,100 @@ async function confirmarEmissaoNota() {
 }
 // Polling automático para consultar status NFS-e na Focus
 var _nfsePollings = {};
+
+async function verificarOuRetomarNfse(ag){
+  try{
+    var ref = ag.focus_reference;
+    if(!ref && ag.nfse_id){
+      var r0 = await supa.from("nfse_emitidas").select("reference").eq("id", ag.nfse_id).maybeSingle();
+      if(r0.error) throw new Error(r0.error.message);
+      if(r0.data) ref = r0.data.reference;
+    }
+    if(!ref){
+      toast("Atenção", "A emissão não possui referência. Não é seguro reenviar automaticamente; revise o registro fiscal.");
+      return;
+    }
+
+    if(_nfsePollings[ag.id]){
+      clearInterval(_nfsePollings[ag.id]);
+      delete _nfsePollings[ag.id];
+    }
+    toast("⏳", "Consultando a referência existente na Focus...");
+    var cr = await supaFetch(API_BASE+"/consultar-nfse-focus", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({reference:ref})
+    });
+    var cd = await cr.json().catch(function(){return {};});
+    if(!cr.ok){
+      toast(cr.status===401||cr.status===403 ? "Sessão" : "Erro", cd.error || ("Falha ao consultar a nota (HTTP "+cr.status+")."));
+      return;
+    }
+
+    if(cd.status_mapeado==="emitida" || cd.status_mapeado==="rejeitada" || cd.status_mapeado==="cancelada"){
+      iniciarPollingNfse(ag.id, cd.nfse_id || ag.nfse_id, ref);
+      return;
+    }
+
+    if(!cd.nao_encontrada){
+      toast("Aguardando", "A referência existe e ainda está sendo processada. O acompanhamento foi reiniciado.");
+      iniciarPollingNfse(ag.id, cd.nfse_id || ag.nfse_id, ref);
+      return;
+    }
+
+    if(!cd.pode_retomar){
+      var espera = Number(cd.retry_after_seconds || 0);
+      toast("Aguardando", espera > 0
+        ? "A Focus ainda pode estar propagando a nota. Tente retomar em "+espera+" segundo(s)."
+        : "A retomada ainda não foi liberada pelo servidor.");
+      iniciarPollingNfse(ag.id, cd.nfse_id || ag.nfse_id, ref);
+      return;
+    }
+
+    toast("⏳", "Referência não localizada. Retomando com o mesmo payload, sem criar outra reserva...");
+    var er = await supaFetch(API_BASE+"/emitir-nfse-focus", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({agendamento_id:ag.id, retomar:true})
+    });
+    var ed = await er.json().catch(function(){return {};});
+    if(!er.ok && !ed.pendente){
+      toast(er.status===401||er.status===403 ? "Sessão" : "Erro", ed.error || ("Falha ao retomar a nota (HTTP "+er.status+")."));
+      return;
+    }
+    ag.status_fiscal = "emitindo";
+    if(ed.nfse_id) ag.nfse_id = ed.nfse_id;
+    if(ed.reference) ag.focus_reference = ed.reference;
+    toast(ed.pendente ? "Aguardando" : "Retomada", ed.pendente
+      ? "A Focus continua instável; a mesma referência seguirá sendo consultada."
+      : "A mesma referência foi reenviada com segurança e voltou ao acompanhamento.");
+    iniciarPollingNfse(ag.id, ed.nfse_id || ag.nfse_id, ed.reference || ref);
+  }catch(e){
+    console.error("verificarOuRetomarNfse:", e);
+    toast("Erro", "Falha ao verificar/retomar a nota: "+(e.message || String(e)));
+  }
+}
+
 function iniciarPollingNfse(agId, nfseId, reference) {
   if(_nfsePollings[agId]) clearInterval(_nfsePollings[agId]);
   var tentativas = 0, maxTentativas = 20;
+  var consultando = false;
+  var intervalId = null;
+  function pararEstePolling(){
+    if(intervalId) clearInterval(intervalId);
+    if(_nfsePollings[agId] === intervalId) delete _nfsePollings[agId];
+  }
   console.log("Polling NFS-e iniciado: ag="+agId+" ref="+reference);
-  _nfsePollings[agId] = setInterval(async function(){
+  var executarConsulta = async function(){
+    if(_nfsePollings[agId] !== intervalId) return;
+    if(consultando) return;
+    consultando = true;
     tentativas++;
     if(tentativas > maxTentativas){
-      clearInterval(_nfsePollings[agId]);
-      delete _nfsePollings[agId];
+      pararEstePolling();
       console.log("Polling NFS-e encerrado (timeout): ag="+agId);
+      if(typeof toast === "function") toast("Atenção", "A nota ainda não foi confirmada. Use “Verificar/Retomar nota” para reconciliar com a Focus.");
+      consultando = false;
       return;
     }
     try{
@@ -5310,11 +5415,11 @@ function iniciarPollingNfse(agId, nfseId, reference) {
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({reference:reference})
       });
+      if(_nfsePollings[agId] !== intervalId) return;
       // v3.82 (#6) — sessão expirada / sem permissão: para o polling em vez de
       // seguir consultando como "anônimo" (a Edge agora recusa com 401/403).
       if(r.status===401 || r.status===403){
-        clearInterval(_nfsePollings[agId]);
-        delete _nfsePollings[agId];
+        pararEstePolling();
         console.warn("Polling NFS-e parado: sem sessão/permissão (HTTP "+r.status+")");
         if(typeof toast === "function") toast("Sessão", "Sessão/permissão expirada — acompanhe a emissão da nota manualmente (Imprimir nota).");
         return;
@@ -5324,8 +5429,7 @@ function iniciarPollingNfse(agId, nfseId, reference) {
       console.log("Polling NFS-e ["+tentativas+"]: status_mapeado="+d.status_mapeado);
       // Edge Function já atualiza o banco — só preciso atualizar local
       if(d.status_mapeado==="emitida"){
-        clearInterval(_nfsePollings[agId]);
-        delete _nfsePollings[agId];
+        pararEstePolling();
         var numNota = (d.focus && (d.focus.numero || d.focus.numero_nfse)) || null;
         var ag=(ags||[]).find(function(x){return x.id===agId;});
         if(ag){
@@ -5346,10 +5450,14 @@ function iniciarPollingNfse(agId, nfseId, reference) {
         // depende de ag.paciente_email local (que pode estar stale
         // se outro terminal acabou de atualizar).
         // Fire-and-forget: erros não atrapalham o fluxo do polling.
-        if(ag && ag.nfse_id){
+        if(ag && (ag.nfse_id || nfseId)){
           try{
-            enviarNFSePorEmail(ag.nfse_id, "automatico").then(function(r){
-              if(r && r.ok){
+            enviarNFSePorEmail(ag.nfse_id || nfseId, "automatico").then(function(r){
+              if(r && r.ja_enviado){
+                console.log("[COR] E-mail automático da NFS-e já havia sido enviado.");
+              } else if(r && r.em_andamento){
+                console.log("[COR] E-mail automático da NFS-e já está em andamento.");
+              } else if(r && r.ok){
                 console.log("[COR] NFS-e #"+(numNota||"?")+" enviada por email pra "+r.destinatario);
                 toast("📧","NFS-e enviada por email pra "+r.destinatario);
               } else if(r && r.motivo === "sem_email"){
@@ -5369,14 +5477,22 @@ function iniciarPollingNfse(agId, nfseId, reference) {
           }catch(e){ console.warn("[COR] enviarNFSePorEmail erro:", e); }
         }
       } else if(d.status_mapeado==="rejeitada"){
-        clearInterval(_nfsePollings[agId]);
-        delete _nfsePollings[agId];
+        pararEstePolling();
         var ag2=(ags||[]).find(function(x){return x.id===agId;});
         if(ag2) ag2.status_fiscal="rejeitada";
         toast("Erro","Nota rejeitada pela prefeitura.");
+      } else if(d.status_mapeado==="cancelada"){
+        pararEstePolling();
+        var ag3=(ags||[]).find(function(x){return x.id===agId;});
+        if(ag3) ag3.status_fiscal="cancelada";
+        if(typeof rndAg==="function") rndAg();
       }
     }catch(e){console.log("Polling NFS-e erro:",e);}
-  }, 15000);
+    finally{ consultando = false; }
+  };
+  intervalId = setInterval(executarConsulta, 15000);
+  _nfsePollings[agId] = intervalId;
+  executarConsulta();
 }
 // ⚡ FIX 05/05/2026 — recarrega ag fresco do Supabase após realizar
 // Resolve cache stale do `ags` em memória após reverter+editar+realizar:
@@ -5497,14 +5613,13 @@ async function marcarRealizadoEEmitir(agendamentoId){
     const data = await resp.json().catch(() => ({}));
 
     // v3.84 (#2): PENDENTE (Focus instável). Realizado já foi salvo; a nota está
-    // reservada — inicia polling com a reference (idempotente) e avisa. Emitir de
-    // novo faz "resume" sem duplicar.
+    // reservada — inicia polling com a reference e orienta a retomada explícita.
     if(data && data.pendente){
       ag.status_fiscal = "emitindo";
       if(data.reference) ag.focus_reference = data.reference;
       if(data.nfse_id) ag.nfse_id = data.nfse_id;
       if(typeof renderAgendamentos === "function") renderAgendamentos();
-      toast("Aguardando", "Realizado salvo. Focus instável — nota reservada, acompanhando. Pode emitir de novo se precisar (não duplica).");
+      toast("Aguardando", "Realizado salvo. Focus instável — nota reservada e acompanhada. Se não confirmar, use “Verificar/Retomar nota”.");
       if(data.reference) iniciarPollingNfse(agendamentoId, data.nfse_id || ag.nfse_id, data.reference);
       return true;
     }
@@ -9356,29 +9471,15 @@ function agEV(ev, id) {
     })(a);
   }
 
-  // v3.85 (#3): nota presa em 'emitindo' — botão pra RETOMAR via CONSULTA (nunca
-  // reemite/duplica). Reinicia o polling com a reference guardada; se a Focus
-  // recebeu a nota, o estado sincroniza pra 'emitida'.
+  // Consulta primeiro. Só se a Focus não localizar a referência e a janela de
+  // propagação já tiver passado, o servidor retoma com a MESMA reference e o
+  // MESMO payload persistido.
   if((a.status_fiscal || "")=="emitindo"){
     (function(ag){
       btns.push({
         lbl:"🔄 Verificar/Retomar nota",
         cls:"btng",
-        fn:async function(){
-          var ref = ag.focus_reference;
-          if(!ref && ag.nfse_id){
-            try{
-              var r0 = await supa.from("nfse_emitidas").select("reference").eq("id", ag.nfse_id).maybeSingle();
-              if(r0 && r0.data) ref = r0.data.reference;
-            }catch(e){ console.error("verificar nota: buscar reference", e); }
-          }
-          if(!ref){
-            toast("Atenção","Sem referência pra verificar. Se persistir, reverta o status fiscal e emita de novo.");
-            return;
-          }
-          toast("⏳","Verificando status da nota na Focus...");
-          if(typeof iniciarPollingNfse === "function") iniciarPollingNfse(ag.id, ag.nfse_id, ref);
-        }
+        fn:function(){ return verificarOuRetomarNfse(ag); }
       });
     })(a);
   }
@@ -9502,7 +9603,11 @@ function agEV(ev, id) {
           toast("⏳", "Enviando email...");
           try{
             var r = await enviarNFSePorEmail(ag.nfse_id, "manual");
-            if(r.ok && r.destinatario){
+            if(r.ja_enviado){
+              toast("✅", "Esta operação de envio já havia sido concluída.");
+            }else if(r.em_andamento){
+              toast("Aguarde", "Já existe um envio desta NFS-e em andamento.");
+            }else if(r.ok && r.destinatario){
               toast("✅", "NFS-e enviada para "+r.destinatario);
             }else if(r.motivo === "sem_email"){
               toast("Atenção", "Paciente sem email cadastrado. Edite o paciente pra adicionar.");
@@ -11027,6 +11132,8 @@ async function avisarDentistaPorEmail(agId){
       console.error("[avisoDentistaEmail] invoke error:", r.error);
     } else if(data.ok && data.ja_enviado){
       console.log("[avisoDentistaEmail] já havia sido enviado para o ag", agId);
+    } else if(data.ok && data.em_andamento){
+      console.log("[avisoDentistaEmail] envio já está em andamento para o ag", agId);
     } else if(data.ok){
       console.log("[avisoDentistaEmail] enviado para", data.email_mascarado || "dentista");
     } else {
