@@ -104,7 +104,7 @@
       b.dataset.p = "protocolo";
       b.innerHTML = "📦 Protocolo";
       // insere logo depois de "Histórico" se existir, senão no fim
-      var ref = nav.querySelector('button[data-p="historico"]');
+      var ref = nav.querySelector('button[data-p="pacientes"]') || nav.querySelector('button[data-p="historico"]') || nav.querySelector('button[data-p="atendimento"]');
       if (ref && ref.nextSibling) nav.insertBefore(b, ref.nextSibling);
       else nav.appendChild(b);
     }
