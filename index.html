@@ -282,6 +282,14 @@
               'realizado'); RLS deixa só admin ler. A reversão no APPCOR passa a
               enviar updated_by (reforça o "quem", junto do auth.uid()).
 
+  2026-08-15 (v3.73): FIX da aba Pacientes: funções renomeadas com prefixo
+              pacTab* (pacTabBuscar/pacTabAbrirFicha/pacTabRender + ids/vars).
+              CAUSA: pacientes_busca.js v5.1 (módulo externo) define/sobrescreve
+              globais de busca de paciente; nomes genéricos como buscarPacientes
+              colidiam e o clique caía na função do módulo (sem erro, sem
+              resultado). LIÇÃO: todo código novo do index deve usar prefixo
+              exclusivo — os módulos .js externos carregam DEPOIS e ganham.
+
   2026-08-15 (v3.72): REORGANIZAÇÃO DE ABAS + nova aba PACIENTES (só leitura).
               (a) NOVA ABA "Pacientes" (PERMS admin+agenda): busca por nome/CPF/
               telefone/ID na tabela `pacientes` — antes NENHUMA tela lia essa
@@ -3616,7 +3624,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.72 - 2026-08-15";
+var APP_VERSION = "v3.73 - 2026-08-15";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -13229,37 +13237,37 @@ async function _aprMarcar(numero, novoStatus){
 // nas duas fichas exigem análise humana e são raros (12 conhecidos).
 // Código exibido: firebird_seq_atend = "código do atendimento" (gerado pelo
 // NOSSO trigger atribuir_codigo_paciente desde a aposentadoria do DigitalS).
-var pacResultados = [], pacSel = null, pacSelExames = [], pacSelDups = [];
+var pacTabResultados = [], pacTabSel = null, pacTabSelExames = [], pacTabSelDups = [];
 
 function rpacientes(){
   if(!canAcc("pacientes")){deny(document.getElementById("pgPac"));return;}
-  renderPacientes();
+  pacTabRender();
 }
 
-function renderPacientes(){
+function pacTabRender(){
   var el = document.getElementById("pgPac");
   if(!el) return;
   var h = "<div class='card'>";
   h += "<div class='ctitle'>Pacientes — cadastro</div>";
   h += "<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px'>";
-  h += "<input type='text' id='pacBuscaInput' placeholder='🔍 Nome, CPF, telefone ou ID interno' style='flex:1;min-width:220px;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;font-size:.85rem' onkeydown=\"if(event.key==='Enter')buscarPacientes()\">";
-  h += "<button class='btn btng' onclick='buscarPacientes()'>Buscar</button>";
+  h += "<input type='text' id='pacTabBuscaInput' placeholder='🔍 Nome, CPF, telefone ou ID interno' style='flex:1;min-width:220px;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;font-size:.85rem' onkeydown=\"if(event.key==='Enter')pacTabBuscar()\">";
+  h += "<button class='btn btng' onclick='pacTabBuscar()'>Buscar</button>";
   h += "</div>";
-  h += "<div id='pacResultados'></div>";
+  h += "<div id='pacTabResultados'></div>";
   h += "</div>";
-  h += "<div id='pacFicha'></div>";
+  h += "<div id='pacTabFicha'></div>";
   el.innerHTML = h;
 }
 
-async function buscarPacientes(){
-  var inp = document.getElementById("pacBuscaInput");
+async function pacTabBuscar(){
+  var inp = document.getElementById("pacTabBuscaInput");
   if(!inp) return;
   var termo = inp.value.trim();
   if(termo.length < 2){toast("!","Digite pelo menos 2 caracteres");return}
-  var box = document.getElementById("pacResultados");
+  var box = document.getElementById("pacTabResultados");
   if(!box) return;
   box.innerHTML = "<div style='padding:10px;color:var(--gr)'>Buscando...</div>";
-  var fx = document.getElementById("pacFicha"); if(fx) fx.innerHTML = "";
+  var fx = document.getElementById("pacTabFicha"); if(fx) fx.innerHTML = "";
   try{
     var sel = "/rest/v1/pacientes?select=id,nome,cpf,telefone,data_nascimento,ativo";
     var lim = "&order=nome.asc&limit=60";
@@ -13275,12 +13283,12 @@ async function buscarPacientes(){
       urls.push(sel + "&nome=ilike.*" + encodeURIComponent(termo.toUpperCase()) + "*" + lim);
     }
     var rs = await Promise.all(urls.map(function(u){return supaFetch(u).then(function(r){return r.json()}).catch(function(){return []})}));
-    var seen = {}; pacResultados = [];
-    rs.forEach(function(lst){(lst||[]).forEach(function(p){if(p && !seen[p.id]){seen[p.id]=true;pacResultados.push(p)}})});
-    if(!pacResultados.length){box.innerHTML = "<div style='padding:10px;color:var(--or)'>Nenhum paciente encontrado.</div>";return}
-    var h = "<div style='margin-bottom:8px;font-size:.8rem;color:var(--gr)'>" + pacResultados.length + " paciente(s)</div>";
-    pacResultados.forEach(function(p){
-      h += "<div style='display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;cursor:pointer" + (p.ativo ? "" : ";opacity:.55") + "' onclick='abrirPacienteFicha(" + p.id + ")'>";
+    var seen = {}; pacTabResultados = [];
+    rs.forEach(function(lst){(lst||[]).forEach(function(p){if(p && !seen[p.id]){seen[p.id]=true;pacTabResultados.push(p)}})});
+    if(!pacTabResultados.length){box.innerHTML = "<div style='padding:10px;color:var(--or)'>Nenhum paciente encontrado.</div>";return}
+    var h = "<div style='margin-bottom:8px;font-size:.8rem;color:var(--gr)'>" + pacTabResultados.length + " paciente(s)</div>";
+    pacTabResultados.forEach(function(p){
+      h += "<div style='display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;cursor:pointer" + (p.ativo ? "" : ";opacity:.55") + "' onclick='pacTabAbrirFicha(" + p.id + ")'>";
       h += "<div style='flex:1'><strong>" + esc(p.nome||"?") + "</strong>";
       h += "<div style='font-size:.75rem;color:var(--gr)'>" + (p.data_nascimento ? iso2br(p.data_nascimento) : "—") + (p.cpf ? " · CPF " + formatarCPF(p.cpf) : "") + (p.telefone ? " · " + esc(p.telefone) : "") + "</div></div>";
       if(!p.ativo) h += "<span class='badge bgr' style='font-size:.6rem'>Desativada</span>";
@@ -13292,28 +13300,28 @@ async function buscarPacientes(){
   }
 }
 
-async function abrirPacienteFicha(id){
-  var box = document.getElementById("pacFicha");
+async function pacTabAbrirFicha(id){
+  var box = document.getElementById("pacTabFicha");
   if(!box) return;
   box.innerHTML = "<div class='card'><div style='padding:10px;color:var(--gr)'>Carregando ficha...</div></div>";
   try{
     var pl = await (await supaFetch("/rest/v1/pacientes?select=*&id=eq." + id)).json();
     var p = pl && pl[0];
     if(!p){box.innerHTML = "";toast("Erro","Paciente não encontrado");return}
-    pacSel = p;
-    pacSelExames = await (await supaFetch("/rest/v1/agendamentos?select=id,data_exame,hora_exame,status,status_clinico,firebird_seq_atend,valor&paciente_id=eq." + id + "&order=data_exame.desc&limit=100")).json() || [];
-    pacSelDups = [];
+    pacTabSel = p;
+    pacTabSelExames = await (await supaFetch("/rest/v1/agendamentos?select=id,data_exame,hora_exame,status,status_clinico,firebird_seq_atend,valor&paciente_id=eq." + id + "&order=data_exame.desc&limit=100")).json() || [];
+    pacTabSelDups = [];
     if(p.nome && p.data_nascimento){
       var dl = await (await supaFetch("/rest/v1/pacientes?select=id,nome,cpf,telefone,ativo&nome=eq." + encodeURIComponent(p.nome) + "&data_nascimento=eq." + p.data_nascimento)).json() || [];
-      pacSelDups = dl.filter(function(x){return x.id !== p.id && x.ativo});
+      pacTabSelDups = dl.filter(function(x){return x.id !== p.id && x.ativo});
     }
     var h = "";
-    if(pacSelDups.length){
+    if(pacTabSelDups.length){
       h += "<div class='card' style='border:1px solid var(--or)'>";
       h += "<div class='ctitle' style='color:var(--or)'>⚠️ Duplicata de cadastro</div>";
-      h += "<div style='font-size:.85rem;margin-bottom:8px'>Existe(m) " + pacSelDups.length + " outra(s) ficha(s) ATIVA(s) com o mesmo nome e nascimento. Não use as duas — acione o administrador para unificar.</div>";
-      pacSelDups.forEach(function(d){
-        h += "<div style='padding:6px 10px;border:1px dashed rgba(255,255,255,.2);border-radius:8px;margin-bottom:4px;cursor:pointer;font-size:.8rem' onclick='abrirPacienteFicha(" + d.id + ")'>ID interno " + d.id + (d.cpf ? " · CPF " + formatarCPF(d.cpf) : " · sem CPF") + (d.telefone ? " · " + esc(d.telefone) : " · sem telefone") + " — abrir →</div>";
+      h += "<div style='font-size:.85rem;margin-bottom:8px'>Existe(m) " + pacTabSelDups.length + " outra(s) ficha(s) ATIVA(s) com o mesmo nome e nascimento. Não use as duas — acione o administrador para unificar.</div>";
+      pacTabSelDups.forEach(function(d){
+        h += "<div style='padding:6px 10px;border:1px dashed rgba(255,255,255,.2);border-radius:8px;margin-bottom:4px;cursor:pointer;font-size:.8rem' onclick='pacTabAbrirFicha(" + d.id + ")'>ID interno " + d.id + (d.cpf ? " · CPF " + formatarCPF(d.cpf) : " · sem CPF") + (d.telefone ? " · " + esc(d.telefone) : " · sem telefone") + " — abrir →</div>";
       });
       h += "</div>";
     }
@@ -13331,12 +13339,12 @@ async function abrirPacienteFicha(id){
     h += _pf("Cadastrada em", p.created_at ? iso2br(String(p.created_at).substring(0,10)) : "");
     h += _pf("ID interno", String(p.id));
     h += "</div>";
-    h += "<div style='margin-top:14px' class='ctitle'>Exames (" + pacSelExames.length + ")</div>";
-    if(!pacSelExames.length){
+    h += "<div style='margin-top:14px' class='ctitle'>Exames (" + pacTabSelExames.length + ")</div>";
+    if(!pacTabSelExames.length){
       h += "<div style='font-size:.8rem;color:var(--gr)'>Nenhum exame vinculado a esta ficha.</div>";
     } else {
       h += "<div class='tw'><table><thead><tr><th>Data</th><th>Hora</th><th>Código</th><th>Status</th><th>Valor</th></tr></thead><tbody>";
-      pacSelExames.forEach(function(a){
+      pacTabSelExames.forEach(function(a){
         var st = a.status_clinico || a.status || "";
         h += "<tr style='cursor:pointer' onclick='abrirAgGlobal(" + a.id + ")'>";
         h += "<td>" + (a.data_exame ? iso2br(a.data_exame) : "—") + "</td>";
