@@ -282,6 +282,16 @@
               'realizado'); RLS deixa só admin ler. A reversão no APPCOR passa a
               enviar updated_by (reforça o "quem", junto do auth.uid()).
 
+  2026-08-15 (v3.76): Aviso claro quando a TRAVA de duplicata do banco recusa.
+              (a) Edição de ficha (pacTabSalvar): traduz o erro cru do Postgres/
+              trigger para "Já existe outra ficha ativa com esse nome e
+              nascimento...". (b) pacientes_busca.js criarPacienteSupa: ao bater
+              na trava (P0001/23505) no fluxo de agendamento, avisa por toast E
+              busca a ficha ativa existente (mesmo nome+nascimento) para vincular
+              automaticamente — antes falhava calado. Trava = trigger
+              bloqueia_paciente_duplicado (INSERT) + índice único
+              uq_paciente_nome_nasc_ativo (INSERT+UPDATE), criados no banco.
+
   2026-08-15 (v3.75): Aba Pacientes ganhou EDIÇÃO da ficha (botão ✏️ Editar).
               Todos os campos editáveis; identidade (nome, nascimento, CPF) exige
               confirmação inline ao salvar (muda duplicata + a CORA). PATCH em
@@ -3638,7 +3648,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.75 - 2026-08-15";
+var APP_VERSION = "v3.76 - 2026-08-15";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -13480,7 +13490,16 @@ async function pacTabSalvar(id, confirmado){
       headers: { "Content-Type": "application/json", "Prefer": "return=representation" },
       body: JSON.stringify(dados)
     });
-    if(!r.ok){ var t = await r.text().catch(function(){return "";}); throw new Error("HTTP " + r.status + " " + t.slice(0,120)); }
+    if(!r.ok){
+      var t = await r.text().catch(function(){return "";});
+      // (15/08/2026) Trava de duplicata: traduz o erro cru do Postgres/trigger
+      // para uma mensagem clara. Acontece se a edição deixaria a ficha idêntica
+      // (nome+nascimento) a outra ativa.
+      if(/PACIENTE_DUPLICADO|uq_paciente_nome_nasc|duplicate key|23505/i.test(t)){
+        throw new Error("Já existe outra ficha ativa com esse nome e nascimento. Não dá para deixar duas iguais — use a ficha existente.");
+      }
+      throw new Error("HTTP " + r.status + " " + t.slice(0,120));
+    }
     toast("✅","Ficha atualizada");
     await pacTabAbrirFicha(id);   // recarrega + reavalia alerta de duplicata
   }catch(e){
