@@ -282,6 +282,13 @@
               'realizado'); RLS deixa só admin ler. A reversão no APPCOR passa a
               enviar updated_by (reforça o "quem", junto do auth.uid()).
 
+  2026-08-15 (v3.75): Aba Pacientes ganhou EDIÇÃO da ficha (botão ✏️ Editar).
+              Todos os campos editáveis; identidade (nome, nascimento, CPF) exige
+              confirmação inline ao salvar (muda duplicata + a CORA). PATCH em
+              /rest/v1/pacientes; após salvar recarrega a ficha (alerta de
+              duplicata reavalia). Permissão = quem vê a aba (admin + agenda).
+              Funções pacTabEditar/pacTabSalvar/_pacTabColeta/_pacTabInput.
+
   2026-08-15 (v3.74): FIX busca da aba Pacientes — número não procura mais o
               id interno do Supabase. CAUSA: buscar "111049" trazia NATHALIA IOP
               CULAU (id interno 111049) junto da JESSICA (telefone 999111049) —
@@ -3631,7 +3638,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.74 - 2026-08-15";
+var APP_VERSION = "v3.75 - 2026-08-15";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -13336,8 +13343,11 @@ async function pacTabAbrirFicha(id){
       h += "</div>";
     }
     h += "<div class='card'>";
-    h += "<div class='ctitle'>" + esc(p.nome||"?") + (p.ativo ? "" : " <span class='badge bgr' style='font-size:.6rem'>Desativada</span>") + "</div>";
-    h += "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px 18px;font-size:.85rem'>";
+    h += "<div style='display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap'>";
+    h += "<div class='ctitle' style='margin:0'>" + esc(p.nome||"?") + (p.ativo ? "" : " <span class='badge bgr' style='font-size:.6rem'>Desativada</span>") + "</div>";
+    if(canAcc("pacientes")) h += "<button class='btn btng' style='padding:6px 14px;font-size:.8rem' onclick='pacTabEditar(" + p.id + ")'>✏️ Editar</button>";
+    h += "</div>";
+    h += "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px 18px;font-size:.85rem;margin-top:10px'>";
     function _pf(rot, val){return "<div><span style='color:var(--gr);font-size:.72rem;display:block'>" + rot + "</span>" + (val || "—") + "</div>"}
     h += _pf("Nascimento", p.data_nascimento ? iso2br(p.data_nascimento) : "");
     h += _pf("CPF", p.cpf ? formatarCPF(p.cpf) : "");
@@ -13370,6 +13380,112 @@ async function pacTabAbrirFicha(id){
     box.innerHTML = h;
   }catch(e){
     box.innerHTML = "<div class='card'><div style='padding:10px;color:var(--or)'>Erro: " + e.message + "</div></div>";
+  }
+}
+
+// ── EDIÇÃO DA FICHA DE PACIENTE (v3.74) ────────────────────────────────────
+// Todos os campos editáveis. Identidade (nome, nascimento, CPF) exige uma
+// confirmação extra ao salvar, porque muda a detecção de duplicata e como a
+// CORA confirma o paciente. Permissão: quem enxerga a aba (admin + agenda).
+// Grava com PATCH em /rest/v1/pacientes; ao salvar, recarrega a ficha (e o
+// alerta de duplicata reavalia sozinho, pois relê nome+nascimento).
+
+function _pacTabInput(id, rot, val, tipo){
+  return "<div><label style='color:var(--gr);font-size:.72rem;display:block;margin-bottom:2px'>" + rot + "</label>" +
+    "<input id='" + id + "' type='" + (tipo || "text") + "' value='" + esc(val == null ? "" : String(val)) +
+    "' style='width:100%;box-sizing:border-box;padding:7px 9px;border-radius:7px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#fff;font-size:.85rem'></div>";
+}
+
+function pacTabEditar(id){
+  var p = pacTabSel;
+  if(!p || p.id !== id){ toast("Erro","Abra a ficha primeiro"); return; }
+  var box = document.getElementById("pacTabFicha");
+  if(!box) return;
+  var h = "<div class='card'>";
+  h += "<div class='ctitle'>✏️ Editando: " + esc(p.nome || "?") + "</div>";
+  // Identidade — bloco com destaque
+  h += "<div style='border:1px solid rgba(230,167,0,.4);border-radius:8px;padding:10px 12px;margin-bottom:12px'>";
+  h += "<div style='font-size:.72rem;color:#e6a700;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px'>Identidade — muda duplicata e a CORA</div>";
+  h += "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px 14px'>";
+  h += _pacTabInput("pacEdNome", "Nome completo", p.nome);
+  h += _pacTabInput("pacEdNasc", "Nascimento", p.data_nascimento ? String(p.data_nascimento).substring(0,10) : "", "date");
+  h += _pacTabInput("pacEdCpf", "CPF (só números)", p.cpf || "");
+  h += "</div></div>";
+  // Contato / endereço
+  h += "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px 14px'>";
+  h += _pacTabInput("pacEdTel", "Telefone", p.telefone || "");
+  h += _pacTabInput("pacEdEmail", "E-mail", p.email || "");
+  h += _pacTabInput("pacEdSexo", "Sexo (M/F)", p.sexo || "");
+  h += _pacTabInput("pacEdCep", "CEP", p.cep || "");
+  h += _pacTabInput("pacEdLog", "Logradouro", p.logradouro || "");
+  h += _pacTabInput("pacEdNum", "Número", p.numero || "");
+  h += _pacTabInput("pacEdCompl", "Complemento", p.complemento || "");
+  h += _pacTabInput("pacEdBairro", "Bairro", p.bairro || "");
+  h += _pacTabInput("pacEdMun", "Cidade", p.municipio || "");
+  h += _pacTabInput("pacEdUf", "UF", p.uf || "");
+  h += "</div>";
+  h += "<div id='pacEdAviso'></div>";
+  h += "<div style='display:flex;gap:8px;margin-top:14px'>";
+  h += "<button class='btn btng' style='padding:8px 18px' onclick='pacTabSalvar(" + p.id + ")'>Salvar</button>";
+  h += "<button class='btn btno' style='padding:8px 18px' onclick='pacTabAbrirFicha(" + p.id + ")'>Cancelar</button>";
+  h += "</div>";
+  h += "</div>";
+  box.innerHTML = h;
+}
+
+function _pacTabColeta(){
+  function g(id){ var el = document.getElementById(id); return el ? el.value.trim() : ""; }
+  return {
+    nome: g("pacEdNome").toUpperCase(),
+    data_nascimento: g("pacEdNasc") || null,
+    cpf: g("pacEdCpf").replace(/\D/g, "") || null,
+    telefone: g("pacEdTel").replace(/\D/g, "") || null,
+    email: g("pacEdEmail") || null,
+    sexo: g("pacEdSexo").toUpperCase() || null,
+    cep: g("pacEdCep").replace(/\D/g, "") || null,
+    logradouro: g("pacEdLog") || null,
+    numero: g("pacEdNum") || null,
+    complemento: g("pacEdCompl") || null,
+    bairro: g("pacEdBairro") || null,
+    municipio: g("pacEdMun") || null,
+    uf: g("pacEdUf").toUpperCase() || null
+  };
+}
+
+async function pacTabSalvar(id, confirmado){
+  var p = pacTabSel;
+  if(!p || p.id !== id){ toast("Erro","Ficha mudou, reabra"); return; }
+  var dados = _pacTabColeta();
+  if(!dados.nome){ toast("!","O nome não pode ficar vazio"); return; }
+
+  // Identidade mudou? Se sim e ainda não confirmou, pede confirmação inline.
+  var mudouIdent = ["nome", "data_nascimento", "cpf"].some(function(c){
+    var antigo = (c === "data_nascimento" && p[c]) ? String(p[c]).substring(0,10) : (p[c] == null ? null : String(p[c]));
+    var novo = dados[c] == null ? null : String(dados[c]);
+    return (antigo || null) !== (novo || null);
+  });
+  if(mudouIdent && !confirmado){
+    var av = document.getElementById("pacEdAviso");
+    if(av) av.innerHTML = "<div style='margin-top:12px;border:1px solid #e6a700;border-radius:8px;padding:10px 12px;background:rgba(230,167,0,.08)'>" +
+      "<div style='font-size:.82rem;color:#e6a700;font-weight:600;margin-bottom:8px'>⚠️ Você alterou dados de IDENTIDADE (nome, nascimento ou CPF).</div>" +
+      "<div style='font-size:.8rem;margin-bottom:10px'>Isso muda a detecção de duplicata e como a CORA confirma este paciente. Confirma a alteração?</div>" +
+      "<button class='btn btng' style='padding:6px 14px;font-size:.8rem' onclick='pacTabSalvar(" + id + ",true)'>Confirmar e salvar</button> " +
+      "<button class='btn btno' style='padding:6px 14px;font-size:.8rem' onclick=\"document.getElementById('pacEdAviso').innerHTML=''\">Cancelar</button></div>";
+    return;
+  }
+
+  try{
+    var r = await supaFetch("/rest/v1/pacientes?id=eq." + id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "Prefer": "return=representation" },
+      body: JSON.stringify(dados)
+    });
+    if(!r.ok){ var t = await r.text().catch(function(){return "";}); throw new Error("HTTP " + r.status + " " + t.slice(0,120)); }
+    toast("✅","Ficha atualizada");
+    await pacTabAbrirFicha(id);   // recarrega + reavalia alerta de duplicata
+  }catch(e){
+    toast("⚠️","Falha ao salvar: " + e.message);
+    console.error("pacTabSalvar:", e);
   }
 }
 
