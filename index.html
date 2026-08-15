@@ -291,6 +291,13 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-15 (v3.89): Bloqueio de NFS-e para pagamento com PONTOS (cashback não
+              gera nota). Detecta por metodo_pagamento conter "pontos": (a) o ✕
+              vermelho não aparece nesses cards; (b) confirmarEmissaoNota recusa;
+              (c) marcarRealizadoEEmitir marca realizado mas NÃO emite. O backend
+              (emitir-nfse-focus v40) também recusa (motivo=pago_com_pontos), como
+              trava definitiva. Helper _ehPagamentoPontos.
+
   2026-08-15 (v3.88): Selo fiscal ganha o par vermelho: 🧾✕ nos atendimentos
               REALIZADOS que têm valor faturável e ainda estão SEM nota (precisa
               emitir). Unimed, syns e pontos NÃO marcam (faturável=0 via
@@ -3748,7 +3755,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.88 - 2026-08-15";
+var APP_VERSION = "v3.89 - 2026-08-15";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5174,6 +5181,12 @@ async function confirmarEmissaoNota() {
       return;
     }
 
+    // v3.89 — pagamento com pontos NÃO gera NFS-e (o backend também recusa).
+    if (_ehPagamentoPontos(ag)) {
+      toast("Sem nota", "Pagamento com pontos não gera nota fiscal.");
+      return;
+    }
+
     // Reemissão comum fica bloqueada em emitida/emitindo/cancelada. Uma nota
     // pendente só é retomada pelo fluxo explícito que consulta primeiro e depois
     // reutiliza reference/payload persistidos.
@@ -5566,6 +5579,13 @@ async function marcarRealizadoEEmitir(agendamentoId){
       window._mpgAlertaId = agendamentoId;
       if (typeof agEV === "function") agEV(agendamentoId);
       return false;
+    }
+
+    // v3.89 — pago com pontos: marca realizado normalmente, mas NÃO emite nota
+    // (usa cashback, sem NFS-e). Delega ao fluxo padrão de "realizado".
+    if (_ehPagamentoPontos(ag)) {
+      await atMarkRealizado(agendamentoId);
+      return true;
     }
 
     const upd = await supa
@@ -8214,6 +8234,15 @@ function ratendimento() {
   renderAtendimento();
 }
 
+// v3.89 — pagamento com pontos: usa cashback, NÃO gera NFS-e. Detecta pela forma
+// de pagamento (metodo_pagamento contém "pontos"), pois o valor faturável do
+// exame pode aparecer mesmo quando foi pago com pontos.
+function _ehPagamentoPontos(ag){
+  return String((ag && ag.metodo_pagamento) || "")
+    .split(",").map(function(s){ return s.trim().toLowerCase(); })
+    .indexOf("pontos") !== -1;
+}
+
 // v3.88 — selo fiscal do card (SÓ VISUAL, sem efeito colateral):
 //   🧾✓ verde     = nota fiscal emitida (status_fiscal='emitida')
 //   🧾✕ vermelho  = atendimento REALIZADO, com valor faturável e ainda SEM nota
@@ -8229,6 +8258,7 @@ function _seloFiscalCard(a){
   var st = a.status_clinico || a.st;
   if(st !== "realizado") return "";
   if(sf === "emitindo" || sf === "cancelada") return "";
+  if(_ehPagamentoPontos(a)) return "";  // v3.89 — pago com pontos não pede nota
   var faturavel = 0;
   try {
     var cv = (typeof calcValoresAg === "function") ? calcValoresAg(a) : null;
