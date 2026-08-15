@@ -291,6 +291,19 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-15 (v3.79): Aviso ao dentista virou E-MAIL automático. Quando o
+              atendimento é marcado como "realizado", o App COR chama a Edge
+              Function enviar-email-cor (tipo aviso_dentista) — sem botão, sem
+              WhatsApp. A função lê dentista/exames, respeita o opt-out
+              (recebe_aviso_atendimento_realizado), deduplica por agendamento e
+              grava em emails_log. No modal do Agendamento (quando realizado)
+              aparece o status: "Dentista avisado por e-mail em DD/MM às HH:MM",
+              ou "sem e-mail", "optou por não receber", "falha". Funções novas:
+              avisarDentistaPorEmail() e carregarStatusAvisoDentista(). O
+              disparo WhatsApp (avisarDentistaAtendimentoRealizado) virou legado
+              e não é mais chamado. Removida a pré-abertura de janela do WhatsApp
+              em atMarkRealizado.
+
   2026-08-15 (v3.78): Botão do exame não cabia no modal ("texto escapa do
               botão"). Encurtado o rótulo para "📲 Link do exame (WhatsApp)" e,
               como rede de segurança, os botões agrupados do rodapé do modal
@@ -3663,7 +3676,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.78 - 2026-08-15";
+var APP_VERSION = "v3.79 - 2026-08-15";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8492,23 +8505,8 @@ async function atMarkRealizado(id) {
     return;
   }
 
-  // 📲 Pré-abre janela do WhatsApp ANTES dos awaits (mantém vínculo com user click,
-  // evita bloqueio de pop-up). Será preenchida com URL ao final ou fechada se não couber.
-  var waWindow = null;
-  try {
-    if (aPre) {
-      var dentPre = (dents || []).find(function(d){ return d.id === aPre.dId; });
-      var telPre = dentPre ? String(dentPre.tel || "").replace(/\D/g, "") : "";
-      var podeAvisar = dentPre && dentPre.raar !== false && telPre;
-      console.log("[avisarDentista] PRE: aPre.dId=" + (aPre.dId) + " dentPre=" + (dentPre?dentPre.n:"NULL") + " tel=" + telPre + " raar=" + (dentPre?dentPre.raar:"-") + " podeAvisar=" + podeAvisar);
-      if (podeAvisar) {
-        waWindow = window.open("about:blank", "_blank");
-        console.log("[avisarDentista] janela pre-aberta:", !!waWindow);
-      }
-    } else {
-      console.log("[avisarDentista] PRE: aPre é null/undefined!");
-    }
-  } catch(e) { console.error("[avisarDentista] pre-open:", e); }
+  // ✉️ v3.79 — O aviso ao dentista virou E-MAIL automático (via Edge Function),
+  // então não precisamos mais pré-abrir janela do WhatsApp aqui.
 
   var ok = await dbUpdAgSt(id, "realizado");
   if (ok) {
@@ -8536,12 +8534,12 @@ async function atMarkRealizado(id) {
     // até o próximo refresh.
     if (typeof rndAg === "function") rndAg();
     toast("✅", "Atendimento realizado!");
-    // Aviso ao dentista via WhatsApp - usa janela pré-aberta (waWindow)
-    console.log("[avisarDentista] POS: a=" + (a?("dId="+a.dId+" pac="+a.pac):"NULL") + " waWindow=" + !!waWindow);
-    try { avisarDentistaAtendimentoRealizado(a, waWindow); } catch(e){ console.error("[avisarDentista] erro:", e); }
+    // ✉️ v3.79 — Aviso ao dentista agora é por E-MAIL, automático (sem WhatsApp,
+    // sem botão). A Edge Function "enviar-email-cor" (tipo aviso_dentista) é a
+    // fonte da verdade: lê dentista/exames, respeita opt-out, deduplica e grava
+    // em emails_log. Não bloqueia o fluxo de "realizado".
+    try { avisarDentistaPorEmail(a.id); } catch(e){ console.error("[avisoDentistaEmail] erro:", e); }
   } else {
-    // Falhou: fecha janela pré-aberta se houver
-    if (waWindow) { try { waWindow.close(); } catch(e){} }
     toast("Erro", "Falha ao atualizar status.");
   }
 }
@@ -9183,6 +9181,13 @@ function agEV(ev, id) {
     b += "<div style=\"margin:6px 0 2px;padding:8px 12px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);border-radius:8px;font-size:.82rem\">🪙 Desconto de pontos: <b>R$ " + Number(a.desconto_pontos).toFixed(2).replace(".", ",") + "</b> <span style=\"opacity:.7\">(debitado de <b>" + (_dpDent ? esc(_dpDent.n) : "dentista") + "</b> — desmarque 🪙 Pontos para estornar)</span></div>";
   }
 
+  // ✉️ v3.79 — Status do aviso ao dentista por e-mail (só quando realizado).
+  // Placeholder preenchido de forma assíncrona por carregarStatusAvisoDentista()
+  // logo após o modal abrir (lê emails_log; não envia nada).
+  if((a.status_clinico || a.st) === "realizado"){
+    b += "<div id=\"agAvisoDentStatus\" style=\"margin:8px 0 2px;padding:9px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;font-size:.82rem;color:var(--gr)\">✉️ Verificando aviso ao dentista…</div>";
+  }
+
   var btns = [{lbl:"Fechar", cls:"btno", fn:closeM}];
 
   (function(ag){
@@ -9583,7 +9588,8 @@ function agEV(ev, id) {
     //  - "📲 WhatsApp" (sWAi): mandava confirmação de agendamento, que HOJE é
     //    feita pela CORA — o botão duplicava/confundia.
     // As funções sWAi() e avisarDentistaAtendimentoRealizado() permanecem no
-    // código (a segunda é usada pelo disparo automático).
+    // código como legado (WhatsApp), mas NÃO são mais chamadas: o aviso ao
+    // dentista virou e-mail automático (avisarDentistaPorEmail em atMarkRealizado).
   })(a);
 
   b += "<div id=\"docsGuiasBox\" style=\"margin-top:10px\"></div>";
@@ -9591,6 +9597,10 @@ function agEV(ev, id) {
   openM("Agendamento", b, agruparBtnsAgendamento(btns));
   var _mbAg = document.getElementById("MB"); if (_mbAg) _mbAg.classList.add("mb-wide");
   renderDocsGuias(a);
+  // ✉️ v3.79 — preenche o status do aviso ao dentista (só se realizado).
+  if((a.status_clinico || a.st) === "realizado"){
+    try { carregarStatusAvisoDentista(a.id); } catch(e){ console.error("[avisoDentistaStatus]", e); }
+  }
 }
 function openEditAg(id) {
   var a = ags.find(function(x){ return x.id === id; });
@@ -10879,6 +10889,74 @@ function sWAi(id){
 // Opt-out: dentista.recebe_aviso_atendimento_realizado = false
 // IMPORTANTE: recebe `waWindow` pré-aberta (window.open antes dos awaits) pra
 // evitar bloqueio de popup. Se waWindow for null, tenta abrir nova (fallback).
+// ✉️ v3.79 — Dispara o aviso ao dentista por E-MAIL quando o atendimento é
+// realizado. Automático, sem botão. A Edge Function decide tudo (dentista,
+// exames, opt-out, dedup e log em emails_log); aqui só chamamos e atualizamos
+// o status no modal, se ele estiver aberto.
+async function avisarDentistaPorEmail(agId){
+  try{
+    var r = await supa.functions.invoke("enviar-email-cor", {
+      body: { tipo: "aviso_dentista", agendamento_id: agId, modo: "automatico" }
+    });
+    var data = (r && r.data) || {};
+    if(r && r.error){
+      console.error("[avisoDentistaEmail] invoke error:", r.error);
+    } else if(data.ok && data.ja_enviado){
+      console.log("[avisoDentistaEmail] já havia sido enviado para o ag", agId);
+    } else if(data.ok){
+      console.log("[avisoDentistaEmail] enviado para", data.email_mascarado || "dentista");
+    } else {
+      var motivo = data.motivo || "";
+      if(motivo === "sem_email"){
+        toast("✉️", "Dentista " + (data.dentista_nome ? "(" + data.dentista_nome + ") " : "") + "sem e-mail — aviso não enviado.");
+      } else if(motivo === "opt_out"){
+        console.log("[avisoDentistaEmail] dentista optou por não receber avisos.");
+      } else if(motivo !== "nao_realizado" && motivo !== "sem_dentista"){
+        console.warn("[avisoDentistaEmail] não enviado:", motivo, data.error || "");
+      }
+    }
+  }catch(e){
+    console.error("[avisoDentistaEmail] exception:", e);
+  }finally{
+    // Se o modal do agendamento estiver aberto, reflete o status na hora.
+    try { carregarStatusAvisoDentista(agId); } catch(e){}
+  }
+}
+
+// ✉️ v3.79 — Lê o emails_log e mostra no modal do agendamento o status do aviso
+// ao dentista (enviado / sem e-mail / opt-out / falha). Só age se o elemento
+// #agAvisoDentStatus existir. NÃO envia nada — apenas leitura.
+async function carregarStatusAvisoDentista(agId){
+  var el = document.getElementById("agAvisoDentStatus");
+  if(!el) return;
+  try{
+    var resp = await supaFetch("/rest/v1/emails_log?agendamento_id=eq." + agId +
+      "&tipo=eq.aviso_dentista&order=created_at.desc&limit=1&select=status,destinatario,created_at,erro");
+    var arr = await resp.json();
+    var row = (arr && arr.length) ? arr[0] : null;
+    if(!row){
+      el.innerHTML = "✉️ <span style='color:var(--gr)'>Aviso ao dentista: pendente</span>";
+      return;
+    }
+    if(row.status === "enviado"){
+      var dt = new Date(row.created_at);
+      var quando = pad(dt.getDate()) + "/" + pad(dt.getMonth()+1) + " às " + pad(dt.getHours()) + ":" + pad(dt.getMinutes());
+      el.innerHTML = "✉️ <span style='color:var(--g)'>Dentista avisado por e-mail em " + quando + "</span>";
+    } else if(row.status === "sem_email"){
+      el.innerHTML = "⚠️ <span style='color:var(--or)'>Dentista sem e-mail cadastrado — não avisado</span>";
+    } else if(row.status === "ignorado"){
+      el.innerHTML = "🔕 <span style='color:var(--gr)'>Dentista optou por não receber avisos</span>";
+    } else if(row.status === "erro"){
+      el.innerHTML = "⚠️ <span style='color:#f87171'>Falha ao enviar o aviso ao dentista</span>";
+    } else {
+      el.innerHTML = "✉️ <span style='color:var(--gr)'>Aviso ao dentista: " + esc(row.status) + "</span>";
+    }
+  }catch(e){
+    console.error("[avisoDentistaStatus] erro ao ler:", e);
+    el.innerHTML = "✉️ <span style='color:var(--gr)'>Não foi possível verificar o aviso ao dentista</span>";
+  }
+}
+
 async function avisarDentistaAtendimentoRealizado(ag, waWindow){
   function fecharSeAberta(){ if(waWindow){ try{ waWindow.close(); }catch(e){} } }
   if(!ag) { fecharSeAberta(); return; }
