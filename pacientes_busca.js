@@ -156,9 +156,11 @@ async function criarPacienteSupa(dados) {
         if (Array.isArray(data) && data.length > 0) return data[0];
         if (data && data.id) return data;
 
-        // (15/08/2026) TRAVA DE DUPLICATA no banco (trigger P0001 ou índice
-        // único 23505): avisa a recepção e busca a ficha ativa já existente
-        // (mesmo nome + nascimento) para vincular na pessoa certa.
+        // (15/08/2026) TRAVA DE DUPLICATA no banco: trigger (P0001
+        // "PACIENTE_DUPLICADO") ou índice único (23505). Em vez de falhar
+        // calado, AVISA a recepção e tenta achar a ficha ativa que já existe
+        // (mesmo nome + nascimento) para o agendamento vincular na pessoa
+        // certa — auto-correção do caso de corrida entre atendentes.
         var _msg = ((data && data.message) || "") + " " + ((data && data.details) || "");
         var _ehDup = (data && (data.code === "23505" || data.code === "P0001")) ||
                      /PACIENTE_DUPLICADO|uq_paciente_nome_nasc|duplicate key/i.test(_msg);
@@ -254,7 +256,7 @@ function renderDropdownPac(resultados, inputId) {
             "<div style='font-size:.74rem;color:var(--gr)'>" +
             (cpfDisplay ? "CPF: " + cpfDisplay + " | " : "") +
             (nascDisplay ? "Nasc: " + nascDisplay + " | " : "") +
-            (pac.telefone ? "Tel: " + pac.telefone : "") +
+            (pac.telefone ? "Tel: " + esc(pac.telefone) : "") +
             "</div></div>" +
             "<div style='font-size:.7rem;color:var(--g);font-weight:700'>Selecionar</div>";
 

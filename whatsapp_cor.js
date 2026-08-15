@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v23-cora-retoma-20260811";
+  var _VERSAO = "whatsapp-web-v24-xss-fix-20260815";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -42,9 +42,19 @@ var WHATSAPP = (function () {
     if (typeof ad === "object" && ad.paciente_nome) return [ad];
     return [];
   }
+  // v24 (segurança XSS): escapa TAMBÉM aspas. Dados de conversa (nome do
+  // paciente, caption, path de mídia) vêm de fora (WhatsApp) e eram colocados
+  // em atributos/onclick — sem escapar aspas, um valor manipulado quebrava o
+  // atributo/JS quando a recepção abria a conversa.
   function esc(s) {
     return String(s == null ? "" : s)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  // Para argumento de string dentro de onclick="..." (contexto JS): JSON.stringify
+  // gera a string com aspas e escapa o interno; esc() cobre o HTML do atributo.
+  function jsArg(s) {
+    return esc(JSON.stringify(String(s == null ? "" : s)));
   }
   function fmtHora(iso) {
     if (!iso) return "";
@@ -612,7 +622,7 @@ var WHATSAPP = (function () {
     } else {
       lista.forEach(function (c) {
         var ativo = c.numero === _sel;
-        var numJs = "&quot;" + String(c.numero).replace(/"/g, "") + "&quot;";
+        var numJs = jsArg(c.numero);   // v24: escapa aspas/apóstrofos corretamente
         h += "<div onclick='WHATSAPP.abrir(" + numJs + ")' style='padding:10px 14px;border-bottom:0.5px solid #2a3550;cursor:pointer;" +
              (ativo ? "background:rgba(74,184,72,.12)" : "") + "'>";
         h += "<div style='display:flex;justify-content:space-between;align-items:center'>";
@@ -704,9 +714,9 @@ var WHATSAPP = (function () {
             var cap = (m.content && m.content !== "[imagem]") ? m.content : "";
             var imgId = "waimg_" + Math.random().toString(36).slice(2, 9);
             h += "<div style='align-self:flex-start;max-width:72%;background:#f0f0f0;color:#222;padding:6px;border-radius:12px;border:0.5px solid #ddd'>";
-            h += "<img id='" + imgId + "' alt='imagem do paciente' style='max-width:240px;max-height:280px;border-radius:8px;display:block;cursor:pointer;background:#e5e5e5;min-height:80px' onclick='WHATSAPP.abrirMidia(\"" + esc(m.midia.path) + "\")'/>";
+            h += "<img id='" + imgId + "' alt='imagem do paciente' style='max-width:240px;max-height:280px;border-radius:8px;display:block;cursor:pointer;background:#e5e5e5;min-height:80px' onclick='WHATSAPP.abrirMidia(" + jsArg(m.midia.path) + ")'/>";
             if (cap) h += "<div style='font-size:.8rem;margin-top:4px;padding:0 4px'>" + esc(cap) + "</div>";
-            h += "<div style='font-size:.72rem;color:#0a7;margin-top:3px;padding:0 4px;cursor:pointer' onclick='WHATSAPP.abrirMidia(\"" + esc(m.midia.path) + "\")'>📎 abrir / baixar</div>";
+            h += "<div style='font-size:.72rem;color:#0a7;margin-top:3px;padding:0 4px;cursor:pointer' onclick='WHATSAPP.abrirMidia(" + jsArg(m.midia.path) + ")'>📎 abrir / baixar</div>";
             h += "</div>";
             // carrega a imagem via URL assinada (bucket privado)
             _carregarMidia(m.midia.path, imgId);

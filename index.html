@@ -291,6 +291,42 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-15 (v3.83): Ajuste fino da 2ª revisão — o polling de NFS-e agora
+              mostra TOAST (não só console) quando a sessão/permissão expira
+              (401/403). (whatsapp_cor.js: numJs passou a usar jsArg.)
+
+  2026-08-15 (v3.82): Correções da 2ª revisão (Codex). (#7/#5) O relatório do
+              dia que REALMENTE roda é a função interna imprimirRelatorioDia()
+              deste index (o arquivo externo imprimirRelatorioDia.js NÃO é
+              carregado) — as validações response.ok + aviso de cache foram
+              portadas pra função interna. (#6) Polling de NFS-e e consultas de
+              PDF agora tratam HTTP: 401/403 param/avisam (sessão/permissão) em
+              vez de seguir como anônimo. Obs.: a blindagem das Edge Functions
+              fiscais (recusar anon) continua na FASE 2 (pendente). #3 (XSS do
+              WhatsApp) foi corrigido no whatsapp_cor.js. A autorização por papel
+              e o escape dos e-mails foram feitos na Edge enviar-email-cor v0.12.
+
+  2026-08-15 (v3.81): Segurança fiscal — FASE 1 (client). As chamadas às Edge
+              Functions emitir-nfse-focus e consultar-nfse-focus deixaram de usar
+              a chave anon PÚBLICA como Authorization e passaram a usar supaFetch,
+              que envia o JWT do usuário LOGADO (role=authenticated) + apikey do
+              projeto. 5 pontos trocados: 2x emitir (modal e realizar+emitir), 1x
+              polling, 2x consultar (imprimir/whatsapp nota). Comportamento e
+              tratamento de resposta idênticos. FASE 2 (servidor, pendente): depois
+              que esta versão estiver no ar e a emissão confirmada, ativar a trava
+              nas Edge Functions fiscais para RECUSAR a chave anon (hoje qualquer um
+              com a chave pública do código-fonte consegue emitir NFS-e). O
+              emitir-nfse-nacional não é chamado pelo client (só monta texto).
+
+  2026-08-15 (v3.80): Correção de segurança (XSS) no client. O nome do paciente
+              era inserido dentro de onclick="abrirHistLegado(...)" com esc(), que
+              escapa HTML mas NÃO JavaScript — um nome com aspas podia quebrar a
+              string e injetar código. Trocado para jsArg() (esc(JSON.stringify()))
+              no busca de histórico legado (linha ~8294) e nos botões de
+              aprendizado (_aprAbrirConversa/_aprMarcar). Mensagens de exceção que
+              iam cruas para innerHTML (Erro: e.message em 3 telas de busca) agora
+              passam por esc(). Não muda comportamento — só fecha o vetor.
+
   2026-08-15 (v3.79): Aviso ao dentista virou E-MAIL automático. Quando o
               atendimento é marcado como "realizado", o App COR chama a Edge
               Function enviar-email-cor (tipo aviso_dentista) — sem botão, sem
@@ -3676,7 +3712,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.79 - 2026-08-15";
+var APP_VERSION = "v3.83 - 2026-08-15";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5163,7 +5199,6 @@ async function confirmarEmissaoNota() {
     ag.paciente_cpf = cpfCnpj;
 
     const functionUrl = API_BASE + "/emitir-nfse-focus";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
 
     const payload = {
       agendamento_id: agendamentoId,
@@ -5172,13 +5207,13 @@ async function confirmarEmissaoNota() {
       paciente_cpf: cpfCnpj
     };
 
-    const resp = await fetch(functionUrl, {
+    // v3.81 (segurança fiscal): supaFetch envia o JWT do usuário LOGADO
+    // (role=authenticated) e o apikey do projeto — não mais a chave anon
+    // pública como Authorization. Emitir nota é ação sensível; deve ir
+    // autenticada como usuário real. Resposta tratada igual (Response.ok/json).
+    const resp = await supaFetch(functionUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": "Bearer " + SUPABASE_ANON_KEY
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
 
@@ -5229,12 +5264,22 @@ function iniciarPollingNfse(agId, nfseId, reference) {
       return;
     }
     try{
-      var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
-      var r = await fetch(API_BASE+"/consultar-nfse-focus",{
+      // v3.81 (seguranca fiscal): supaFetch envia o JWT do usuario logado.
+      var r = await supaFetch(API_BASE+"/consultar-nfse-focus",{
         method:"POST",
-        headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+        headers:{"Content-Type":"application/json"},
         body:JSON.stringify({reference:reference})
       });
+      // v3.82 (#6) — sessão expirada / sem permissão: para o polling em vez de
+      // seguir consultando como "anônimo" (a Edge agora recusa com 401/403).
+      if(r.status===401 || r.status===403){
+        clearInterval(_nfsePollings[agId]);
+        delete _nfsePollings[agId];
+        console.warn("Polling NFS-e parado: sem sessão/permissão (HTTP "+r.status+")");
+        if(typeof toast === "function") toast("Sessão", "Sessão/permissão expirada — acompanhe a emissão da nota manualmente (Imprimir nota).");
+        return;
+      }
+      if(!r.ok){ console.warn("Polling NFS-e: HTTP "+r.status+" (tentando de novo)"); return; }
       var d = await r.json().catch(function(){return {};});
       console.log("Polling NFS-e ["+tentativas+"]: status_mapeado="+d.status_mapeado);
       // Edge Function já atualiza o banco — só preciso atualizar local
@@ -5398,15 +5443,12 @@ async function marcarRealizadoEEmitir(agendamentoId){
     }
 
     const functionUrl = API_BASE + "/emitir-nfse-focus";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
 
-    const resp = await fetch(functionUrl, {
+    // v3.81 (seguranca fiscal): supaFetch envia o JWT do usuario logado
+    // (nao mais a chave anon publica). Mesmo tratamento de resposta abaixo.
+    const resp = await supaFetch(functionUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0",
-        "Authorization": "Bearer " + "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         agendamento_id: agendamentoId
       })
@@ -8291,7 +8333,7 @@ async function buscarPacienteGlobal(){
     if(legado.length){
       rh += "<div style='margin:12px 0 6px;font-size:.7rem;letter-spacing:.08em;color:var(--gr);text-transform:uppercase'>Histórico antigo (pré-abril/2026) — " + legado.length + " paciente" + (legado.length>1?"s":"") + "</div>";
       legado.slice(0,15).forEach(function(hp){
-        rh += "<div style='display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.16);border-radius:8px;cursor:pointer' onclick='abrirHistLegado(" + (hp.paciente_id||0) + ",\"" + esc(hp.paciente_nome||"") + "\",\"" + esc(hp.paciente_cpf||"") + "\")'>";
+        rh += "<div style='display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.16);border-radius:8px;cursor:pointer' onclick='abrirHistLegado(" + (hp.paciente_id||0) + "," + jsArg(hp.paciente_nome||"") + "," + jsArg(hp.paciente_cpf||"") + ")'>";
         rh += "<div style='flex:1'><strong>" + esc(hp.paciente_nome||"?") + "</strong>";
         rh += "<div style='font-size:.75rem;color:var(--gr)'>" + (hp.paciente_cpf ? ("CPF " + formatarCPF(hp.paciente_cpf)) : "histórico do sistema antigo") + "</div></div>";
         rh += "<span style='color:var(--g);font-size:.8rem'>Ver histórico →</span>";
@@ -8302,7 +8344,7 @@ async function buscarPacienteGlobal(){
     rh += "<div style='margin-top:8px'><button class='btn btno bsm' onclick='document.getElementById(\"atBuscaResultados\").innerHTML=\"\";document.getElementById(\"atBuscaPac\").value=\"\"'>Limpar busca</button></div>";
     box.innerHTML = rh;
   }catch(e){
-    box.innerHTML = "<div style='padding:10px;color:var(--or)'>Erro: "+e.message+"</div>";
+    box.innerHTML = "<div style='padding:10px;color:var(--or)'>Erro: "+esc(e && e.message || "")+"</div>";
   }
 }
 
@@ -9286,12 +9328,13 @@ function agEV(ev, id) {
             }else if(r.data.reference){
               // Consultar Focus pra obter URL do PDF
               toast("⏳","Buscando PDF na Focus...");
-              var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
-              var cr = await fetch(API_BASE+"/consultar-nfse-focus",{
+              // v3.81 (seguranca fiscal): supaFetch envia o JWT do usuario logado.
+              var cr = await supaFetch(API_BASE+"/consultar-nfse-focus",{
                 method:"POST",
-                headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+                headers:{"Content-Type":"application/json"},
                 body:JSON.stringify({reference:r.data.reference})
               });
+              if(!cr.ok){ toast(cr.status===401||cr.status===403?"Sessão":"Erro", cr.status===401||cr.status===403?"Faça login novamente para consultar a nota.":"Falha ao consultar a nota (HTTP "+cr.status+")."); return; }
               var cd = await cr.json().catch(function(){return {};});
               var pdfUrl = cd.focus && (cd.focus.url_danfse || cd.focus.url_pdf || cd.focus.url);
               if(pdfUrl){
@@ -9329,12 +9372,13 @@ function agEV(ev, id) {
             // Se url_pdf vazia, consulta Focus (mesma logica do Imprimir nota)
             if(!url && r.data.reference){
               toast("⏳","Buscando PDF na Focus...");
-              var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscHZ6dnRiaHV5ampkcXlyc3phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjU0NTEsImV4cCI6MjA5MDA0MTQ1MX0.CQS0YXpILdoDrqBhG2wxv0uazB8dv47tp8CY7B-gv_0";
-              var cr = await fetch(API_BASE+"/consultar-nfse-focus",{
+              // v3.81 (seguranca fiscal): supaFetch envia o JWT do usuario logado.
+              var cr = await supaFetch(API_BASE+"/consultar-nfse-focus",{
                 method:"POST",
-                headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY},
+                headers:{"Content-Type":"application/json"},
                 body:JSON.stringify({reference:r.data.reference})
               });
+              if(!cr.ok){ toast(cr.status===401||cr.status===403?"Sessão":"Erro", cr.status===401||cr.status===403?"Faça login novamente para consultar a nota.":"Falha ao consultar a nota (HTTP "+cr.status+")."); return; }
               var cd = await cr.json().catch(function(){return {};});
               url = cd.focus && (cd.focus.url_danfse || cd.focus.url_pdf || cd.focus.url);
             }
@@ -13242,13 +13286,13 @@ function _aprRender(){
     h += "</div>";
     // ações
     h += "<div style='display:flex;flex-direction:column;gap:6px;flex-shrink:0'>";
-    h += "<button class='btn' onclick=\"_aprAbrirConversa('"+esc(c.numero)+"')\" style='padding:5px 10px;font-size:.72rem'>💬 Ver conversa</button>";
+    h += "<button class='btn' onclick=\"_aprAbrirConversa("+jsArg(c.numero)+")\" style='padding:5px 10px;font-size:.72rem'>💬 Ver conversa</button>";
     if(c.status!=="vira_regra")
-      h += "<button class='btn btng' onclick=\"_aprMarcar('"+esc(c.numero)+"','vira_regra')\" style='padding:5px 10px;font-size:.72rem'>✅ Vira regra</button>";
+      h += "<button class='btn btng' onclick=\"_aprMarcar("+jsArg(c.numero)+",'vira_regra')\" style='padding:5px 10px;font-size:.72rem'>✅ Vira regra</button>";
     if(c.status!=="ignorado")
-      h += "<button class='btn' onclick=\"_aprMarcar('"+esc(c.numero)+"','ignorado')\" style='padding:5px 10px;font-size:.72rem'>🚫 Ignorar</button>";
+      h += "<button class='btn' onclick=\"_aprMarcar("+jsArg(c.numero)+",'ignorado')\" style='padding:5px 10px;font-size:.72rem'>🚫 Ignorar</button>";
     if(c.status!=="pendente")
-      h += "<button class='btn' onclick=\"_aprMarcar('"+esc(c.numero)+"','pendente')\" style='padding:5px 10px;font-size:.72rem;color:var(--gr)'>↩ Reabrir</button>";
+      h += "<button class='btn' onclick=\"_aprMarcar("+jsArg(c.numero)+",'pendente')\" style='padding:5px 10px;font-size:.72rem;color:var(--gr)'>↩ Reabrir</button>";
     h += "</div>";
     h += "</div>";
     h += "</div>";
@@ -13375,7 +13419,7 @@ async function pacTabBuscar(){
     });
     box.innerHTML = h;
   }catch(e){
-    box.innerHTML = "<div style='padding:10px;color:var(--or)'>Erro: " + e.message + "</div>";
+    box.innerHTML = "<div style='padding:10px;color:var(--or)'>Erro: " + esc(e && e.message || "") + "</div>";
   }
 }
 
@@ -13441,7 +13485,7 @@ async function pacTabAbrirFicha(id){
     h += "</div>";
     box.innerHTML = h;
   }catch(e){
-    box.innerHTML = "<div class='card'><div style='padding:10px;color:var(--or)'>Erro: " + e.message + "</div></div>";
+    box.innerHTML = "<div class='card'><div style='padding:10px;color:var(--or)'>Erro: " + esc(e && e.message || "") + "</div></div>";
   }
 }
 
@@ -14369,12 +14413,17 @@ async function imprimirRelatorioDia() {
   // agendamento_exames tem RLS só pra role=authenticated. Fetch puro com
   // SUPA_KEY (anon) retornaria 0 itens.
   var dayAgs = [];
+  var usouCacheRel = false;
   try{
     var r = await supaFetch("/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
+    // v3.82 (#7) — valida o HTTP antes de usar. Sem isso, um 401/500 caía direto
+    // no .json() e o relatório saía vazio/parcial sem nenhum aviso.
+    if(!r.ok){ throw new Error("HTTP " + r.status + " ao buscar agendamentos"); }
     var dados = await r.json();
     if(dados && dados.length){
       var ids = dados.map(function(a){return a.id});
       var rItens = await supaFetch("/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")");
+      if(!rItens.ok){ throw new Error("HTTP " + rItens.status + " ao buscar exames"); }
       var todosItens = await rItens.json() || [];
       dayAgs = dados.map(function(a){
         var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
@@ -14384,7 +14433,9 @@ async function imprimirRelatorioDia() {
     }
   }catch(e){
     console.error("Relatorio fetch:",e);
-    // Fallback: se rede falhou, tenta cache local pra não quebrar o relatório
+    // Fallback: se rede/servidor falhou, tenta cache local pra não quebrar o
+    // relatório — mas AVISA que os dados podem estar incompletos (#7).
+    usouCacheRel = true;
     dayAgs = ags.filter(function(a){
       var adt = a.dt;
       if(!adt) return false;
@@ -14393,6 +14444,9 @@ async function imprimirRelatorioDia() {
       var iso = pts[2] + "-" + pts[1] + "-" + pts[0];
       return iso === ds && (a.status_clinico || a.st) === "realizado";
     });
+  }
+  if(usouCacheRel && typeof toast === "function"){
+    toast("⚠️", "Relatório gerado do cache local (falha ao consultar o servidor). Os totais podem estar incompletos.");
   }
 
   dayAgs.sort(function(a,b){ return (a.hr||"").localeCompare(b.hr||""); });

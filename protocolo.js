@@ -37,6 +37,7 @@
   };
 
   var GRUPOS = [];   // resultado atual: [{paciente, exames:[...]}]
+  var _buscaSeq = 0; // sequência de busca: descarta respostas fora de ordem
 
   /* ── 1. CSS escopado ────────────────────────────────────────────────────── */
   function injectCSS() {
@@ -103,8 +104,12 @@
       var b = document.createElement("button");
       b.dataset.p = "protocolo";
       b.innerHTML = "📦 Protocolo";
-      // insere logo depois de "Histórico" se existir, senão no fim
-      var ref = nav.querySelector('button[data-p="pacientes"]') || nav.querySelector('button[data-p="historico"]') || nav.querySelector('button[data-p="atendimento"]');
+      // v3.73+ do index: o botão "Histórico" saiu do menu (aba unificada no
+      // Atendimento). Ancora em "Pacientes" (nova aba), senão "Atendimento",
+      // senão no fim — assim o Protocolo mantém a posição de sempre.
+      var ref = nav.querySelector('button[data-p="pacientes"]') ||
+                nav.querySelector('button[data-p="historico"]') ||
+                nav.querySelector('button[data-p="atendimento"]');
       if (ref && ref.nextSibling) nav.insertBefore(b, ref.nextSibling);
       else nav.appendChild(b);
     }
@@ -237,28 +242,41 @@
       box.innerHTML = '<div class="empty">Digite o número completo (pelo menos 8 dígitos).</div>';
       return;
     }
+    // Anti-corrida: cada busca ganha um número; só a mais recente pode renderizar.
+    // Evita que uma resposta antiga (rede lenta) sobrescreva uma busca nova.
+    var meuSeq = ++_buscaSeq;
+    var btn = document.getElementById("protoBuscar");
+    if (btn) btn.disabled = true;
     box.innerHTML = '<div class="empty">Buscando...</div>';
-    var res = await supa.rpc("protocolo_buscar_por_telefone", {
-      p_telefone: document.getElementById("protoPhone").value
-    });
-    if (res.error) {
-      box.innerHTML = '<div class="empty">Erro ao buscar: ' + esc(res.error.message) + "</div>";
-      return;
+    try {
+      var res = await supa.rpc("protocolo_buscar_por_telefone", {
+        p_telefone: document.getElementById("protoPhone").value
+      });
+      if (meuSeq !== _buscaSeq) return;   // já veio uma busca mais nova — descarta esta
+      if (res.error) {
+        box.innerHTML = '<div class="empty">Erro ao buscar: ' + esc(res.error.message) + "</div>";
+        return;
+      }
+      // agrupa por paciente
+      var map = {};
+      GRUPOS = [];
+      (res.data || []).forEach(function (row) {
+        var k = row.paciente_id + "|" + row.paciente_nome;
+        if (!map[k]) { map[k] = { paciente: row, exames: [] }; GRUPOS.push(map[k]); }
+        map[k].exames.push(row);
+      });
+      if (GRUPOS.length === 0) {
+        box.innerHTML = '<div class="empty">Nenhum exame pronto pra retirada com esse celular.<br>' +
+          '<span style="font-size:12px">Confira o número ou localize por outro meio.</span></div>';
+        return;
+      }
+      renderResultados();
+    } catch (e) {
+      if (meuSeq !== _buscaSeq) return;
+      box.innerHTML = '<div class="empty">Erro ao buscar: ' + esc(e && e.message || "desconhecido") + "</div>";
+    } finally {
+      if (meuSeq === _buscaSeq && btn) btn.disabled = false;
     }
-    // agrupa por paciente
-    var map = {};
-    GRUPOS = [];
-    (res.data || []).forEach(function (row) {
-      var k = row.paciente_id + "|" + row.paciente_nome;
-      if (!map[k]) { map[k] = { paciente: row, exames: [] }; GRUPOS.push(map[k]); }
-      map[k].exames.push(row);
-    });
-    if (GRUPOS.length === 0) {
-      box.innerHTML = '<div class="empty">Nenhum exame pronto pra retirada com esse celular.<br>' +
-        '<span style="font-size:12px">Confira o número ou localize por outro meio.</span></div>';
-      return;
-    }
-    renderResultados();
   }
 
   function iniciais(nome) {

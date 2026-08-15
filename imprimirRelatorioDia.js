@@ -66,12 +66,17 @@ async function imprimirRelatorioDia() {
   // supaFetch (definido em window no index.html) injeta o JWT do usuário
   // logado, role=authenticated, RLS libera leitura — vem todos os 4 itens.
   var dayAgs = [];
+  var usouCache = false;
   try{
     var r = await supaFetch("/rest/v1/agendamentos?select=*&data_exame=eq."+ds+"&status_clinico=eq.realizado&order=hora_exame.asc");
+    // #7 — valida o HTTP antes de usar. Sem isso, um 401/500 caía no .json()
+    // e o relatório saía vazio ou parcial sem nenhum aviso.
+    if(!r.ok){ throw new Error("HTTP " + r.status + " ao buscar agendamentos"); }
     var dados = await r.json();
     if(dados && dados.length){
       var ids = dados.map(function(a){return a.id});
       var rItens = await supaFetch("/rest/v1/agendamento_exames?select=*&agendamento_id=in.("+ids.join(",")+")");
+      if(!rItens.ok){ throw new Error("HTTP " + rItens.status + " ao buscar exames"); }
       var todosItens = await rItens.json() || [];
       dayAgs = dados.map(function(a){
         var itens = todosItens.filter(function(it){return it.agendamento_id===a.id});
@@ -100,7 +105,9 @@ async function imprimirRelatorioDia() {
     }
   }catch(e){
     console.error("Relatorio fetch:",e);
-    // Fallback: se rede falhou, tenta cache local pra não quebrar o relatório
+    // Fallback: se rede/servidor falhou, tenta cache local pra não quebrar o
+    // relatório — mas AVISA que os dados podem estar incompletos (#7).
+    usouCache = true;
     dayAgs = ags.filter(function(a){
       var adt = a.dt;
       if(!adt) return false;
@@ -109,6 +116,9 @@ async function imprimirRelatorioDia() {
       var iso = pts[2] + "-" + pts[1] + "-" + pts[0];
       return iso === ds && (a.status_clinico || a.st) === "realizado";
     });
+  }
+  if(usouCache && typeof toast === "function"){
+    toast("⚠️", "Relatório gerado do cache local (falha ao consultar o servidor). Os totais podem estar incompletos.");
   }
 
   dayAgs.sort(function(a,b){ return (a.hr||"").localeCompare(b.hr||""); });
@@ -275,7 +285,14 @@ async function imprimirRelatorioDia() {
     "<script>window.onload=function(){window.print();}<\/script>" +
     "</body></html>";
 
+  // #4 — window.open pode voltar null se o navegador bloqueou o pop-up.
+  // Sem checar, win.document.write estourava exceção e nada acontecia.
   var win = window.open("", "_blank");
+  if(!win){
+    if(typeof toast === "function") toast("⚠️", "Pop-up bloqueado. Libere pop-ups pra imprimir o relatório do dia.");
+    else alert("Pop-up bloqueado. Libere pop-ups pra imprimir o relatório do dia.");
+    return;
+  }
   win.document.write(html);
   win.document.close();
 }
