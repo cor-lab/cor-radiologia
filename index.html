@@ -291,6 +291,12 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-15 (v3.88): Selo fiscal ganha o par vermelho: 🧾✕ nos atendimentos
+              REALIZADOS que têm valor faturável e ainda estão SEM nota (precisa
+              emitir). Unimed, syns e pontos NÃO marcam (faturável=0 via
+              calcValoresAg/desconto_pontos). Estados emitindo/cancelada também não.
+              Centralizado em _seloFiscalCard (só visual).
+
   2026-08-15 (v3.87): Card da lista de atendimentos ganha selo 🧾✓ verde quando a
               nota fiscal já foi emitida (status_fiscal='emitida') — fica entre o
               nome e a hora, visível de relance. Additivo em renderAtendimento.
@@ -3742,7 +3748,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.87 - 2026-08-15";
+var APP_VERSION = "v3.88 - 2026-08-15";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8208,6 +8214,32 @@ function ratendimento() {
   renderAtendimento();
 }
 
+// v3.88 — selo fiscal do card (SÓ VISUAL, sem efeito colateral):
+//   🧾✓ verde     = nota fiscal emitida (status_fiscal='emitida')
+//   🧾✕ vermelho  = atendimento REALIZADO, com valor faturável e ainda SEM nota
+//                   (precisa emitir). Estados 'emitindo'/'cancelada' não marcam.
+// Exceções pedidas (Unimed, syns, pontos) saem de graça: calcValoresAg já joga
+// Unimed/syns em naoFaturavel e os pontos entram por desconto_pontos, então o
+// valor faturável desses fica 0 e eles NÃO recebem o ✕.
+function _seloFiscalCard(a){
+  var sf = a.status_fiscal || "nao_emitida";
+  if(sf === "emitida"){
+    return "<span title='Nota fiscal emitida' style='color:var(--g);font-weight:700;font-size:.74rem;flex-shrink:0;white-space:nowrap'>🧾&#10003;</span>";
+  }
+  var st = a.status_clinico || a.st;
+  if(st !== "realizado") return "";
+  if(sf === "emitindo" || sf === "cancelada") return "";
+  var faturavel = 0;
+  try {
+    var cv = (typeof calcValoresAg === "function") ? calcValoresAg(a) : null;
+    faturavel = (cv ? Number(cv.faturado || 0) : Number(a.valor_faturado || a.vl || 0)) - Number(a.desconto_pontos || 0);
+  } catch(e){ faturavel = 0; }
+  if(faturavel > 0.009){
+    return "<span title='Realizado sem nota fiscal — precisa emitir' style='color:#ef4444;font-weight:700;font-size:.74rem;flex-shrink:0;white-space:nowrap'>🧾&#10007;</span>";
+  }
+  return "";
+}
+
 function renderAtendimento() {
   var el = document.getElementById("pgAt");
   if (!el) return;
@@ -8364,9 +8396,9 @@ function renderAtendimento() {
         // Linha 1: nome + hora
         h += "<div class='at-mini-top'>";
         h += "<div class='at-mini-nome'>" + esc(a.pac) + "</div>";
-        // v3.87 — selo verde de NF emitida (entre nome e hora; flex-shrink:0 pra
-        // não ser cortado pela ellipsis do nome). Só quando status_fiscal='emitida'.
-        if(a.status_fiscal === "emitida") h += "<span title='Nota fiscal emitida' style='color:var(--g);font-weight:700;font-size:.74rem;flex-shrink:0;white-space:nowrap'>🧾&#10003;</span>";
+        // v3.88 — selo fiscal (só visual): 🧾✓ verde (nota emitida) ou 🧾✕
+        // vermelho (realizado + faturável + ainda sem nota). Ver _seloFiscalCard.
+        h += _seloFiscalCard(a);
         h += "<div class='at-mini-hr'>" + esc(a.hr) + "</div>";
         h += "</div>";
 
