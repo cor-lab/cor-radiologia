@@ -291,6 +291,15 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-15 (v3.85): Resume por CONSULTA (4ª revisão Codex, opção A — mais
+              segura). Nota presa em 'emitindo' NÃO é reemitida (evita duplicar):
+              a trava de reemissão voltou a bloquear 'emitindo', e ganhou um botão
+              "🔄 Verificar/Retomar nota" que chama a consultar (sincroniza pela
+              reference guardada, sem criar nota). Mantido o tratamento de
+              data.pendente (inicia polling). O re-POST/"resume" foi REMOVIDO do
+              servidor. (Servidor: emitir sem resume; referência alfanumérica;
+              dedup atômica de e-mail; rollback de senha condicional.)
+
   2026-08-15 (v3.84): Recuperação de emissão pendente (#2 da 3ª revisão Codex).
               Os dois fluxos de emissão passam a tratar data.pendente (Focus
               instável): em vez de erro, iniciam o polling com a reference (que é
@@ -3723,7 +3732,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.84 - 2026-08-15";
+var APP_VERSION = "v3.85 - 2026-08-15";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5134,10 +5143,10 @@ async function confirmarEmissaoNota() {
       return;
     }
 
-    // v3.84 (#2): 'emitindo' agora é PERMITIDO reemitir (resume) — o servidor
-    // reaproveita a mesma reference (a Focus deduplica, sem nota dupla). Só
-    // 'emitida'/'cancelada' seguem bloqueados (estado final).
-    if (["emitida", "cancelada"].includes(String(ag.status_fiscal || ""))) {
+    // v3.85: reemissão bloqueada em emitida/emitindo/cancelada. Nota presa em
+    // 'emitindo' NÃO é reemitida (evita duplicar) — a recuperação é o botão
+    // "Verificar/Retomar" (chama a consultar, que sincroniza sem criar nota).
+    if (["emitida", "emitindo", "cancelada"].includes(String(ag.status_fiscal || ""))) {
       toast("Atenção", "Agendamento com status fiscal inválido: " + ag.status_fiscal);
       return;
     }
@@ -9342,6 +9351,33 @@ function agEV(ev, id) {
         fn:function(){
           closeM();
           abrirModalEmitirNota(ag.id);
+        }
+      });
+    })(a);
+  }
+
+  // v3.85 (#3): nota presa em 'emitindo' — botão pra RETOMAR via CONSULTA (nunca
+  // reemite/duplica). Reinicia o polling com a reference guardada; se a Focus
+  // recebeu a nota, o estado sincroniza pra 'emitida'.
+  if((a.status_fiscal || "")=="emitindo"){
+    (function(ag){
+      btns.push({
+        lbl:"🔄 Verificar/Retomar nota",
+        cls:"btng",
+        fn:async function(){
+          var ref = ag.focus_reference;
+          if(!ref && ag.nfse_id){
+            try{
+              var r0 = await supa.from("nfse_emitidas").select("reference").eq("id", ag.nfse_id).maybeSingle();
+              if(r0 && r0.data) ref = r0.data.reference;
+            }catch(e){ console.error("verificar nota: buscar reference", e); }
+          }
+          if(!ref){
+            toast("Atenção","Sem referência pra verificar. Se persistir, reverta o status fiscal e emita de novo.");
+            return;
+          }
+          toast("⏳","Verificando status da nota na Focus...");
+          if(typeof iniciarPollingNfse === "function") iniciarPollingNfse(ag.id, ag.nfse_id, ref);
         }
       });
     })(a);
