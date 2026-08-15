@@ -291,6 +291,17 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-15 (v3.84): Recuperação de emissão pendente (#2 da 3ª revisão Codex).
+              Os dois fluxos de emissão passam a tratar data.pendente (Focus
+              instável): em vez de erro, iniciam o polling com a reference (que é
+              idempotente) e avisam. E a trava de status passou a permitir
+              REEMITIR quando 'emitindo' (resume), pois o servidor reaproveita a
+              mesma reference (a Focus deduplica). ⚠️ ACOPLAMENTO DE DEPLOY: este
+              index só é seguro COM as Edge Functions fiscais novas (emitir com
+              resume/reserva atômica). Ordem segura: subir as Edge PRIMEIRO,
+              depois este index. Subir este index com o emitir v38 (sem resume)
+              REINTRODUZ emissão duplicada ao reemitir um 'emitindo'.
+
   2026-08-15 (v3.83): Ajuste fino da 2ª revisão — o polling de NFS-e agora
               mostra TOAST (não só console) quando a sessão/permissão expira
               (401/403). (whatsapp_cor.js: numJs passou a usar jsArg.)
@@ -3712,7 +3723,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.83 - 2026-08-15";
+var APP_VERSION = "v3.84 - 2026-08-15";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5123,7 +5134,10 @@ async function confirmarEmissaoNota() {
       return;
     }
 
-    if (["emitida", "emitindo", "cancelada"].includes(String(ag.status_fiscal || ""))) {
+    // v3.84 (#2): 'emitindo' agora é PERMITIDO reemitir (resume) — o servidor
+    // reaproveita a mesma reference (a Focus deduplica, sem nota dupla). Só
+    // 'emitida'/'cancelada' seguem bloqueados (estado final).
+    if (["emitida", "cancelada"].includes(String(ag.status_fiscal || ""))) {
       toast("Atenção", "Agendamento com status fiscal inválido: " + ag.status_fiscal);
       return;
     }
@@ -5219,9 +5233,26 @@ async function confirmarEmissaoNota() {
 
     const data = await resp.json().catch(function(){ return {}; });
 
+    // v3.84 (#2): estado PENDENTE (Focus instável — transporte/429/5xx). A nota
+    // já foi RESERVADA no servidor; em vez de tratar como erro, inicia o polling
+    // com a reference (idempotente). Se a Focus recebeu, o polling confirma;
+    // se não, dá pra emitir de novo — o servidor faz "resume" com a MESMA
+    // reference (a Focus deduplica, não gera nota dupla).
+    if (data && data.pendente) {
+      ag.status_fiscal = "emitindo";
+      if(data.nfse_id) ag.nfse_id = data.nfse_id;
+      if(data.reference) ag.focus_reference = data.reference;
+      if (typeof fecharModalEmitirNota === "function") fecharModalEmitirNota();
+      if (typeof renderAgendamentos === "function") renderAgendamentos();
+      if (typeof rndAg === "function") rndAg();
+      toast("Aguardando", "Focus instável agora — a nota foi reservada e estou acompanhando. Se não confirmar, pode emitir de novo (não duplica).");
+      if(data.reference) iniciarPollingNfse(agendamentoId, data.nfse_id || ag.nfse_id, data.reference);
+      return;
+    }
+
     if (!resp.ok) {
       console.error("emitir-nfse-focus:", data);
-      toast("Erro", data?.message || "Falha ao enviar nota para emissão.");
+      toast("Erro", data?.message || data?.error || "Falha ao enviar nota para emissão.");
       return;
     }
 
@@ -5455,6 +5486,19 @@ async function marcarRealizadoEEmitir(agendamentoId){
     });
 
     const data = await resp.json().catch(() => ({}));
+
+    // v3.84 (#2): PENDENTE (Focus instável). Realizado já foi salvo; a nota está
+    // reservada — inicia polling com a reference (idempotente) e avisa. Emitir de
+    // novo faz "resume" sem duplicar.
+    if(data && data.pendente){
+      ag.status_fiscal = "emitindo";
+      if(data.reference) ag.focus_reference = data.reference;
+      if(data.nfse_id) ag.nfse_id = data.nfse_id;
+      if(typeof renderAgendamentos === "function") renderAgendamentos();
+      toast("Aguardando", "Realizado salvo. Focus instável — nota reservada, acompanhando. Pode emitir de novo se precisar (não duplica).");
+      if(data.reference) iniciarPollingNfse(agendamentoId, data.nfse_id || ag.nfse_id, data.reference);
+      return true;
+    }
 
     if(!resp.ok){
       const msg = typeof data.error === "string"
