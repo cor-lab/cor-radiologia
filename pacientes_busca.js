@@ -156,6 +156,28 @@ async function criarPacienteSupa(dados) {
         if (Array.isArray(data) && data.length > 0) return data[0];
         if (data && data.id) return data;
 
+        // (15/08/2026) TRAVA DE DUPLICATA no banco (trigger P0001 ou índice
+        // único 23505): avisa a recepção e busca a ficha ativa já existente
+        // (mesmo nome + nascimento) para vincular na pessoa certa.
+        var _msg = ((data && data.message) || "") + " " + ((data && data.details) || "");
+        var _ehDup = (data && (data.code === "23505" || data.code === "P0001")) ||
+                     /PACIENTE_DUPLICADO|uq_paciente_nome_nasc|duplicate key/i.test(_msg);
+        if (_ehDup) {
+            if (typeof toast === "function")
+                toast("⚠️", "Já existe ficha ativa desta pessoa — vinculando à ficha existente.");
+            try {
+                if (body.nome && body.data_nascimento) {
+                    var rf = await supaFetch(
+                        "/rest/v1/pacientes?select=*&ativo=eq.true&limit=1" +
+                        "&nome=ilike." + encodeURIComponent(body.nome) +
+                        "&data_nascimento=eq." + body.data_nascimento);
+                    var ex = await rf.json();
+                    if (Array.isArray(ex) && ex.length) return ex[0];
+                }
+            } catch (e2) { console.error("criarPacienteSupa/buscar existente:", e2); }
+            return null;
+        }
+
         console.error("criarPacienteSupa:", data);
         return null;
     } catch (e) {
