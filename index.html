@@ -291,6 +291,10 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-15 (v3.87): Card da lista de atendimentos ganha selo 🧾✓ verde quando a
+              nota fiscal já foi emitida (status_fiscal='emitida') — fica entre o
+              nome e a hora, visível de relance. Additivo em renderAtendimento.
+
   2026-08-15 (v3.86): Recuperação fiscal explícita. "Verificar/Retomar" consulta
               primeiro; após a janela de propagação, se a Focus não encontrar a
               referência, o servidor reenvia exatamente a mesma reference, o
@@ -3738,7 +3742,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.85 - 2026-08-15";
+var APP_VERSION = "v3.87 - 2026-08-15";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8360,6 +8364,9 @@ function renderAtendimento() {
         // Linha 1: nome + hora
         h += "<div class='at-mini-top'>";
         h += "<div class='at-mini-nome'>" + esc(a.pac) + "</div>";
+        // v3.87 — selo verde de NF emitida (entre nome e hora; flex-shrink:0 pra
+        // não ser cortado pela ellipsis do nome). Só quando status_fiscal='emitida'.
+        if(a.status_fiscal === "emitida") h += "<span title='Nota fiscal emitida' style='color:var(--g);font-weight:700;font-size:.74rem;flex-shrink:0;white-space:nowrap'>🧾&#10003;</span>";
         h += "<div class='at-mini-hr'>" + esc(a.hr) + "</div>";
         h += "</div>";
 
