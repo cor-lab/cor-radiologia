@@ -291,6 +291,15 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-18 (v3.93): Selos do card viram RÓTULOS à direita: "Nota ✓/✕" (nota
+              fiscal) e "Email ✓/✕" (aviso ao dentista). Verde ✓ = ok; vermelho ✕
+              = falta (realizado+faturável sem nota / realizado com dentista, e-mail
+              e opt-in mas aviso ainda não enviado). Fonte maior. O "Email" verifica
+              em lote no emails_log (1 query/dia, cache + repinta, espelha
+              _reqVerificarLote) e atualiza na hora quando o aviso é enviado/reenviado.
+              Não marca quando não se aplica (Unimed/syns/pontos sem valor; dentista
+              sem e-mail ou opt-out). Novos: _seloEmailCard, _avisoEmailVerificarLote.
+
   2026-08-17 (v3.92): (a) Tela do dentista: o toggle de aviso agora diz "Aviso por
               E-mail" (era "WhatsApp"; o aviso virou e-mail na v3.79) — só texto, o
               campo dRaar/recebe_aviso é o mesmo. (b) Botão "🔄 Reenviar" no modal
@@ -3778,7 +3787,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.92 - 2026-08-17";
+var APP_VERSION = "v3.93 - 2026-08-18";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8288,19 +8297,91 @@ function _temValorFaturavel(a){
 // Exceções pedidas (Unimed, syns, pontos) saem de graça: calcValoresAg já joga
 // Unimed/syns em naoFaturavel e os pontos entram por desconto_pontos, então o
 // valor faturável desses fica 0 e eles NÃO recebem o ✕.
+// v3.93 — estilo comum dos rótulos "Nota"/"Email" (fonte maior, à direita).
+function _seloCardCss(cor){ return "color:" + cor + ";font-weight:700;font-size:.72rem;flex-shrink:0;white-space:nowrap"; }
+
 function _seloFiscalCard(a){
   var sf = a.status_fiscal || "nao_emitida";
   if(sf === "emitida"){
-    return "<span title='Nota fiscal emitida' style='color:var(--g);font-weight:700;font-size:.74rem;flex-shrink:0;white-space:nowrap'>🧾&#10003;</span>";
+    return "<span title='Nota fiscal emitida' style='" + _seloCardCss("var(--g)") + "'>Nota&nbsp;&#10003;</span>";
   }
   var st = a.status_clinico || a.st;
   if(st !== "realizado") return "";
   if(sf === "emitindo" || sf === "cancelada") return "";
   if(_ehPagamentoSoPontos(a)) return "";  // v3.90 — só pontos não pede nota (misto é faturável)
   if(_temValorFaturavel(a)){              // v3.91 — sem faturável (Unimed/syns excl., R$0) → sem ✕
-    return "<span title='Realizado sem nota fiscal — precisa emitir' style='color:#ef4444;font-weight:700;font-size:.74rem;flex-shrink:0;white-space:nowrap'>🧾&#10007;</span>";
+    return "<span title='Realizado sem nota fiscal — precisa emitir' style='" + _seloCardCss("#ef4444") + "'>Nota&nbsp;&#10007;</span>";
   }
   return "";
+}
+
+// ✉️ v3.93 — selo de aviso ao dentista por e-mail no card (SÓ VISUAL):
+//   Email ✓ verde    = dentista já avisado por e-mail (emails_log = 'enviado')
+//   Email ✕ vermelho = realizado, dentista COM e-mail e opt-in, mas aviso ainda
+//                      NÃO enviado (pendente). Não marca quando não se aplica
+//                      (não realizado, dentista sem e-mail ou opt-out).
+// O status vem do cache preenchido por _avisoEmailVerificarLote (1 query/dia).
+var _avisoEmailCache = {};       // agId -> "enviado" | "pendente"
+var _avisoEmailPendentes = {};   // agId -> true (consulta em andamento)
+
+function _seloEmailCard(a){
+  var st = a.status_clinico || a.st;
+  if(st !== "realizado") return "";
+  var d = fdent(a.dId);
+  if(!d) return "";
+  if(d.raar === false) return "";                 // opt-out: dentista não recebe aviso
+  if(!String(d.em || "").trim()) return "";       // sem e-mail: não há como avisar
+  var s = _avisoEmailCache[a.id];
+  if(s === "enviado"){
+    return "<span title='Dentista avisado por e-mail' style='" + _seloCardCss("var(--g)") + "'>Email&nbsp;&#10003;</span>";
+  }
+  if(s === "pendente"){
+    return "<span title='Aviso ao dentista ainda não enviado' style='" + _seloCardCss("#ef4444") + "'>Email&nbsp;&#10007;</span>";
+  }
+  return "";   // ainda não verificado — evita piscar; repinta quando o lote chega
+}
+
+// Verifica em LOTE, no emails_log, quais avisos (aviso_dentista) já foram enviados
+// para os agendamentos realizados do dia. Uma única query (agendamento_id=in.(...)),
+// cache + repinta uma vez quando muda (cache quente ⇒ sem loop). Espelha
+// _reqVerificarLote. Ignora dentista sem e-mail / opt-out (não marcam nada).
+async function _avisoEmailVerificarLote(lista){
+  var alvos = [];
+  (lista || []).forEach(function(a){
+    var st = a.status_clinico || a.st;
+    if(st !== "realizado") return;
+    var d = fdent(a.dId);
+    if(!d || d.raar === false || !String(d.em || "").trim()) return;
+    if(_avisoEmailCache[a.id] !== undefined) return;   // já no cache
+    if(_avisoEmailPendentes[a.id]) return;
+    _avisoEmailPendentes[a.id] = true;
+    alvos.push(a.id);
+  });
+  if(!alvos.length) return;
+  // Padrão: pendente. Sobrescreve os que voltarem como enviado.
+  alvos.forEach(function(id){ _avisoEmailCache[id] = "pendente"; });
+  try{
+    var resp = await supaFetch("/rest/v1/emails_log?tipo=eq.aviso_dentista&status=eq.enviado&agendamento_id=in.(" + alvos.join(",") + ")&select=agendamento_id");
+    var arr = await resp.json();
+    (arr || []).forEach(function(r){ _avisoEmailCache[r.agendamento_id] = "enviado"; });
+  }catch(e){ console.error("[avisoEmailLote] erro:", e); }
+  finally{ alvos.forEach(function(id){ delete _avisoEmailPendentes[id]; }); }
+  // Saímos de "não verificado" → repinta uma vez (na 2ª passada os alvos já
+  // estão no cache, então nada é consultado e não há loop).
+  if(typeof renderAtendimento === "function" && document.getElementById("pgAt")){
+    renderAtendimento();
+  }
+}
+
+// v3.93 — marca no cache que o aviso do agendamento foi enviado e repinta o card
+// na hora (chamado após enviar/reenviar, sem esperar a próxima consulta em lote).
+function _marcarAvisoEmailEnviado(agId){
+  try{
+    _avisoEmailCache[agId] = "enviado";
+    if(typeof renderAtendimento === "function" && document.getElementById("pgAt")){
+      renderAtendimento();
+    }
+  }catch(e){}
 }
 
 function renderAtendimento() {
@@ -8462,6 +8543,8 @@ function renderAtendimento() {
         // v3.88 — selo fiscal (só visual): 🧾✓ verde (nota emitida) ou 🧾✕
         // vermelho (realizado + faturável + ainda sem nota). Ver _seloFiscalCard.
         h += _seloFiscalCard(a);
+        // v3.93 — selo "Email ✓/✕" (aviso ao dentista) logo após o de Nota, à direita.
+        h += _seloEmailCard(a);
         h += "<div class='at-mini-hr'>" + esc(a.hr) + "</div>";
         h += "</div>";
 
@@ -8504,6 +8587,8 @@ function renderAtendimento() {
   // v3.47 — verifica no FotonWeb quem está sem requisição (lote, com cache);
   // quando o resultado muda, a lista repinta sozinha.
   setTimeout(function(){ try{ _reqVerificarLote(dayAgs); }catch(e){ console.error("reqVerif:", e); } }, 0);
+  // v3.93 — carrega em lote o status do aviso ao dentista (emails_log) e repinta.
+  setTimeout(function(){ try{ _avisoEmailVerificarLote(dayAgs); }catch(e){ console.error("avisoEmailVerif:", e); } }, 0);
 
   // Calendário lateral
   h += "<div>";
@@ -11237,10 +11322,12 @@ async function avisarDentistaPorEmail(agId){
       console.error("[avisoDentistaEmail] invoke error:", r.error);
     } else if(data.ok && data.ja_enviado){
       console.log("[avisoDentistaEmail] já havia sido enviado para o ag", agId);
+      _marcarAvisoEmailEnviado(agId);
     } else if(data.ok && data.em_andamento){
       console.log("[avisoDentistaEmail] envio já está em andamento para o ag", agId);
     } else if(data.ok){
       console.log("[avisoDentistaEmail] enviado para", data.email_mascarado || "dentista");
+      _marcarAvisoEmailEnviado(agId);
     } else {
       var motivo = data.motivo || "";
       if(motivo === "sem_email"){
@@ -11276,8 +11363,10 @@ async function reenviarAvisoDentista(agId){
       toast("Erro", "Falha ao reenviar o aviso (veja o console).");
     } else if(data.ok && data.message_id){
       toast("✉️", "Aviso reenviado para " + (data.email_mascarado || "o dentista") + ".");
+      _marcarAvisoEmailEnviado(agId);
     } else if(data.ok && data.ja_enviado){
       toast("✉️", "Aviso já constava como enviado.");
+      _marcarAvisoEmailEnviado(agId);
     } else if(data.motivo === "sem_email"){
       toast("⚠️", "Dentista " + (data.dentista_nome ? "("+data.dentista_nome+") " : "") + "sem e-mail cadastrado.");
     } else if(data.motivo === "opt_out"){
