@@ -291,6 +291,10 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-18 (v3.94): "Email ✕" vermelho também quando o dentista está SEM e-mail
+              cadastrado (não há como avisar) — antes ficava sem marca. Opt-out
+              (não recebe aviso) continua sem marca. Só ajuste em _seloEmailCard.
+
   2026-08-18 (v3.93): Selos do card viram RÓTULOS à direita: "Nota ✓/✕" (nota
               fiscal) e "Email ✓/✕" (aviso ao dentista). Verde ✓ = ok; vermelho ✕
               = falta (realizado+faturável sem nota / realizado com dentista, e-mail
@@ -3787,7 +3791,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.93 - 2026-08-18";
+var APP_VERSION = "v3.94 - 2026-08-18";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -8329,8 +8333,11 @@ function _seloEmailCard(a){
   if(st !== "realizado") return "";
   var d = fdent(a.dId);
   if(!d) return "";
-  if(d.raar === false) return "";                 // opt-out: dentista não recebe aviso
-  if(!String(d.em || "").trim()) return "";       // sem e-mail: não há como avisar
+  if(d.raar === false) return "";                 // opt-out: dentista escolheu não receber → sem marca
+  // v3.94 — sem e-mail cadastrado NÃO envia → marca vermelho ✕ (igual pendente).
+  if(!String(d.em || "").trim()){
+    return "<span title='Dentista sem e-mail cadastrado — aviso não enviado' style='" + _seloCardCss("#ef4444") + "'>Email&nbsp;&#10007;</span>";
+  }
   var s = _avisoEmailCache[a.id];
   if(s === "enviado"){
     return "<span title='Dentista avisado por e-mail' style='" + _seloCardCss("var(--g)") + "'>Email&nbsp;&#10003;</span>";
@@ -8338,7 +8345,7 @@ function _seloEmailCard(a){
   if(s === "pendente"){
     return "<span title='Aviso ao dentista ainda não enviado' style='" + _seloCardCss("#ef4444") + "'>Email&nbsp;&#10007;</span>";
   }
-  return "";   // ainda não verificado — evita piscar; repinta quando o lote chega
+  return "";   // com e-mail mas ainda não verificado — evita piscar; repinta quando o lote chega
 }
 
 // Verifica em LOTE, no emails_log, quais avisos (aviso_dentista) já foram enviados
