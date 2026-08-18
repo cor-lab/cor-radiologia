@@ -3791,7 +3791,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.94 - 2026-08-18";
+var APP_VERSION = "v3.95 - 2026-08-18";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5732,38 +5732,43 @@ async function cancelarNotaManual(agendamentoId){
       toast("Atenção", "Esse agendamento não possui NFS-e vinculada.");
       return;
     }
+    // ⚡ v3.95 — CANCELAMENTO REAL NA FOCUS. Antes só mudava o status local
+    // (a nota continuava válida na prefeitura!). Agora chama a Edge Function
+    // cancelar-nfse-focus, que envia o cancelamento à Focus/prefeitura, e só
+    // então atualiza o local + estorna o cashback (tudo no servidor).
+    var just = prompt("Justificativa do cancelamento (vai para a prefeitura — mínimo 15 caracteres):",
+                      "Cancelamento a pedido do cliente — emissao indevida");
+    if(just === null) return;
+    just = String(just).trim();
+    if(just.length < 15){ toast("⚠️", "Justificativa muito curta (mínimo 15 caracteres)."); return; }
+    if(just.length > 255){ toast("⚠️", "Justificativa muito longa (máximo 255 caracteres)."); return; }
+    if(!confirm("Cancelar a NFS-e na FOCUS/PREFEITURA?\n\nPaciente: " + (ag.pac || "") +
+                "\nNota nº: " + (ag.numero_nfse || "-") +
+                "\nJustificativa: " + just +
+                "\n\nIsso cancela a nota de verdade (não se desfaz).")) return;
 
-    var r = await supa.from("nfse_emitidas")
-      .update({
-        status_fiscal: "cancelada",
-        data_cancelamento: new Date().toISOString()
-      })
-      .eq("id", ag.nfse_id)
-      .select()
-      .single();
-
-    if(r.error || !r.data){
-      console.error("cancelarNotaManual:", r.error);
-      toast("Erro", "Falha ao cancelar NFS-e.");
+    toast("⏳", "Cancelando na Focus...");
+    var r = await supaFetch(API_BASE + "/cancelar-nfse-focus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agendamento_id: agendamentoId, justificativa: just })
+    });
+    var d = await r.json().catch(function(){ return {}; });
+    if(!r.ok || !d.ok){
+      console.error("cancelar-nfse-focus:", d);
+      toast(r.status === 401 || r.status === 403 ? "Sessão/Permissão" : "Erro",
+            (d && d.error) ? d.error : ("Falha ao cancelar na Focus (HTTP " + r.status + ")."));
       return;
     }
 
-    await registrarEventoNfse(
-      ag.nfse_id,
-      "cancelamento",
-      "sucesso",
-      { origem: "manual_teste" },
-      r.data,
-      "Cancelamento manual de teste"
-    );
-
-    await dbUpdStatusFiscalAgendamento(agendamentoId, "cancelada", ag.nfse_id);
-
     ag.status_fiscal = "cancelada";
-    toast("Sucesso", "NFS-e cancelada e cashback estornado.");
+    if(typeof recarregarAgFresh === "function"){ try{ await recarregarAgFresh(agendamentoId); }catch(e){} }
+    if(typeof rndAg === "function") rndAg();
+    if(typeof renderAtendimento === "function") renderAtendimento();
+    toast("✅", "NFS-e cancelada na Focus" + (d.numero_nfse ? " (nº " + d.numero_nfse + ")" : "") + " e cashback estornado.");
   }catch(e){
     console.error("cancelarNotaManual:", e);
-    toast("Erro", "Falha ao cancelar nota.");
+    toast("Erro", "Falha ao cancelar nota: " + (e.message || String(e)));
   }
 }
 function normalizarCpfCnpj(v){
