@@ -1,6 +1,7 @@
 // ============================================================================
-// requisicao.js v3.10 - Sobreimpressão em requisição pré-impressa COR
+// requisicao.js v3.11 - Sobreimpressão em requisição pré-impressa COR
 // ----------------------------------------------------------------------------
+// - v3.11: perfis independentes de calibração com logo e sem logo.
 // - v3.10: cache busting na URL da logo. Sem isso, troca de logo nao aparecia
 //          ate o cache do navegador expirar (Storage manda cache de 1h).
 // - v3.9: removido confirm() suprimido pelo Chrome em aba nao focada.
@@ -123,6 +124,8 @@
 // ============================================================================
 
 var REQ_KEY = "requisicao_calib";
+var REQ_PERFIL_SEM_LOGO = "sem_logo";
+var REQ_PERFIL_COM_LOGO = "com_logo";
 
 var REQ_DEF = {
   x_dent: 18,    y_dent: 109,
@@ -160,14 +163,74 @@ function reqLogoUrl(logoPath, cacheBust) {
   return url;
 }
 
-var _reqCalib = null;
+// v3.11 — _reqCalibStore guarda a linha completa do Supabase. Os campos
+// antigos permanecem no topo para compatibilidade com abas/PCs que ainda
+// estejam usando requisicao.js v3.10. Os dois perfis novos ficam em
+// valor.perfis e nascem como copias da calibracao antiga.
+var _reqCalibStore = null;
+var _reqCalib = null; // perfil plano atualmente em uso (compatibilidade)
+var _reqCalibPerfilModal = REQ_PERFIL_SEM_LOGO;
+
+function reqNormalizarPerfil(perfil) {
+  return perfil === REQ_PERFIL_COM_LOGO ? REQ_PERFIL_COM_LOGO : REQ_PERFIL_SEM_LOGO;
+}
+
+function reqNomePerfil(perfil) {
+  return reqNormalizarPerfil(perfil) === REQ_PERFIL_COM_LOGO
+    ? "Com logo do dentista"
+    : "Sem logo do dentista";
+}
+
+function reqNormalizarCalib(valor) {
+  var origem = valor && typeof valor === "object" ? valor : {};
+  var calib = Object.assign({}, REQ_DEF);
+  Object.keys(REQ_DEF).forEach(function(campo){
+    if (campo === "logo_mostrar") {
+      if (typeof origem[campo] === "boolean") calib[campo] = origem[campo];
+      return;
+    }
+    if (origem[campo] === null || origem[campo] === "") return;
+    var numero = Number(origem[campo]);
+    if (isFinite(numero)) calib[campo] = numero;
+  });
+  return calib;
+}
+
+function reqNormalizarCalibStore(valor) {
+  var salvo = valor && typeof valor === "object" ? valor : {};
+  var legado = reqNormalizarCalib(salvo);
+  var perfisSalvos = salvo.perfis && typeof salvo.perfis === "object" ? salvo.perfis : {};
+  return Object.assign({}, legado, salvo, {
+    perfis_versao: 2,
+    perfis: {
+      sem_logo: reqNormalizarCalib(perfisSalvos.sem_logo || legado),
+      com_logo: reqNormalizarCalib(perfisSalvos.com_logo || legado)
+    }
+  });
+}
+
+function reqCalibDoPerfil(perfil) {
+  var perfilNormalizado = reqNormalizarPerfil(perfil);
+  var store = reqNormalizarCalibStore(_reqCalibStore || REQ_DEF);
+  return reqNormalizarCalib(store.perfis[perfilNormalizado]);
+}
+
+function reqPerfilParaDentista(dentista) {
+  return dentista && String(dentista.logo || "").trim()
+    ? REQ_PERFIL_COM_LOGO
+    : REQ_PERFIL_SEM_LOGO;
+}
 
 // ----------------------------------------------------------------------------
 // Calibração (configuracoes / Supabase)
 // ----------------------------------------------------------------------------
 
-async function reqCarregarCalib(forcar) {
-  if (_reqCalib && !forcar) return _reqCalib;
+async function reqCarregarCalib(forcar, perfil) {
+  var perfilNormalizado = reqNormalizarPerfil(perfil);
+  if (_reqCalibStore && !forcar) {
+    _reqCalib = reqCalibDoPerfil(perfilNormalizado);
+    return _reqCalib;
+  }
   // ⚡ v3.5 (28/05/2026) — log do que veio do banco pra diagnosticar
   // casos onde a calibracao "nao propaga" entre PCs. Antes, qualquer
   // erro na query era silenciado por try/catch → app usava REQ_DEF sem
@@ -178,19 +241,20 @@ async function reqCarregarCalib(forcar) {
     if (r.error) {
       console.error("[req] reqCarregarCalib: erro do banco:", r.error);
       if (typeof toast === "function") toast("⚠️", "Erro ao ler calibração (usando padrão). Veja console.");
-      _reqCalib = Object.assign({}, REQ_DEF);
+      _reqCalibStore = reqNormalizarCalibStore(REQ_DEF);
     } else if (!r.data || !r.data.valor) {
       console.warn("[req] reqCarregarCalib: nenhuma calibracao no banco, usando padrao REQ_DEF.");
-      _reqCalib = Object.assign({}, REQ_DEF);
+      _reqCalibStore = reqNormalizarCalibStore(REQ_DEF);
     } else {
       console.log("[req] reqCarregarCalib: calibracao carregada do banco:", r.data.valor);
-      _reqCalib = Object.assign({}, REQ_DEF, r.data.valor);
+      _reqCalibStore = reqNormalizarCalibStore(r.data.valor);
     }
   } catch (e) {
     console.error("[req] reqCarregarCalib: exception:", e);
     if (typeof toast === "function") toast("⚠️", "Erro ao ler calibração (usando padrão). Veja console.");
-    _reqCalib = Object.assign({}, REQ_DEF);
+    _reqCalibStore = reqNormalizarCalibStore(REQ_DEF);
   }
+  _reqCalib = reqCalibDoPerfil(perfilNormalizado);
   return _reqCalib;
 }
 
@@ -200,12 +264,38 @@ async function reqCarregarCalib(forcar) {
 // imprimem com calibracao antiga. Agora toda impressao chama esta funcao,
 // que ignora o cache e busca o valor atual. O cache (_reqCalib) ainda vale
 // pra preview/tela de calibracao — so a impressao real e sempre fresca.
-async function reqCarregarCalibFresco() {
-  return reqCarregarCalib(true);
+async function reqCarregarCalibFresco(perfil) {
+  return reqCarregarCalib(true, perfil);
 }
 
-async function reqSalvarCalib(novo) {
-  var valor = Object.assign({}, REQ_DEF, _reqCalib || {}, novo);
+async function reqSalvarCalib(novo, perfil) {
+  var perfilNormalizado = reqNormalizarPerfil(perfil);
+  // Busca o JSON mais recente antes de mesclar. Assim, se outro computador
+  // acabou de salvar o OUTRO perfil, esta gravacao nao apaga aquela mudanca.
+  var rAtual = await supa.from("configuracoes")
+    .select("valor")
+    .eq("chave", REQ_KEY)
+    .maybeSingle();
+  if (rAtual.error) {
+    console.error("[req] erro ao reler calibracoes antes de salvar:", rAtual.error);
+    if (typeof toast === "function") toast("⚠️", "Erro ao conferir calibrações atuais. Nada foi salvo.");
+    throw rAtual.error;
+  }
+  var store = reqNormalizarCalibStore(
+    rAtual.data && rAtual.data.valor
+      ? rAtual.data.valor
+      : (_reqCalibStore || REQ_DEF)
+  );
+  var valorPerfil = reqNormalizarCalib(Object.assign(
+    {},
+    store.perfis[perfilNormalizado],
+    novo
+  ));
+  var valor = Object.assign({}, store, {
+    perfis_versao: 2,
+    perfis: Object.assign({}, store.perfis)
+  });
+  valor.perfis[perfilNormalizado] = valorPerfil;
   var r = await supa.from("configuracoes").upsert({
     chave: REQ_KEY,
     valor: valor,
@@ -216,8 +306,9 @@ async function reqSalvarCalib(novo) {
     if (typeof toast === "function") toast("⚠️", "Erro ao salvar calibração.");
     throw r.error;
   }
-  _reqCalib = valor;
-  return valor;
+  _reqCalibStore = valor;
+  _reqCalib = valorPerfil;
+  return valorPerfil;
 }
 
 // ----------------------------------------------------------------------------
@@ -501,8 +592,9 @@ async function imprimirRequisicao(agId, qtd) {
   // ⚡ v3.5 (28/05/2026) — usa reqCarregarCalibFresco pra sempre pegar a
   // calibracao mais recente do banco (evita cache desatualizado entre PCs).
   try {
-    var calib = await reqCarregarCalibFresco();
     var d = await reqBuscarDentista(agId);
+    // v3.11 — escolhe automaticamente o perfil pela existencia da logo.
+    var calib = await reqCarregarCalibFresco(reqPerfilParaDentista(d));
 
     if (!d.nome) {
       if (typeof toast === "function") toast("⚠️", "Dentista sem nome cadastrado.");
@@ -557,9 +649,9 @@ async function imprimirRequisicaoPorDentista(dentId, qtd, winPreAberta) {
     return;
   }
   try {
-    // ⚡ v3.5 (28/05/2026) — calibracao fresca a cada impressao
-    var calib = await reqCarregarCalibFresco();
     var d = await reqBuscarDentistaPorId(dentId);
+    // v3.5 + v3.11 — calibracao fresca e perfil automatico com/sem logo.
+    var calib = await reqCarregarCalibFresco(reqPerfilParaDentista(d));
 
     if (!d.nome) {
       if (typeof toast === "function") toast("⚠️", "Dentista sem nome cadastrado.");
@@ -788,8 +880,11 @@ async function reqDefinirComoPrincipal() {
 // PÚBLICO 2: Tela de calibração
 // ============================================================================
 
-async function abrirCalibracaoRequisicao() {
-  var c = await reqCarregarCalib();
+async function abrirCalibracaoRequisicao(perfil) {
+  var perfilAtivo = reqNormalizarPerfil(perfil || _reqCalibPerfilModal);
+  var c = await reqCarregarCalib(true, perfilAtivo);
+  _reqCalibPerfilModal = perfilAtivo;
+  var comLogo = perfilAtivo === REQ_PERFIL_COM_LOGO;
   var ant = document.getElementById("modal-calib-req");
   if (ant) ant.remove();
 
@@ -801,15 +896,26 @@ async function abrirCalibracaoRequisicao() {
     "#modal-calib-req .box{background:var(--bg,#1a1d24);color:var(--wh,#fff);padding:20px;border-radius:10px;max-width:760px;width:100%;max-height:90vh;overflow-y:auto;border:1px solid rgba(255,255,255,.08)}" +
     "#modal-calib-req h3{margin-bottom:10px;font-size:1rem}" +
     "#modal-calib-req .av{background:rgba(240,180,0,.08);border-left:3px solid #f0b500;padding:8px 10px;font-size:.8rem;color:#f0c040;margin-bottom:14px;border-radius:4px;line-height:1.5}" +
+    "#modal-calib-req .perfil-info{background:rgba(74,222,128,.07);border-left:3px solid #4ade80;padding:8px 10px;font-size:.78rem;color:var(--wh,#fff);margin-bottom:12px;border-radius:4px;line-height:1.45}" +
+    "#modal-calib-req .perfil-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}" +
+    "#modal-calib-req .perfil-tab{padding:9px 10px;border-radius:7px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.04);color:var(--gr,#bbc);font-weight:700;cursor:pointer}" +
+    "#modal-calib-req .perfil-tab.ativo{border-color:#4ade80;background:rgba(74,222,128,.12);color:#4ade80}" +
     "#modal-calib-req .gd{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}" +
+    "#modal-calib-req .gd>*{min-width:0}" +
     "#modal-calib-req label{font-size:.72rem;color:var(--gr,#9aa);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;font-weight:600}" +
-    "#modal-calib-req input[type=number]{padding:6px 8px;font-size:.85rem;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--wh,#fff);border-radius:5px}" +
+    "#modal-calib-req input[type=number]{width:100%;min-width:0;padding:6px 8px;font-size:.85rem;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--wh,#fff);border-radius:5px}" +
     "#modal-calib-req .ac{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}" +
     "@media(max-width:600px){#modal-calib-req .gd{grid-template-columns:repeat(2,1fr)}}" +
     "</style>" +
     "<div class='box'>" +
       "<h3>📐 Calibração da Requisição</h3>" +
+      "<div class='perfil-info'><strong>Dois modelos independentes:</strong> o sistema usa automaticamente <em>Com logo</em> quando o dentista possui uma logo cadastrada e <em>Sem logo</em> nos demais casos. Salve o modelo atual antes de trocar de aba.</div>" +
+      "<div class='perfil-tabs'>" +
+        "<button type='button' class='perfil-tab " + (!comLogo ? "ativo" : "") + "' onclick='abrirCalibracaoRequisicao(\"sem_logo\")'>📄 Sem logo</button>" +
+        "<button type='button' class='perfil-tab " + (comLogo ? "ativo" : "") + "' onclick='abrirCalibracaoRequisicao(\"com_logo\")'>🖼️ Com logo</button>" +
+      "</div>" +
       "<div class='av'><strong>Como calibrar:</strong> clica em <em>🖨️ Imprimir teste</em> em folha branca, sobrepõe na requisição contra a luz, ajusta os mm pra direita/esquerda (X) ou baixo/cima (Y), reimprime até alinhar. Depois <em>💾 Salvar</em>.</div>" +
+      "<div style='font-size:.78rem;font-weight:700;margin:0 0 9px'>Editando: " + reqNomePerfil(perfilAtivo) + "</div>" +
       "<div class='gd'>" +
         cInput("x_dent", "Dentista X (mm)", c.x_dent) +
         cInput("y_dent", "Dentista Y (mm)", c.y_dent) +
@@ -821,26 +927,27 @@ async function abrirCalibracaoRequisicao() {
         cInput("y_tel",  "Telefone Y (mm)", c.y_tel)  +
         cInput("fonte",  "Fonte (pt)",      c.fonte)  +
       "</div>" +
-      // ⚡ v3.3 (28/05/2026) — Etapa 3: secao de calibracao da LOGO.
-      "<div style='border-top:1px solid rgba(255,255,255,.08);margin-top:6px;padding-top:14px'>" +
-        "<div style='display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap'>" +
-          "<label style='font-size:.85rem;color:var(--wh,#fff);text-transform:none;font-weight:600;flex-direction:row;align-items:center;cursor:pointer;gap:8px'>" +
-            "<input type='checkbox' id='ck-logo_mostrar' " + (c.logo_mostrar !== false ? "checked" : "") + " style='width:auto;margin:0'>" +
-            "🖼️ Mostrar logo do dentista" +
-          "</label>" +
-          "<span style='font-size:.7rem;color:var(--gr,#9aa)'>(quando o dentista tem logo cadastrada)</span>" +
-        "</div>" +
-        "<div class='gd'>" +
-          cInput("logo_x", "Logo X (mm)",          c.logo_x) +
-          cInput("logo_y", "Logo Y (mm)",          c.logo_y) +
-          cInput("logo_w", "Largura (mm)",         c.logo_w) +
-          cInput("logo_h", "Altura max (mm)",      c.logo_h) +
-        "</div>" +
-        "<div style='font-size:.7rem;color:var(--gr,#9aa);line-height:1.4;margin-top:4px'>" +
-          "Largura controla o tamanho. Altura max impede que a logo extrapole a area definida. " +
-          "Proporcao da imagem original e preservada (object-fit: contain)." +
-        "</div>" +
-      "</div>" +
+      // v3.3 + v3.11 — controles da logo aparecem apenas no perfil com logo.
+      (comLogo
+        ? "<div style='border-top:1px solid rgba(255,255,255,.08);margin-top:6px;padding-top:14px'>" +
+            "<div style='display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap'>" +
+              "<label style='font-size:.85rem;color:var(--wh,#fff);text-transform:none;font-weight:600;flex-direction:row;align-items:center;cursor:pointer;gap:8px'>" +
+                "<input type='checkbox' id='ck-logo_mostrar' " + (c.logo_mostrar !== false ? "checked" : "") + " style='width:auto;margin:0'>" +
+                "🖼️ Mostrar logo do dentista" +
+              "</label>" +
+            "</div>" +
+            "<div class='gd'>" +
+              cInput("logo_x", "Logo X (mm)",          c.logo_x) +
+              cInput("logo_y", "Logo Y (mm)",          c.logo_y) +
+              cInput("logo_w", "Largura (mm)",         c.logo_w) +
+              cInput("logo_h", "Altura max (mm)",      c.logo_h) +
+            "</div>" +
+            "<div style='font-size:.7rem;color:var(--gr,#9aa);line-height:1.4;margin-top:4px'>" +
+              "Largura controla o tamanho. Altura max impede que a logo extrapole a area definida. " +
+              "Proporcao da imagem original e preservada (object-fit: contain)." +
+            "</div>" +
+          "</div>"
+        : "<div style='border-top:1px solid rgba(255,255,255,.08);margin-top:6px;padding-top:14px;font-size:.75rem;color:var(--gr,#9aa)'>Este teste será impresso sem área de logo.</div>") +
       "<div class='ac'>" +
         "<button class='btn btnt bsm' onclick='reqImprimirTeste()'>🖨️ Imprimir teste</button>" +
         "<button class='btn bsm' onclick='document.getElementById(\"modal-calib-req\").remove()'>Cancelar</button>" +
@@ -881,11 +988,13 @@ async function reqSalvarCalibFromModal() {
       fonte:  reqLerNum("fonte"),
       logo_x: reqLerNum("logo_x"), logo_y: reqLerNum("logo_y"),
       logo_w: reqLerNum("logo_w"), logo_h: reqLerNum("logo_h"),
-      logo_mostrar: chkMostrar ? !!chkMostrar.checked : true
-    });
+      logo_mostrar: chkMostrar
+        ? !!chkMostrar.checked
+        : (!_reqCalib || _reqCalib.logo_mostrar !== false)
+    }, _reqCalibPerfilModal);
     var m = document.getElementById("modal-calib-req");
     if (m) m.remove();
-    if (typeof toast === "function") toast("💾", "Calibração salva!");
+    if (typeof toast === "function") toast("💾", "Calibração salva: " + reqNomePerfil(_reqCalibPerfilModal) + ".");
   } catch (e) {
     alert("Erro ao salvar: " + e.message);
   }
@@ -898,6 +1007,7 @@ function reqImprimirTeste() {
   // O placeholder e um SVG simples (renderizado pelo navegador) que
   // mostra a area calibrada com "LOGO" escrito.
   var chkMostrar = document.getElementById("ck-logo_mostrar");
+  var comLogo = _reqCalibPerfilModal === REQ_PERFIL_COM_LOGO;
   var calib = {
     x_dent: reqLerNum("x_dent"), y_dent: reqLerNum("y_dent"),
     x_cro:  reqLerNum("x_cro"),  y_cro:  reqLerNum("y_cro"),
@@ -906,7 +1016,7 @@ function reqImprimirTeste() {
     fonte:  reqLerNum("fonte"),
     logo_x: reqLerNum("logo_x"), logo_y: reqLerNum("logo_y"),
     logo_w: reqLerNum("logo_w"), logo_h: reqLerNum("logo_h"),
-    logo_mostrar: chkMostrar ? !!chkMostrar.checked : true
+    logo_mostrar: comLogo && (chkMostrar ? !!chkMostrar.checked : true)
   };
   // SVG placeholder pra teste de logo (sem precisar de upload real)
   var logoPlaceholder = "data:image/svg+xml;utf8," + encodeURIComponent(
@@ -920,6 +1030,6 @@ function reqImprimirTeste() {
     cro:  "CRO-RS 99999",
     endereco: "Rua de Teste, 999 - Bairro Teste - Santa Maria",
     telefone: "(55) 99999-9999",
-    logo: logoPlaceholder // passa data URI direto; reqLogoUrl nao trata isso
+    logo: comLogo ? logoPlaceholder : ""
   }, calib));
 }
