@@ -1,6 +1,7 @@
 // ============================================================================
-// requisicao.js v3.11 - Sobreimpressão em requisição pré-impressa COR
+// requisicao.js v3.12 - Sobreimpressão em requisição pré-impressa COR
 // ----------------------------------------------------------------------------
+// - v3.12: e-mail do dentista na impressão, com X/Y em ambos os perfis.
 // - v3.11: perfis independentes de calibração com logo e sem logo.
 // - v3.10: cache busting na URL da logo. Sem isso, troca de logo nao aparecia
 //          ate o cache do navegador expirar (Storage manda cache de 1h).
@@ -132,6 +133,7 @@ var REQ_DEF = {
   x_cro:  155,   y_cro:  109,
   x_end:  18,    y_end:  129,
   x_tel:  18,    y_tel:  148,
+  x_email:18,    y_email:158,
   fonte:  11,
   // ⚡ v3.3 (28/05/2026) — Etapa 3 da logo. Posicao GLOBAL (mesma pra todos
   // os dentistas, ja que a folha pre-impressa e a mesma). Calibravel pela
@@ -327,13 +329,13 @@ async function reqBuscarDentista(agId) {
     dentId = rAg.data.dentista_id;
   }
 
-  // Cache local (dents) tem nome/cro/telefone (e logo a partir de v3.10.7)
+  // Cache local (dents) tem nome/cro/telefone/email (e logo a partir de v3.10.7)
   var dCache = fdent(dentId);
 
   // Busca completa (caso cache não tenha)
   // ⚡ v3.3 (28/05/2026) — SELECT inclui logo_path pra Etapa 3 da logo.
   var rD = !dCache
-    ? await supa.from("dentistas").select("nome, cro, telefone, logo_path").eq("id", dentId).single()
+    ? await supa.from("dentistas").select("nome, cro, telefone, email, logo_path").eq("id", dentId).single()
     : null;
 
   // Sempre busca todos os endereços
@@ -363,6 +365,7 @@ async function reqBuscarDentista(agId) {
     nome: dCache ? dCache.n : (rD.data && rD.data.nome) || "",
     cro:  dCache ? dCache.cro : (rD.data && rD.data.cro) || "",
     telefone: dCache ? dCache.tel : (rD.data && rD.data.telefone) || "",
+    email: dCache ? (dCache.em || "") : ((rD.data && rD.data.email) || ""),
     // ⚡ v3.3 (28/05/2026) — logo path do bucket dentista-logos (ou "").
     logo: dCache ? (dCache.logo || "") : ((rD.data && rD.data.logo_path) || ""),
     enderecos: rE.data || []
@@ -432,6 +435,9 @@ function reqGerarHtml(dados, c, qtd) {
       "<div class='campo' style='left:" + c.x_end  + "mm;top:" + c.y_end  + "mm;max-width:" + mw(c.x_end)  + "mm'>" + esc(dados.endereco) + "</div>" +
       (dados.telefone
         ? "<div class='campo' style='left:" + c.x_tel + "mm;top:" + c.y_tel + "mm;max-width:" + mw(c.x_tel) + "mm'>" + esc(dados.telefone) + "</div>"
+        : "") +
+      (dados.email
+        ? "<div class='campo' style='left:" + c.x_email + "mm;top:" + c.y_email + "mm;max-width:" + mw(c.x_email) + "mm'>" + esc(dados.email) + "</div>"
         : "") +
     "</div>";
 
@@ -695,13 +701,13 @@ async function imprimirRequisicaoPorDentista(dentId, qtd, winPreAberta) {
 // Versao de reqBuscarDentista que recebe o dentId direto (sem agendamento).
 // Reusa a mesma logica de cache (fdent) + busca completa + enderecos.
 async function reqBuscarDentistaPorId(dentId) {
-  // Cache local (dents) tem nome/cro/telefone (e logo a partir de v3.10.7)
+  // Cache local (dents) tem nome/cro/telefone/email (e logo a partir de v3.10.7)
   var dCache = (typeof fdent === "function") ? fdent(dentId) : null;
 
   // Busca completa (caso cache nao tenha)
   // ⚡ v3.3 (28/05/2026) — SELECT inclui logo_path pra Etapa 3 da logo.
   var rD = !dCache
-    ? await supa.from("dentistas").select("nome, cro, telefone, logo_path").eq("id", dentId).single()
+    ? await supa.from("dentistas").select("nome, cro, telefone, email, logo_path").eq("id", dentId).single()
     : null;
   if (rD && rD.error) {
     console.error("[req] erro ao buscar dentista:", rD.error);
@@ -723,6 +729,7 @@ async function reqBuscarDentistaPorId(dentId) {
     nome: dCache ? dCache.n : (rD.data && rD.data.nome) || "",
     cro:  dCache ? dCache.cro : (rD.data && rD.data.cro) || "",
     telefone: dCache ? dCache.tel : (rD.data && rD.data.telefone) || "",
+    email: dCache ? (dCache.em || "") : ((rD.data && rD.data.email) || ""),
     // ⚡ v3.3 (28/05/2026) — logo path do bucket dentista-logos (ou "").
     logo: dCache ? (dCache.logo || "") : ((rD.data && rD.data.logo_path) || ""),
     enderecos: rE.data || []
@@ -741,6 +748,7 @@ function reqImprimirComEndereco(d, enderecoStr, calib, qtd, winPreAberta) {
     cro: d.cro,
     endereco: enderecoStr,
     telefone: d.telefone,
+    email: d.email || "",
     logo: d.logo || ""
   }, calib, nFolhas);
   reqAbrirImpressao(html, winPreAberta);
@@ -925,6 +933,8 @@ async function abrirCalibracaoRequisicao(perfil) {
         cInput("y_end",  "Endereço Y (mm)", c.y_end)  +
         cInput("x_tel",  "Telefone X (mm)", c.x_tel)  +
         cInput("y_tel",  "Telefone Y (mm)", c.y_tel)  +
+        cInput("x_email", "E-mail X (mm)",   c.x_email) +
+        cInput("y_email", "E-mail Y (mm)",   c.y_email) +
         cInput("fonte",  "Fonte (pt)",      c.fonte)  +
       "</div>" +
       // v3.3 + v3.11 — controles da logo aparecem apenas no perfil com logo.
@@ -959,7 +969,7 @@ async function abrirCalibracaoRequisicao(perfil) {
 
   function cInput(id, lbl, val) {
     return "<label>" + lbl +
-      "<input type='number' id='ck-" + id + "' value='" + val + "' step='0.5'></label>";
+      "<input type='number' id='ck-" + id + "' value='" + val + "' step='0.5' autocomplete='off'></label>";
   }
 }
 
@@ -985,6 +995,7 @@ async function reqSalvarCalibFromModal() {
       x_cro:  reqLerNum("x_cro"),  y_cro:  reqLerNum("y_cro"),
       x_end:  reqLerNum("x_end"),  y_end:  reqLerNum("y_end"),
       x_tel:  reqLerNum("x_tel"),  y_tel:  reqLerNum("y_tel"),
+      x_email:reqLerNum("x_email"),y_email:reqLerNum("y_email"),
       fonte:  reqLerNum("fonte"),
       logo_x: reqLerNum("logo_x"), logo_y: reqLerNum("logo_y"),
       logo_w: reqLerNum("logo_w"), logo_h: reqLerNum("logo_h"),
@@ -1013,6 +1024,7 @@ function reqImprimirTeste() {
     x_cro:  reqLerNum("x_cro"),  y_cro:  reqLerNum("y_cro"),
     x_end:  reqLerNum("x_end"),  y_end:  reqLerNum("y_end"),
     x_tel:  reqLerNum("x_tel"),  y_tel:  reqLerNum("y_tel"),
+    x_email:reqLerNum("x_email"),y_email:reqLerNum("y_email"),
     fonte:  reqLerNum("fonte"),
     logo_x: reqLerNum("logo_x"), logo_y: reqLerNum("logo_y"),
     logo_w: reqLerNum("logo_w"), logo_h: reqLerNum("logo_h"),
@@ -1030,6 +1042,7 @@ function reqImprimirTeste() {
     cro:  "CRO-RS 99999",
     endereco: "Rua de Teste, 999 - Bairro Teste - Santa Maria",
     telefone: "(55) 99999-9999",
+    email: "dentista@exemplo.com.br",
     logo: comLogo ? logoPlaceholder : ""
   }, calib));
 }

@@ -291,6 +291,11 @@
               manda o link do exame por WhatsApp). Funções sWAi/
               avisarDentistaAtendimentoRealizado permanecem no código.
 
+  2026-08-19 (v3.97): A requisição impressa passa a incluir o e-mail cadastrado
+              do dentista. Os modelos "Sem logo" e "Com logo" receberam
+              calibração independente de E-mail X/Y; cadastros sem e-mail
+              continuam imprimindo normalmente, sem criar um campo vazio.
+
   2026-08-19 (v3.96): Requisições passam a ter duas calibrações independentes:
               "Sem logo" e "Com logo". O requisicao.js escolhe o perfil
               automaticamente conforme a existência de logo cadastrada para o
@@ -3797,7 +3802,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.96 - 2026-08-19";
+var APP_VERSION = "v3.97 - 2026-08-19";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -15684,7 +15689,7 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
 </script>
 <script src="etiqueta.js"></script>
 <script src="fichas.js"></script>
-<script src="requisicao.js?v=20260819-dois-perfis-v1"></script>
+<script src="requisicao.js?v=20260819-email-dentista-v2"></script>
 <script src="reportes.js"></script>
 <script src="whatsapp_cor.js"></script>
 <script src="protocolo.js"></script>
