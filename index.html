@@ -3802,7 +3802,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.99 - 2026-08-20";
+var APP_VERSION = "v4.0 - 2026-08-20";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -15742,5 +15742,74 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
 <script src="reportes.js"></script>
 <script src="whatsapp_cor.js"></script>
 <script src="protocolo.js"></script>
+<script>
+/* ═══ MONITOR DE CONEXÃO (v4.0) ═══
+   Roda no navegador da recepção. A cada 20s testa o contato com o Supabase.
+   Se falhar, testa a internet geral pra distinguir: "sem internet" (rede da
+   clínica) vs "servidor inacessível" (internet OK, mas Supabase/rota fora).
+   Mostra uma faixa vermelha/laranja no topo enquanto durar, e some sozinha
+   quando volta. LIMITAÇÃO: só ajuda com o app JÁ ABERTO — se a própria página
+   não carregar (GitHub Pages/DNS), este aviso não roda. É um bloco isolado,
+   com try/catch em tudo, pra nunca derrubar o app. */
+(function(){
+  var BANNER_ID="netmon-banner", CHECK_MS=20000, TIMEOUT_MS=8000;
+
+  function withTimeout(p, ms){
+    return new Promise(function(res, rej){
+      var to=setTimeout(function(){ rej(new Error("timeout")); }, ms);
+      p.then(function(v){ clearTimeout(to); res(v); }, function(e){ clearTimeout(to); rej(e); });
+    });
+  }
+  function testarSupabase(){
+    try{
+      var base=(typeof SUPA_URL!=="undefined"?SUPA_URL:"");
+      var key=(typeof SUPA_KEY!=="undefined"?SUPA_KEY:"");
+      if(!base) return Promise.resolve(true); // sem config: não alarma
+      return withTimeout(fetch(base+"/rest/v1/configuracoes?select=chave&limit=1",{
+        method:"GET", cache:"no-store",
+        headers:{ "apikey":key, "Authorization":"Bearer "+key }
+      }), TIMEOUT_MS).then(function(r){ return r.ok||r.status===401||r.status===403; })
+      .catch(function(){ return false; });
+    }catch(e){ return Promise.resolve(false); }
+  }
+  function testarInternet(){
+    try{
+      return withTimeout(fetch("https://www.gstatic.com/generate_204",{mode:"no-cors",cache:"no-store"}), TIMEOUT_MS)
+        .then(function(){ return true; }).catch(function(){ return false; });
+    }catch(e){ return Promise.resolve(false); }
+  }
+  function mostrar(msg, cor){
+    try{
+      var b=document.getElementById(BANNER_ID);
+      if(!b){
+        b=document.createElement("div"); b.id=BANNER_ID;
+        b.style.cssText="position:fixed;top:0;left:0;right:0;z-index:99999;padding:9px 14px;text-align:center;font-size:.86rem;font-weight:700;color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.35);font-family:inherit";
+        document.body.appendChild(b);
+      }
+      b.style.background=cor; b.textContent=msg; b.style.display="block";
+    }catch(e){}
+  }
+  function esconder(){ try{ var b=document.getElementById(BANNER_ID); if(b) b.style.display="none"; }catch(e){} }
+
+  function checar(){
+    testarSupabase().then(function(okSupa){
+      if(okSupa){ esconder(); return; }
+      testarInternet().then(function(okNet){
+        if(!okNet){
+          mostrar("⚠️ SEM CONEXÃO COM A INTERNET — verifique a rede da clínica. O sistema volta sozinho quando a internet voltar.", "#dc2626");
+        }else{
+          mostrar("⚠️ SERVIDOR INACESSÍVEL — a internet está OK, mas o APPCOR não está falando com o servidor. Aguarde e atualize (Ctrl+F5) em instantes.", "#d97706");
+        }
+      });
+    });
+  }
+
+  try{
+    window.addEventListener("online", checar);
+    window.addEventListener("offline", function(){ mostrar("⚠️ SEM CONEXÃO COM A INTERNET — verifique a rede da clínica.", "#dc2626"); });
+    setTimeout(function(){ checar(); setInterval(checar, CHECK_MS); }, 5000);
+  }catch(e){}
+})();
+</script>
 </body>
 </html>
