@@ -3802,7 +3802,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v3.98 - 2026-08-19";
+var APP_VERSION = "v3.99 - 2026-08-20";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -7403,7 +7403,7 @@ var USERS = [];
 // Dados reais vêm do Supabase via loadAllData()
 var PERMS = {
   admin:    {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1,reportes:1,whatsapp:1,reversoes:1},
-  agenda:   {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,convenios:0,cashback:0,dentistas:0,usuarios:0,config:0,reportes:0,whatsapp:1},
+  agenda:   {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,convenios:0,cashback:0,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:1},
   cashback: {dashboard:1,atendimento:0,historico:0,pacientes:0,agendar:0,convenios:0,cashback:1,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:0},
   dentista: {dashboard:0,atendimento:0,historico:0,pacientes:0,agendar:0,convenios:0,cashback:1,dentistas:0,usuarios:0,config:0,reportes:0,whatsapp:0}
 };
@@ -7427,6 +7427,11 @@ function doLogout() {
 }
 
 function canAcc(p) { return CU && !!((PERMS[CU.role] || {})[p]); }
+
+// Só admin edita dentistas. Os demais perfis com acesso à aba (agenda,
+// cashback) veem em modo LEITURA — sem salvar, criar, unificar, excluir
+// nem gerenciar credencial.
+function podeEditarDent() { return !!(CU && CU.role === "admin"); }
 
 function applyNav() {
   var u = CU;
@@ -12161,7 +12166,7 @@ var AJUSTES_CB = [];
 // ══ DENTISTAS ══
 function rdent(){
   if(!canAcc("dentistas")){deny(document.getElementById("pgDt"));return;}
-  var h="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:18px'><div><h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>Dentistas Parceiros</h2></div><button class='btn btng' onclick='openDtM()'>+ Cadastrar</button></div><div class='sr'><div class='sw'><span class='swi'>🔍</span><input type='text' placeholder='Buscar...' oninput='filtDt(this.value)'></div></div><div class='card'><div class='tw'><table><thead><tr>";
+  var h="<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:18px'><div><h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>Dentistas Parceiros</h2></div>"+(podeEditarDent()?"<button class='btn btng' onclick='openDtM()'>+ Cadastrar</button>":"")+"</div><div class='sr'><div class='sw'><span class='swi'>🔍</span><input type='text' placeholder='Buscar...' oninput='filtDt(this.value)'></div></div><div class='card'><div class='tw'><table><thead><tr>";
   ["Dentista","CRO","Especialidade","Telefone","Indic.","Pontos","Nivel","Acoes"].forEach(function(c){h+="<th>"+c+"</th>";});
   h+="</tr></thead><tbody id='dtTb'></tbody></table></div></div>";
   document.getElementById("pgDt").innerHTML=h; bldDtRows();
@@ -12462,10 +12467,11 @@ function vpdAbrirHist(nome){
   }, 150);
 }
 
-function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong>"+(d.obs?"<span title='"+esc(d.obs)+"' style='cursor:help;font-size:.8rem;opacity:.75'>📝</span>":"")+"</div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:"+(Number(d.pts)<0?"#ef4444":"var(--g)")+";font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btno bsm bico' onclick='verPacientesDentista("+d.id+")' title='Pacientes deste dentista'>📋</button><button class='btn btno bsm bico' onclick='verExamesDentista("+d.id+")' title='Ver o que ele vê no FotonWeb'>👁️</button><button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button><button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button></div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
+function bldDtRows(){var data=dents;if(dtSrch)data=data.filter(function(d){return d.n.toLowerCase().indexOf(dtSrch)>=0||d.cro.toLowerCase().indexOf(dtSrch)>=0;});var nc={Bronze:"bo",Prata:"bgr",Ouro:"bgo",Diamante:"bt"};var h="";if(!data.length){h="<tr><td colspan='8' style='text-align:center;padding:22px;color:var(--gr)'>Nenhum dentista.</td></tr>";}else{data.forEach(function(d){h+="<tr><td><div style='display:flex;align-items:center;gap:9px'><div style='width:30px;height:30px;border-radius:50%;background:"+d.bg+";display:flex;align-items:center;justify-content:center;font-size:.71rem;font-weight:700;color:"+d.cor+";flex-shrink:0'>"+esc(d.ini)+"</div><strong>"+esc(d.n)+"</strong>"+(d.obs?"<span title='"+esc(d.obs)+"' style='cursor:help;font-size:.8rem;opacity:.75'>📝</span>":"")+"</div></td><td style='color:var(--gr)'>"+esc(d.cro)+"</td><td style='font-size:.8rem'>"+esc(d.esp)+"</td><td style='font-family:DM Mono,monospace;font-size:.77rem'>"+esc(d.tel)+"</td><td style='text-align:center'><strong>"+d.ind+"</strong></td><td style='font-family:DM Mono,monospace;color:"+(Number(d.pts)<0?"#ef4444":"var(--g)")+";font-weight:700'>"+fmtN(d.pts)+"</td><td><span class='badge "+(nc[d.nv]||"bgr")+"'>"+esc(d.nv)+"</span></td><td><div style='display:flex;gap:4px'><button class='btn btno bsm bico' onclick='openDtM("+d.id+")'>✏️</button><button class='btn btno bsm bico' onclick='verPacientesDentista("+d.id+")' title='Pacientes deste dentista'>📋</button><button class='btn btno bsm bico' onclick='verExamesDentista("+d.id+")' title='Ver o que ele vê no FotonWeb'>👁️</button>"+(canAcc('cashback')?"<button class='btn btnt bsm bico' onclick='rportal("+d.id+");navTo(\"cashback\")'>🦷</button>":"")+(podeEditarDent()?"<button class='btn btnr bsm bico' onclick='delDt("+d.id+")'>🗑️</button>":"")+"</div></td></tr>";});}var tb=document.getElementById("dtTb");if(tb)tb.innerHTML=h;}
 function filtDt(v){dtSrch=v.toLowerCase();bldDtRows();}
 function openDtM(eid){
   var ed=eid?fdent(eid):null;
+  var podeEd=podeEditarDent();
   var b="<div style='display:flex;flex-direction:column;gap:10px'>"+
     "<div class='field'><label>NOME</label><input id='dNm' value='"+(ed?esc(ed.n):"")+"' placeholder='Dr. Joao Silva'></div>"+
     "<div class='fg2'><div class='field'><label>CRO</label><input id='dCro' value='"+(ed?esc(ed.cro):"")+"'></div>"+
@@ -12574,12 +12580,29 @@ function openDtM(eid){
         : "<div style='color:#666;font-size:12px;padding:6px'>Salve o dentista primeiro para gerenciar o acesso ao FotonWeb</div>")+
     "</div></div>";
 
-  openM(ed?"Editar Dentista":"Cadastrar Dentista",b,(ed?[
-    // ⚡ v3.70 — conferir o que o dentista vê no FotonWeb (sem logar como ele)
-    {lbl:"👁️ Visão FotonWeb", cls:"btno", fn:function(){ verExamesDentista(ed.id); }},
-    // ⚡ v3.68 — unificar cadastro duplicado direto pelo APPCOR
-    {lbl:"🔀 Unificar", cls:"btno", fn:function(){ unificarDentistaUI(ed.id); }}
-  ]:[]).concat([
+  // Modo LEITURA (não-admin): desabilita todos os campos do formulário. Um
+  // <fieldset disabled> cobre também os controles renderizados depois (logo,
+  // endereços) — nada persiste porque o botão Salvar nem aparece.
+  if(!podeEd){
+    b = "<fieldset disabled style='border:0;margin:0;padding:0;min-width:0'>" + b + "</fieldset>";
+  }
+
+  // Botões do topo: WhatsApp (contato rápido) + Visão FotonWeb sempre; Unificar
+  // só admin.
+  var _dtTop = [];
+  if(ed){
+    _dtTop.push({lbl:"💬 WhatsApp", cls:"btnt", fn:function(){
+      var tel=(document.getElementById("dTel")?document.getElementById("dTel").value:"")||(ed&&ed.tel)||"";
+      tel=String(tel).replace(/\D/g,"");
+      if(!tel){toast("Atenção","Dentista sem telefone cadastrado.");return;}
+      if(abrirWhatsApp(tel,"")===false){toast("Atenção","Telefone inválido: "+((ed&&ed.tel)||""));}
+    }});
+    _dtTop.push({lbl:"👁️ Visão FotonWeb", cls:"btno", fn:function(){ verExamesDentista(ed.id); }});
+    if(podeEd) _dtTop.push({lbl:"🔀 Unificar", cls:"btno", fn:function(){ unificarDentistaUI(ed.id); }});
+  }
+
+  // Rodapé: admin salva; leitura só fecha.
+  var _dtEnd = podeEd ? [
     {lbl:"Cancelar",cls:"btno",fn:closeM},
     {lbl:ed?"Salvar":"Cadastrar",cls:"btng",fn:function(){
       var nm=document.getElementById("dNm").value.trim();
@@ -12625,7 +12648,10 @@ function openDtM(eid){
       });
       closeM();rdent();toast("✅",nm+(ed?" atualizado":" cadastrado"));
     }}
-  ]));
+  ] : [
+    {lbl:"Fechar",cls:"btno",fn:closeM}
+  ];
+  openM(ed?(podeEd?"Editar Dentista":"Dentista"):"Cadastrar Dentista", b, _dtTop.concat(_dtEnd));
 
   // Carregar endereços se editando
   if(ed) dentEndLoad(ed.id);
@@ -12637,11 +12663,16 @@ function openDtM(eid){
   } else {
     window._dentLogoEditId = null;
   }
-  // Carregar status credencial FotonWeb se editando
-  if(ed && ed.fid) dentAuthLoad(ed.fid, ed.n);
-  else if(ed && !ed.fid) {
-    var elAuth = document.getElementById("dentAuthContent");
-    if(elAuth) elAuth.innerHTML = "<div style='color:#f59e0b;font-size:12px;padding:6px'>⚠️ Dentista sem firebird_id. Sync pendente.</div>";
+  // Carregar status credencial FotonWeb se editando — só admin gerencia.
+  if(podeEd){
+    if(ed && ed.fid) dentAuthLoad(ed.fid, ed.n);
+    else if(ed && !ed.fid) {
+      var elAuth = document.getElementById("dentAuthContent");
+      if(elAuth) elAuth.innerHTML = "<div style='color:#f59e0b;font-size:12px;padding:6px'>⚠️ Dentista sem firebird_id. Sync pendente.</div>";
+    }
+  } else if(ed){
+    var elAuthRO = document.getElementById("dentAuthContent");
+    if(elAuthRO) elAuthRO.innerHTML = "<div style='color:#888;font-size:12px;padding:6px'>Somente administradores gerenciam o acesso ao FotonWeb.</div>";
   }
 }
 
