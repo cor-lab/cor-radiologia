@@ -3802,7 +3802,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v4.0 - 2026-08-20";
+var APP_VERSION = "v4.1 - 2026-08-21";
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -4207,12 +4207,15 @@ function calcNotaPorItens(ag, formaPg){
   var itensSD = itensFaturaveis.filter(function(it){ return temComDesc ? !itemTemDesconto(it) : false; });
   var totalSD = (typeof somarItens === "function") ? somarItens(itensSD) : 0;
   var baseCD = (typeof somarItens === "function") ? somarItens(itensCD) : 0;
-  // v3.53 — parte paga em PONTOS = preço particular cheio (sem desconto de
-  // forma). Desconto da forma só sobre o saldo restante em dinheiro.
-  var dpNota = Number(ag.desconto_pontos || 0);
-  var calc = calcularValorFinalComDesconto(Math.max(0, baseCD - dpNota), formaPg);
+  // ⚡ v4.1 — PONTOS = MOEDA. O desconto da forma (à vista/3x/4x) incide sobre
+  // o valor PARTICULAR CHEIO; os pontos abatem DEPOIS, como um pagamento
+  // (aplicado no valor da nota e no caixa). Antes (v3.53) o % caía só sobre o
+  // saldo já sem os pontos, gerando desconto menor — ex.: 20% de (245-25)=220
+  // dava R$44 em vez dos R$49 corretos (20% de 245). Regra confirmada pelo
+  // Vine: "pontos é moeda, abate como pagamento à vista, depois dos descontos".
+  var calc = calcularValorFinalComDesconto(baseCD, formaPg);
   calc.valor_bruto = baseCD + totalSD;                        // bruto cheio
-  calc.valor_faturado = Math.min(dpNota, baseCD) + calc.valor_faturado + totalSD;  // pontos cheio + resto c/ desconto
+  calc.valor_faturado = calc.valor_faturado + totalSD;        // desconto sobre o cheio + itens s/ desconto
   // Arredonda pra evitar drift de centavo após soma
   calc.valor_bruto = Number(Number(calc.valor_bruto).toFixed(2));
   calc.valor_faturado = Number(Number(calc.valor_faturado).toFixed(2));
