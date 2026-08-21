@@ -9730,7 +9730,10 @@ function agEV(ev, id) {
     })(a);
   }
 
-  if((a.status_fiscal || "")=="emitida" && CANCELAMENTO_APPCOR_ATIVO){
+  if((a.status_fiscal || "")=="emitida"){
+    // v4.2 — botão de cancelar só aparece com a chave CANCELAMENTO_APPCOR_ATIVO.
+    // Imprimir/WhatsApp/Email continuam sempre disponíveis.
+    if(CANCELAMENTO_APPCOR_ATIVO){
     (function(ag){
       btns.push({
         lbl:"🛑 Cancelar nota",
@@ -9741,6 +9744,7 @@ function agEV(ev, id) {
         }
       });
     })(a);
+    }
     (function(ag){
       btns.push({
         lbl:"🖨️ Imprimir nota",
