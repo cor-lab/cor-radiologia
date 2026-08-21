@@ -3796,7 +3796,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v4.2 - 2026-08-21";
+var APP_VERSION = "v4.3 - 2026-08-21";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -9615,6 +9615,32 @@ function agEV(ev, id) {
     var _dpDent = a.desconto_pontos_dentista_id ? fdent(a.desconto_pontos_dentista_id) : fdent(a.dId);
     b += "<div style=\"margin:6px 0 2px;padding:8px 12px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);border-radius:8px;font-size:.82rem\">🪙 Desconto de pontos: <b>R$ " + Number(a.desconto_pontos).toFixed(2).replace(".", ",") + "</b> <span style=\"opacity:.7\">(debitado de <b>" + (_dpDent ? esc(_dpDent.n) : "dentista") + "</b> — desmarque 🪙 Pontos para estornar)</span></div>";
   }
+
+  // 💰 v4.3 — VALOR FINAL A COBRAR DO PACIENTE (dinheiro / cartão / pix).
+  // A secretária precisa do número já pronto, com os pontos abatidos e os
+  // itens de convênio separados, pra não calcular na mão (caso ALICE: exames
+  // R$196 após descontos − R$25 em pontos = R$171 a cobrar). Esse mesmo valor
+  // é o que sai na NFS-e (a nota é emitida por valor_faturado − desconto_pontos,
+  // linha ~5281). Só aparece quando há valor faturável (> 0).
+  (function(){
+    var _cm = _calcModal || { faturado:0, naoFaturavel:0 };
+    var _fatCobr = Number(_cm.faturado || 0);
+    var _dpCobr  = Number(a.desconto_pontos || 0);
+    var _naoFat  = Number(_cm.naoFaturavel || 0);
+    var _aCobrar = Math.max(0, _fatCobr - _dpCobr);
+    if(_fatCobr <= 0.009 && _naoFat <= 0.009) return; // atendimento sem valor: não mostra
+    var _brl = function(v){ return "R$ " + Number(v).toFixed(2).replace(".", ","); };
+    b += "<div style=\"margin:10px 0 2px;padding:12px 14px;background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.55);border-radius:10px\">";
+    b += "<div style=\"font-size:1.02rem;font-weight:700\">💰 A cobrar do paciente <span style=\"font-weight:600;opacity:.75;font-size:.82rem\">(dinheiro / cartão / pix)</span>: <span style=\"color:var(--g)\">" + _brl(_aCobrar) + "</span></div>";
+    if(_dpCobr > 0.009){
+      b += "<div style=\"font-size:.8rem;color:var(--gr);margin-top:5px\">" + _brl(_fatCobr) + " (após descontos) − " + _brl(_dpCobr) + " em pontos = <b style=\"color:var(--g)\">" + _brl(_aCobrar) + "</b></div>";
+    }
+    if(_naoFat > 0.009){
+      b += "<div style=\"font-size:.78rem;color:var(--gr);margin-top:4px\">+ " + _brl(_naoFat) + " em itens de convênio — faturados ao convênio, <b>não cobrados do paciente</b>.</div>";
+    }
+    b += "<div style=\"font-size:.74rem;color:var(--gr);margin-top:5px;opacity:.85\">📄 Este é também o valor da nota fiscal.</div>";
+    b += "</div>";
+  })();
 
   // ✉️ v3.79 — Status do aviso ao dentista por e-mail (só quando realizado).
   // Placeholder preenchido de forma assíncrona por carregarStatusAvisoDentista()
