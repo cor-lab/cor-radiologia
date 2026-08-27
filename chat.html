@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════
+  COR • CHAT  —  app SOMENTE CHAT (standalone)
+  ─────────────────────────────────────────────────────────────────────────
+  Versão enxuta pra PCs que NÃO devem ter o APPCOR completo.
+  Tem login próprio (mesmo Supabase/usuários) e carrega EXATAMENTE os mesmos
+  módulos do APPCOR: chat_cor.js, chat_push.js (+ chat_sw.js na raiz).
+  Assim é uma base de código só — atualizou o chat, os dois pegam junto.
+
+  COMO USAR: coloque chat.html na MESMA pasta do index.html (mesmo repositório),
+  junto de chat_cor.js, chat_push.js e chat_sw.js. Nos PCs só-chat, abra chat.html
+  (crie um atalho/ícone) em vez do index.html.
+
+  Perfis com acesso ao chat: admin, agenda, cashback (mesma regra do APPCOR).
+  ═══════════════════════════════════════════════════════════════════════════
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#4ab848">
+<title>COR • Chat</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --g:#4ab848; --g2:#7dcf6e; --tx:#334155; --gr:#94a3b8;
+    --bd:#e5e7eb; --card:#ffffff; --bg:#f1f5f9; --bg2:#f8fafc;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--tx);background:var(--bg)}
+  /* ── Login ── */
+  #login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#eafaef,#f1f5f9);padding:18px}
+  .lcard{width:100%;max-width:360px;background:#fff;border:1px solid var(--bd);border-radius:16px;padding:28px 24px;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+  .llogo{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:4px}
+  .llogo b{font-size:1.35rem;color:var(--g)}
+  .lsub{text-align:center;color:var(--gr);font-size:.85rem;margin-bottom:20px}
+  .lf{margin-bottom:12px}
+  .lf label{display:block;font-size:.78rem;color:var(--gr);margin-bottom:4px}
+  .lf input{width:100%;padding:11px 12px;border:1px solid var(--bd);border-radius:10px;font-size:.95rem;outline:none}
+  .lf input:focus{border-color:var(--g)}
+  .lbtn{width:100%;padding:12px;border:none;border-radius:10px;background:var(--g);color:#fff;font-weight:700;font-size:.95rem;cursor:pointer;margin-top:6px}
+  .lbtn:disabled{opacity:.6;cursor:default}
+  .lerr{color:#ef4444;font-size:.82rem;text-align:center;margin-top:10px;min-height:18px}
+  /* ── App shell ── */
+  #app{display:none;height:100%;flex-direction:column}
+  .hd{height:54px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 14px;background:#fff;border-bottom:1px solid var(--bd)}
+  .hd .hl{display:flex;align-items:center;gap:8px;font-weight:800;color:var(--g)}
+  .hd .sp{flex:1}
+  .hd .uav{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700}
+  .hd .unm{font-size:.85rem;font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hd button{border:1px solid var(--bd);background:var(--bg2);color:var(--tx);border-radius:9px;padding:7px 11px;font-size:.82rem;cursor:pointer}
+  .hd button:hover{background:var(--bg)}
+  .hd .bsair{color:#ef4444}
+  #page-chat{flex:1;min-height:0;padding:10px}
+  /* o módulo usa calc(100vh - 150px); aqui o header é menor, então ajustamos */
+  #page-chat .cc-wrap{height:calc(100vh - 78px)}
+  @media(max-width:640px){ .hd .unm{max-width:90px} }
+  /* toast (mesmo id/estrutura que o módulo espera) */
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:#111827;color:#fff;padding:11px 16px;border-radius:12px;display:flex;align-items:center;gap:9px;opacity:0;pointer-events:none;transition:.25s;z-index:9999;max-width:90vw;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN ══ -->
+<div id="login">
+  <div class="lcard">
+    <div class="llogo">💬 <b>COR • Chat</b></div>
+    <div class="lsub">Chat interno da equipe</div>
+    <div class="lf">
+      <label>E-mail</label>
+      <input type="email" id="lEmail" autocomplete="username" placeholder="voce@corsm.com.br">
+    </div>
+    <div class="lf">
+      <label>Senha</label>
+      <input type="password" id="lPass" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <button class="lbtn" id="lBtn">Entrar</button>
+    <div class="lerr" id="lErr"></div>
+  </div>
+</div>
+
+<!-- ══ APP (chat) ══ -->
+<div id="app">
+  <div class="hd">
+    <div class="hl">💬 COR&nbsp;Chat</div>
+    <div class="sp"></div>
+    <button id="btnNotif" title="Ativar avisos neste PC">🔔 Avisos</button>
+    <div class="uav" id="uAv">?</div>
+    <div class="unm" id="uNm">—</div>
+    <button class="bsair" id="btnSair">Sair</button>
+  </div>
+  <!-- o módulo chat_cor.js renderiza aqui dentro -->
+  <div id="page-chat" class="page active"></div>
+</div>
+
+<!-- toast -->
+<div class="toast" id="toast"><span id="tIco">✅</span><span id="tMsg" style="font-size:.85rem;font-weight:500"></span></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+//  Shell mínimo: fornece os globais que chat_cor.js / chat_push.js usam
+//  (supa, CU, toast, navTo, PERMS) + login/sessão próprios.
+// ══════════════════════════════════════════════════════════════════
+var SUPA_URL = "https://flpvzvtbhuyjjdqyrsza.supabase.co";
+var SUPA_KEY = "sb_publishable_EWmUEcw77PcCJDyZ6i2xMg_d5Ode_SM";
+var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+// perfis liberados (mesma regra do APPCOR)
+window.PERMS = { admin:{chat:1}, agenda:{chat:1}, cashback:{chat:1}, dentista:{} };
+window.CU = null;
+
+// toast (mesma assinatura do APPCOR)
+var _tT;
+window.toast = function(ico, msg){
+  document.getElementById("tIco").textContent = ico;
+  document.getElementById("tMsg").textContent = msg;
+  var t = document.getElementById("toast");
+  t.classList.add("show");
+  clearTimeout(_tT);
+  _tT = setTimeout(function(){ t.classList.remove("show"); }, 3000);
+};
+
+// navTo: no app só-chat a página do chat está sempre visível
+window.navTo = function(){
+  var p = document.getElementById("page-chat");
+  if (p) p.classList.add("active");
+  var app = document.getElementById("app");
+  try { if (window.focus) window.focus(); } catch(e){}
+};
+
+function _erroLogin(msg){ document.getElementById("lErr").textContent = msg || ""; }
+
+function _montarCU(u, authId){
+  window.CU = {
+    id: authId,
+    nome: u.nome, email: u.email, role: u.role,
+    ini: u.ini || "AD",
+    bg: u.bg || "linear-gradient(135deg,#4ab848,#7dcf6e)",
+    cor: u.cor || "#fff", ativo: true, dentId: u.dent_id
+  };
+}
+function _mostrarApp(){
+  document.getElementById("login").style.display = "none";
+  document.getElementById("app").style.display = "flex";
+  var u = window.CU;
+  var av = document.getElementById("uAv");
+  av.style.background = u.bg; av.style.color = u.cor; av.textContent = u.ini;
+  document.getElementById("uNm").textContent = (u.nome||"").split(" ").slice(0,2).join(" ");
+  // chat_cor.js (já carregado) detecta o CU em até ~1,5s e inicia sozinho
+}
+
+async function _login(){
+  var btn = document.getElementById("lBtn");
+  var email = (document.getElementById("lEmail").value || "").trim().toLowerCase();
+  var pass  = document.getElementById("lPass").value || "";
+  if (!email || !pass){ _erroLogin("Preencha e-mail e senha."); return; }
+  _erroLogin(""); btn.disabled = true; btn.textContent = "Entrando…";
+  try {
+    var ar = await supa.auth.signInWithPassword({ email: email, password: pass });
+    if (ar.error || !ar.data || !ar.data.user){ _erroLogin("E-mail ou senha inválidos."); return; }
+    var pr = await supa.from("usuarios").select("*").eq("email", email).eq("ativo", true).single();
+    if (pr.error || !pr.data){ await supa.auth.signOut(); _erroLogin("Usuário sem acesso ao chat. Fale com o administrador."); return; }
+    if (!window.PERMS[pr.data.role] || !window.PERMS[pr.data.role].chat){ await supa.auth.signOut(); _erroLogin("Seu perfil não tem acesso ao chat."); return; }
+    _montarCU(pr.data, ar.data.user.id);
+    _mostrarApp();
+  } catch(e){ _erroLogin("Falha ao entrar. Tente de novo."); }
+  finally { btn.disabled = false; btn.textContent = "Entrar"; }
+}
+
+async function _restaurarSessao(){
+  try {
+    var s = await supa.auth.getSession();
+    if (!s.data || !s.data.session || !s.data.session.user) return;
+    var email = (s.data.session.user.email || "").toLowerCase();
+    var pr = await supa.from("usuarios").select("*").eq("email", email).eq("ativo", true).single();
+    if (pr.error || !pr.data) return;
+    if (!window.PERMS[pr.data.role] || !window.PERMS[pr.data.role].chat) return;
+    _montarCU(pr.data, s.data.session.user.id);
+    _mostrarApp();
+  } catch(e){}
+}
+
+async function _sair(){
+  try { if (window.ChatCOR && ChatCOR.onLogout) ChatCOR.onLogout(); } catch(e){}
+  try { await supa.auth.signOut(); } catch(e){}
+  window.CU = null;
+  document.getElementById("app").style.display = "none";
+  document.getElementById("login").style.display = "flex";
+  document.getElementById("lPass").value = "";
+}
+
+// eventos
+document.getElementById("lBtn").addEventListener("click", _login);
+document.getElementById("lPass").addEventListener("keydown", function(e){ if(e.key==="Enter") _login(); });
+document.getElementById("lEmail").addEventListener("keydown", function(e){ if(e.key==="Enter") document.getElementById("lPass").focus(); });
+document.getElementById("btnSair").addEventListener("click", _sair);
+document.getElementById("btnNotif").addEventListener("click", function(){
+  if (window.ChatPush && ChatPush.ativar) ChatPush.ativar();
+  else toast("ℹ️","Avisos indisponíveis neste navegador.");
+});
+
+// e-mail sempre minúsculo (igual APPCOR)
+document.getElementById("lEmail").addEventListener("input", function(){
+  var v=this.value||""; if(v!==v.toLowerCase()){ var i=this.selectionStart; this.value=v.toLowerCase(); try{this.setSelectionRange(i,i);}catch(e){} }
+});
+
+_restaurarSessao();
+</script>
+
+<!-- MESMOS módulos do APPCOR (base única). Mantenha o ?v= igual ao do index.html. -->
+<script src="chat_cor.js?v=20260827d"></script>
+<script src="chat_push.js?v=20260827"></script>
+</body>
+</html>
