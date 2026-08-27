@@ -337,9 +337,61 @@
     var tot = 0; for (var k in _naoLidas) if (_naoLidas.hasOwnProperty(k)) tot += (_naoLidas[k] || 0);
     _setBadge(tot);
   }
+  // ── Marca de não-lidas na barra de tarefas (título + favicon + app badge) ──
+  var _baseTitle = null, _origFav = null, _favEl = null;
+  function _initBadgeSis() {
+    if (_baseTitle === null) _baseTitle = document.title || "COR • Chat";
+    if (_origFav === null) { var l = document.querySelector("link[rel~='icon']"); _origFav = l ? l.href : ""; }
+  }
+  function _ensureFavEl() {
+    if (_favEl) return _favEl;
+    _favEl = document.querySelector("link[rel~='icon']");
+    if (!_favEl) { _favEl = document.createElement("link"); _favEl.rel = "icon"; document.head.appendChild(_favEl); }
+    return _favEl;
+  }
+  function _drawRound(ctx, x, y, w, h, r, fill) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+  }
+  function _setTitleBadge(n) { try { document.title = n > 0 ? ("(" + (n > 99 ? "99+" : n) + ") " + _baseTitle) : _baseTitle; } catch (e) {} }
+  function _setAppBadge(n) { try { if (navigator.setAppBadge) { if (n > 0) navigator.setAppBadge(n); else if (navigator.clearAppBadge) navigator.clearAppBadge(); } } catch (e) {} }
+  function _pintaBadge(base, n) {
+    try {
+      var c = document.createElement("canvas"); c.width = 64; c.height = 64; var ctx = c.getContext("2d");
+      if (base) { try { ctx.drawImage(base, 0, 0, 64, 64); } catch (e) { base = null; } }
+      if (!base) {
+        _drawRound(ctx, 2, 2, 60, 60, 14, "#4ab848");
+        ctx.fillStyle = "#fff"; ctx.font = "bold 22px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("COR", 32, 34);
+      }
+      if (n > 0) {
+        ctx.beginPath(); ctx.arc(50, 14, 14, 0, 6.2832); ctx.fillStyle = "#ef4444"; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke();
+        ctx.fillStyle = "#fff"; ctx.font = "bold " + (n > 9 ? "13" : "18") + "px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(n > 9 ? "9+" : String(n), 50, 15);
+      }
+      _ensureFavEl().href = c.toDataURL("image/png");
+    } catch (e) {}
+  }
+  function _setFaviconBadge(n) {
+    if (_origFav) {
+      if (n <= 0) { _ensureFavEl().href = _origFav; return; }
+      var img = new Image();
+      img.onload = function () { _pintaBadge(img, n); };
+      img.onerror = function () { _pintaBadge(null, n); };
+      img.src = _origFav;
+    } else {
+      _pintaBadge(null, n); // ícone base "COR" — com badge se n>0, sem badge se n<=0
+    }
+  }
   function _setBadge(n) {
-    var el = document.getElementById("chatNavBadge"); if (!el) return;
-    if (n > 0) { el.textContent = n > 99 ? "99+" : n; el.style.display = ""; } else { el.style.display = "none"; }
+    var el = document.getElementById("chatNavBadge");
+    if (el) { if (n > 0) { el.textContent = n > 99 ? "99+" : n; el.style.display = ""; } else { el.style.display = "none"; } }
+    _initBadgeSis();
+    _setTitleBadge(n); _setFaviconBadge(n); _setAppBadge(n);
   }
 
   // ══ Envio ══
