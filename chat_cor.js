@@ -93,7 +93,9 @@
       + ".cc-row{display:flex;gap:9px;margin-top:9px;max-width:78%}"
       + ".cc-row.me{align-self:flex-end;flex-direction:row-reverse}"
       + ".cc-av{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700}"
-      + ".cc-bub{background:var(--card,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:12px;padding:7px 11px;min-width:0;color:#1f2937}"
+      + ".cc-bub{position:relative;background:var(--card,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:12px;padding:7px 11px;min-width:0;color:#1f2937}"
+      + ".cc-x{position:absolute;top:-8px;right:-8px;border:none;background:#ef4444;color:#fff;width:20px;height:20px;border-radius:50%;font-size:.62rem;line-height:20px;text-align:center;cursor:pointer;display:none;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.25)}"
+      + ".cc-row:hover .cc-x{display:block}"
       + ".cc-row.me .cc-bub{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff}"
       + ".cc-bub .cc-nome{font-size:.74rem;font-weight:700;margin-bottom:2px;opacity:.85}"
       + ".cc-row.me .cc-av{display:none}"
@@ -438,9 +440,18 @@
   function _onEditada(m) {
     if (!m || m.canal_id !== _canalAtual) return;
     var el = document.querySelector(".cc-row[data-id='" + m.id + "']"); if (!el) return;
-    var txt = el.querySelector(".cc-txt"); if (!txt) return;
-    if (m.deletada) { txt.className = "cc-txt cc-del"; txt.textContent = "mensagem removida"; }
-    else txt.textContent = m.conteudo;
+    var bub = el.querySelector(".cc-bub"); if (!bub) return;
+    if (m.deletada) {
+      // remove texto, imagem/arquivo e o botão excluir; deixa só o "mensagem removida"
+      var nome = bub.querySelector(".cc-nome");
+      var hr = bub.querySelector(".cc-hr");
+      bub.innerHTML = "";
+      if (nome) bub.appendChild(nome);
+      var t = document.createElement("div"); t.className = "cc-txt cc-del"; t.textContent = "mensagem removida"; bub.appendChild(t);
+      if (hr) bub.appendChild(hr);
+    } else {
+      var txt = bub.querySelector(".cc-txt"); if (txt) txt.textContent = m.conteudo;
+    }
   }
   function _telaChatAtiva() {
     var pg = document.getElementById("page-chat");
@@ -598,7 +609,26 @@
     }
     var hr = document.createElement("div"); hr.className = "cc-hr"; hr.textContent = _horaFmt(m.criada_em) + (m.editada_em ? " · editada" : "");
     bub.appendChild(hr);
+    if (meu && !m.deletada) {
+      var x = document.createElement("button"); x.className = "cc-x"; x.title = "Excluir mensagem"; x.textContent = "✕";
+      x.addEventListener("click", function (ev) { ev.stopPropagation(); _excluirMsg(m); });
+      bub.appendChild(x);
+    }
     row.appendChild(av); row.appendChild(bub); return row;
+  }
+
+  async function _excluirMsg(m) {
+    var me = _me(); if (!me || !m || m.autor_id !== me.id) return;
+    if (!window.confirm("Excluir esta mensagem para todos?")) return;
+    try {
+      // apaga o arquivo no R2 (se houver) — best-effort
+      if (m.anexo_path) {
+        try { await supa.functions.invoke("chat-anexo", { body: { action: "del", canal_id: m.canal_id, key: m.anexo_path } }); } catch (e) {}
+      }
+      var r = await supa.from("chat_mensagens").update({ deletada: true }).eq("id", m.id);
+      if (r.error) { if (typeof toast === "function") toast("⚠️", "Não foi possível excluir."); return; }
+      _onEditada({ id: m.id, canal_id: m.canal_id, deletada: true }); // reflete já na tela
+    } catch (e) { if (typeof toast === "function") toast("⚠️", "Falha ao excluir a mensagem."); }
   }
   function _scrollFim() { var box = document.getElementById("cc-msgs"); if (box) box.scrollTop = box.scrollHeight; }
 
