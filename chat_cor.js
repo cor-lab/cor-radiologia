@@ -55,17 +55,29 @@
     } catch (e) { return ""; }
   }
 
+  // ── Som (AudioContext compartilhado, destrava no 1º gesto do usuário) ──
+  var _somLigado = true;
+  try { _somLigado = localStorage.getItem("cc_som") !== "0"; } catch (e) {}
+  var _ac = null;
+  function _acCtx() {
+    if (!_ac) { var AC = window.AudioContext || window.webkitAudioContext; if (AC) { try { _ac = new AC(); } catch (e) {} } }
+    return _ac;
+  }
+  function _unlockAudio() { var ac = _acCtx(); if (ac && ac.state === "suspended") { try { ac.resume(); } catch (e) {} } }
   function _beep() {
+    if (!_somLigado) return;
     try {
-      var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-      var ac = new AC(), o = ac.createOscillator(), g = ac.createGain();
+      var ac = _acCtx(); if (!ac) return;
+      if (ac.state === "suspended") { try { ac.resume(); } catch (e) {} }
+      var o = ac.createOscillator(), g = ac.createGain();
       o.connect(g); g.connect(ac.destination);
-      o.type = "sine"; o.frequency.value = 680;
+      o.type = "sine";
+      o.frequency.setValueAtTime(880, ac.currentTime);
+      o.frequency.exponentialRampToValueAtTime(620, ac.currentTime + 0.18);
       g.gain.setValueAtTime(0.0001, ac.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.14, ac.currentTime + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.32);
-      o.start(); o.stop(ac.currentTime + 0.34);
-      o.onended = function () { try { ac.close(); } catch (e) {} };
+      g.gain.exponentialRampToValueAtTime(0.2, ac.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.36);
+      o.start(); o.stop(ac.currentTime + 0.37);
     } catch (e) {}
   }
 
@@ -126,6 +138,14 @@
       + ".cc-ppi .cc-ppb{display:flex;gap:6px;flex-shrink:0}"
       + ".cc-ppi .cc-ppb button{border:1px solid var(--bd,#e5e7eb);background:var(--bg2,#f8fafc);border-radius:8px;padding:6px 9px;font-size:.76rem;cursor:pointer;white-space:nowrap}"
       + ".cc-ppi .cc-ppb .cc-ok{background:var(--g,#4ab848);color:#fff;border-color:var(--g,#4ab848)}"
+      + ".cc-nhost{position:fixed;top:14px;right:14px;display:flex;flex-direction:column;gap:9px;z-index:99999;max-width:330px}"
+      + ".cc-note{display:flex;gap:11px;align-items:center;border-radius:13px;padding:11px 13px;cursor:pointer;transform:translateX(120%);opacity:0;transition:.3s cubic-bezier(.2,.9,.3,1);box-shadow:0 10px 30px rgba(0,0,0,.22);border-left:5px solid var(--g,#4ab848);background:linear-gradient(120deg,#ffffff 55%,#ecfdf3)}"
+      + ".cc-note.show{transform:translateX(0);opacity:1}"
+      + ".cc-note-av{width:40px;height:40px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.82rem;box-shadow:0 2px 6px rgba(0,0,0,.18)}"
+      + ".cc-note-body{min-width:0}"
+      + ".cc-note-nm{font-size:.82rem;font-weight:800;color:#166534;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+      + ".cc-note-tx{font-size:.86rem;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}"
+      + ".cc-note-ic{margin-left:auto;font-size:1.1rem;align-self:flex-start;opacity:.9}"
       + ".cc-row.me .cc-bub{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff}"
       + ".cc-bub .cc-nome{font-size:.74rem;font-weight:700;margin-bottom:2px;opacity:.85}"
       + ".cc-row.me .cc-av{display:none}"
@@ -424,6 +444,39 @@
     }
   }
 
+  // ── Toast colorido de mensagem nova (clicável) ──
+  function _ccNotify(m) {
+    var host = document.getElementById("cc-notify-host");
+    if (!host) { host = document.createElement("div"); host.id = "cc-notify-host"; host.className = "cc-nhost"; document.body.appendChild(host); }
+    var card = document.createElement("div"); card.className = "cc-note";
+    var av = document.createElement("div"); av.className = "cc-note-av";
+    av.style.background = m.autor_bg || "#4ab848"; av.style.color = m.autor_cor || "#fff"; av.textContent = m.autor_ini || "?";
+    var body = document.createElement("div"); body.className = "cc-note-body";
+    var nm = document.createElement("div"); nm.className = "cc-note-nm";
+    nm.textContent = (m.autor_nome || "Alguém") + (_ehDM(m.canal_id) ? "" : " · #" + _nomeCanal(m.canal_id));
+    var tx = document.createElement("div"); tx.className = "cc-note-tx";
+    tx.textContent = (m.conteudo && m.conteudo.length) ? m.conteudo : (m.anexo_nome ? "📎 " + m.anexo_nome : "(mensagem)");
+    body.appendChild(nm); body.appendChild(tx);
+    var ic = document.createElement("div"); ic.className = "cc-note-ic"; ic.textContent = "💬";
+    card.appendChild(av); card.appendChild(body); card.appendChild(ic);
+    var canal = m.canal_id;
+    card.addEventListener("click", function () { _irParaConversa(canal); if (card.parentNode) card.parentNode.removeChild(card); });
+    host.appendChild(card);
+    requestAnimationFrame(function () { card.classList.add("show"); });
+    setTimeout(function () { card.classList.remove("show"); setTimeout(function () { if (card.parentNode) card.parentNode.removeChild(card); }, 320); }, 5200);
+  }
+  function _irParaConversa(canalId) {
+    if (typeof navTo === "function") navTo("chat");
+    _abrirCanal(canalId);
+  }
+  function _toggleSom() {
+    _somLigado = !_somLigado;
+    try { localStorage.setItem("cc_som", _somLigado ? "1" : "0"); } catch (e) {}
+    var b = document.getElementById("cc-head-som"); if (b) b.textContent = _somLigado ? "🔔" : "🔕";
+    if (_somLigado) { _unlockAudio(); _beep(); if (typeof toast === "function") toast("🔔", "Som das notificações ligado."); }
+    else if (typeof toast === "function") toast("🔕", "Som das notificações desligado.");
+  }
+
   async function _novoCanal() {
     var me = _me(); if (!me) return;
     var nome = window.prompt("Nome do novo canal da equipe (ex: Recepção, Financeiro):");
@@ -461,13 +514,7 @@
     _recalcularBadgeMemoria(); _renderLista();
     if (_bootstrap) {
       _beep();
-      var quem = (m.autor_nome || "Alguém").split(" ")[0];
-      var ondeC = _ehDM(m.canal_id) ? "" : (" em #" + _nomeCanal(m.canal_id));
-      var corpo;
-      if (m.conteudo && m.conteudo.length) corpo = m.conteudo.length > 40 ? m.conteudo.slice(0, 40) + "…" : m.conteudo;
-      else if (m.anexo_path) corpo = "📎 " + (m.anexo_nome || "arquivo");
-      else corpo = "";
-      if (typeof toast === "function") toast("💬", quem + ondeC + ": " + corpo);
+      _ccNotify(m);
     }
   }
   function _onEditada(m) {
@@ -514,6 +561,7 @@
         "<div class='cc-main'>" +
           "<div class='cc-head' id='cc-head'>" +
             "<span id='cc-head-title'>—</span><span style='flex:1'></span>" +
+            "<button class='cc-hbtn' id='cc-head-som' title='Som das notificações'>🔔</button>" +
             "<button class='cc-hbtn' id='cc-head-pend' title='Minhas pendências'>📌 <span id='cc-pend-cnt' style='font-size:.82rem;font-weight:700'>0</span></button>" +
             "<button class='cc-hbtn' id='cc-head-search' title='Buscar na conversa'>🔍</button>" +
           "</div>" +
@@ -552,6 +600,8 @@
     var hp = document.getElementById("cc-head-pend");
     if (hp) hp.addEventListener("click", _abrirPendencias);
     _atualizarPendCount();
+    var hsom = document.getElementById("cc-head-som");
+    if (hsom) { hsom.textContent = _somLigado ? "🔔" : "🔕"; hsom.addEventListener("click", _toggleSom); }
     if (si) {
       si.addEventListener("input", function () { _fazerBusca(si.value); });
       si.addEventListener("keydown", function (e) {
@@ -841,6 +891,9 @@
   // ══ Boot ══
   function _boot() {
     _liberarPerms(); _injetarNav(); _vigiarSessao();
+    // destrava o áudio no primeiro gesto do usuário (contorna o bloqueio dos navegadores)
+    document.addEventListener("click", _unlockAudio, true);
+    document.addEventListener("keydown", _unlockAudio, true);
     var me = _me();
     if (me && me.id && PERFIS_CHAT.indexOf(me.role) >= 0) _iniciar();
   }
