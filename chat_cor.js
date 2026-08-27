@@ -374,7 +374,7 @@
         ctx.fillText("COR", 32, 34);
       }
       if (n > 0) {
-        ctx.beginPath(); ctx.arc(50, 14, 14, 0, 6.2832); ctx.fillStyle = "#ef4444"; ctx.fill();
+        ctx.beginPath(); ctx.arc(50, 14, 14, 0, 6.2832); ctx.fillStyle = "#e00000"; ctx.fill();
         ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke();
         ctx.fillStyle = "#fff"; ctx.font = "bold " + (n > 9 ? "13" : "18") + "px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(n > 9 ? "9+" : String(n), 50, 15);
