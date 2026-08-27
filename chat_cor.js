@@ -35,6 +35,8 @@
   var _urlCache = {};        // key(anexo) -> {url, exp}  (evita re-assinar a cada render)
   var MAX_ANEXO = 10 * 1024 * 1024;  // 10 MB
   var _busca = { termo: "", hits: [], idx: -1 };  // busca dentro da conversa
+  var _pend = {};            // mensagem_id -> {canal_id, resumo, autor_nome, criada_em}  (minhas pendências)
+  var _painelPendAberto = false;
 
   function _me() { return (typeof CU !== "undefined" && CU) ? CU : null; }
   function _esc(s) {
@@ -107,6 +109,23 @@
       + ".cc-search button:hover{background:var(--bg,#eef2f7)}"
       + ".cc-hit .cc-bub{outline:2px solid #fde047}"
       + ".cc-hit-atual .cc-bub{outline:2px solid #f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.25)}"
+      + ".cc-ctrls{position:absolute;top:-11px;right:-6px;display:none;gap:4px}"
+      + ".cc-row:hover .cc-ctrls{display:flex}"
+      + ".cc-ctrls button{border:none;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:.62rem;line-height:22px;text-align:center;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.25);background:#fff}"
+      + ".cc-ctrls .cc-pin{filter:grayscale(1);opacity:.75}"
+      + ".cc-ctrls .cc-pin.on{filter:none;opacity:1;background:#fef3c7}"
+      + ".cc-ctrls .cc-del2{background:#ef4444;color:#fff}"
+      + ".cc-pend .cc-bub{box-shadow:-3px 0 0 #f59e0b}"
+      + ".cc-pend .cc-ctrls{display:flex}"
+      + ".cc-pend .cc-ctrls .cc-pin{display:inline-block}"
+      + ".cc-ppanel{padding:12px 14px;overflow-y:auto}"
+      + ".cc-ppi{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--bd,#e5e7eb);border-left:3px solid #f59e0b;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fff)}"
+      + ".cc-ppi .cc-ppc{flex:1;min-width:0}"
+      + ".cc-ppi .cc-ppr{font-size:.88rem;color:var(--tx,#334155);word-break:break-word}"
+      + ".cc-ppi .cc-ppm{font-size:.72rem;color:var(--gr,#94a3b8);margin-top:3px}"
+      + ".cc-ppi .cc-ppb{display:flex;gap:6px;flex-shrink:0}"
+      + ".cc-ppi .cc-ppb button{border:1px solid var(--bd,#e5e7eb);background:var(--bg2,#f8fafc);border-radius:8px;padding:6px 9px;font-size:.76rem;cursor:pointer;white-space:nowrap}"
+      + ".cc-ppi .cc-ppb .cc-ok{background:var(--g,#4ab848);color:#fff;border-color:var(--g,#4ab848)}"
       + ".cc-row.me .cc-bub{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff}"
       + ".cc-bub .cc-nome{font-size:.74rem;font-weight:700;margin-bottom:2px;opacity:.85}"
       + ".cc-row.me .cc-av{display:none}"
@@ -175,6 +194,7 @@
     try {
       await _carregarUsuarios();
       await _carregarLeituras();
+      await _carregarPendencias();
       await _carregarCanais();
       await _recalcularBadge();
       _assinarRealtime();
@@ -249,6 +269,7 @@
 
   async function _abrirCanal(canalId) {
     _canalAtual = canalId;
+    _painelPendAberto = false;
     _fecharBusca();
     _renderLista();
     var box = document.getElementById("cc-msgs");
@@ -493,6 +514,7 @@
         "<div class='cc-main'>" +
           "<div class='cc-head' id='cc-head'>" +
             "<span id='cc-head-title'>—</span><span style='flex:1'></span>" +
+            "<button class='cc-hbtn' id='cc-head-pend' title='Minhas pendências'>📌 <span id='cc-pend-cnt' style='font-size:.82rem;font-weight:700'>0</span></button>" +
             "<button class='cc-hbtn' id='cc-head-search' title='Buscar na conversa'>🔍</button>" +
           "</div>" +
           "<div class='cc-search' id='cc-search' style='display:none'>" +
@@ -527,6 +549,9 @@
     var hs = document.getElementById("cc-head-search");
     var si = document.getElementById("cc-search-inp");
     if (hs) hs.addEventListener("click", _toggleBusca);
+    var hp = document.getElementById("cc-head-pend");
+    if (hp) hp.addEventListener("click", _abrirPendencias);
+    _atualizarPendCount();
     if (si) {
       si.addEventListener("input", function () { _fazerBusca(si.value); });
       si.addEventListener("keydown", function (e) {
@@ -693,10 +718,22 @@
     }
     var hr = document.createElement("div"); hr.className = "cc-hr"; hr.textContent = _horaFmt(m.criada_em) + (m.editada_em ? " · editada" : "");
     bub.appendChild(hr);
-    if (meu && !m.deletada) {
-      var x = document.createElement("button"); x.className = "cc-x"; x.title = "Excluir mensagem"; x.textContent = "✕";
-      x.addEventListener("click", function (ev) { ev.stopPropagation(); _excluirMsg(m); });
-      bub.appendChild(x);
+    if (!m.deletada) {
+      var ctrls = document.createElement("div"); ctrls.className = "cc-ctrls";
+      var ehPend = !!_pend[m.id];
+      var pin = document.createElement("button");
+      pin.className = "cc-pin" + (ehPend ? " on" : "");
+      pin.title = ehPend ? "Concluir pendência" : "Marcar como pendência";
+      pin.textContent = "📌";
+      pin.addEventListener("click", function (ev) { ev.stopPropagation(); _togglePend(m); });
+      ctrls.appendChild(pin);
+      if (meu) {
+        var x = document.createElement("button"); x.className = "cc-del2"; x.title = "Excluir mensagem"; x.textContent = "✕";
+        x.addEventListener("click", function (ev) { ev.stopPropagation(); _excluirMsg(m); });
+        ctrls.appendChild(x);
+      }
+      bub.appendChild(ctrls);
+      if (ehPend) row.classList.add("cc-pend");
     }
     row.appendChild(av); row.appendChild(bub); return row;
   }
@@ -713,6 +750,91 @@
       if (r.error) { if (typeof toast === "function") toast("⚠️", "Não foi possível excluir."); return; }
       _onEditada({ id: m.id, canal_id: m.canal_id, deletada: true }); // reflete já na tela
     } catch (e) { if (typeof toast === "function") toast("⚠️", "Falha ao excluir a mensagem."); }
+  }
+
+  // ══ Pendências (pessoais) ══
+  function _resumoMsg(m) {
+    if (m.conteudo && m.conteudo.length) return m.conteudo.length > 90 ? m.conteudo.slice(0, 90) + "…" : m.conteudo;
+    if (m.anexo_nome) return "📎 " + m.anexo_nome;
+    return "(mensagem)";
+  }
+  async function _carregarPendencias() {
+    var me = _me(); if (!me) return;
+    var r = await supa.from("chat_pendencias")
+      .select("mensagem_id,canal_id,resumo,autor_nome,criada_em")
+      .eq("user_id", me.id).order("criada_em", { ascending: false });
+    _pend = {};
+    if (!r.error && r.data) r.data.forEach(function (p) {
+      _pend[p.mensagem_id] = { canal_id: p.canal_id, resumo: p.resumo, autor_nome: p.autor_nome, criada_em: p.criada_em };
+    });
+    _atualizarPendCount();
+  }
+  function _refletirPend(msgId, on) {
+    var row = document.querySelector(".cc-row[data-id='" + msgId + "']"); if (!row) return;
+    row.classList.toggle("cc-pend", !!on);
+    var pin = row.querySelector(".cc-pin");
+    if (pin) { pin.classList.toggle("on", !!on); pin.title = on ? "Concluir pendência" : "Marcar como pendência"; }
+  }
+  function _atualizarPendCount() {
+    var n = Object.keys(_pend).length;
+    var el = document.getElementById("cc-pend-cnt"); if (el) el.textContent = n;
+    var btn = document.getElementById("cc-head-pend"); if (btn) btn.style.color = n ? "#f59e0b" : "";
+  }
+  async function _togglePend(m) {
+    var me = _me(); if (!me || !m || !m.id) return;
+    if (_pend[m.id]) {
+      delete _pend[m.id];
+      _refletirPend(m.id, false); _atualizarPendCount();
+      try { await supa.from("chat_pendencias").delete().eq("user_id", me.id).eq("mensagem_id", m.id); } catch (e) {}
+      if (_painelPendAberto) _abrirPendencias();
+    } else {
+      var reg = { canal_id: m.canal_id, resumo: _resumoMsg(m), autor_nome: m.autor_nome || "", criada_em: new Date().toISOString() };
+      _pend[m.id] = reg;
+      _refletirPend(m.id, true); _atualizarPendCount();
+      try {
+        await supa.from("chat_pendencias").insert({ user_id: me.id, mensagem_id: m.id, canal_id: m.canal_id, resumo: reg.resumo, autor_nome: reg.autor_nome });
+        if (typeof toast === "function") toast("📌", "Marcado como pendência.");
+      } catch (e) {}
+    }
+  }
+  function _abrirPendencias() {
+    _painelPendAberto = true;
+    _fecharBusca(); _mostrarRodape(false);
+    var head = document.getElementById("cc-head-title"); // mantém o título do canal
+    var box = document.getElementById("cc-msgs"); if (!box) return;
+    var ids = Object.keys(_pend);
+    if (!ids.length) {
+      box.innerHTML = "<div class='cc-empty'>Você não tem pendências. 🎉<br>Passe o mouse numa mensagem e clique no 📌 pra marcar.</div>";
+      return;
+    }
+    var arr = ids.map(function (id) { return { id: id, p: _pend[id] }; });
+    arr.sort(function (a, b) { return (b.p.criada_em || "").localeCompare(a.p.criada_em || ""); });
+    var h = "<div class='cc-ppanel'><h4 style='margin:2px 2px 12px;font-size:.95rem'>📌 Minhas pendências (" + arr.length + ")</h4>";
+    arr.forEach(function (it) {
+      var conv = _nomeCanal(it.p.canal_id);
+      h += "<div class='cc-ppi' data-id='" + _esc(it.id) + "' data-canal='" + _esc(it.p.canal_id) + "'>" +
+             "<div class='cc-ppc'><div class='cc-ppr'>" + _esc(it.p.resumo || "(mensagem)") + "</div>" +
+             "<div class='cc-ppm'>" + _esc(it.p.autor_nome || "") + " · " + _esc(conv) + "</div></div>" +
+             "<div class='cc-ppb'><button class='cc-abrir'>Abrir</button><button class='cc-ok'>✓ Feito</button></div>" +
+           "</div>";
+    });
+    h += "</div>";
+    box.innerHTML = h;
+    Array.prototype.forEach.call(box.querySelectorAll(".cc-ppi"), function (el) {
+      var id = el.getAttribute("data-id"), canal = el.getAttribute("data-canal");
+      el.querySelector(".cc-abrir").addEventListener("click", function () { _irParaMensagem(canal, id); });
+      el.querySelector(".cc-ok").addEventListener("click", function () { _togglePend({ id: id, canal_id: canal }); });
+    });
+  }
+  async function _irParaMensagem(canalId, msgId) {
+    _painelPendAberto = false;
+    await _abrirCanal(canalId);
+    var row = document.querySelector(".cc-row[data-id='" + msgId + "']");
+    if (row) {
+      row.classList.add("cc-hit-atual");
+      try { row.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) { row.scrollIntoView(); }
+      setTimeout(function () { row.classList.remove("cc-hit-atual"); }, 2600);
+    } else if (typeof toast === "function") { toast("ℹ️", "Mensagem antiga — role a conversa pra cima."); }
   }
   function _scrollFim() { var box = document.getElementById("cc-msgs"); if (box) box.scrollTop = box.scrollHeight; }
 
