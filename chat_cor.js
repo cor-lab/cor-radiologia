@@ -32,6 +32,8 @@
   var _usersById = {};       // id -> {nome,ini,bg,cor,role}  (p/ resolver nomes)
   var _dmOutro = {};         // canalId(dm) -> {id,nome,ini,bg,cor}
   var _dmCanalDe = {};       // userId -> canalId(dm) já existente
+  var _urlCache = {};        // key(anexo) -> {url, exp}  (evita re-assinar a cada render)
+  var MAX_ANEXO = 10 * 1024 * 1024;  // 10 MB
 
   function _me() { return (typeof CU !== "undefined" && CU) ? CU : null; }
   function _esc(s) {
@@ -103,6 +105,14 @@
       + ".cc-foot textarea:focus{border-color:var(--g,#4ab848)}"
       + ".cc-send{border:none;background:var(--g,#4ab848);color:#fff;border-radius:10px;padding:0 16px;height:40px;cursor:pointer;font-weight:600;font-size:.9rem;flex-shrink:0}"
       + ".cc-send:disabled{opacity:.5;cursor:default}"
+      + ".cc-clip{border:1px solid var(--bd,#e5e7eb);background:var(--bg2,#f8fafc);color:var(--tx,#334155);border-radius:10px;width:40px;height:40px;cursor:pointer;font-size:1.1rem;flex-shrink:0}"
+      + ".cc-clip:hover{background:var(--bg,#eef2f7)}"
+      + ".cc-img{max-width:230px;max-height:230px;border-radius:9px;margin-top:4px;cursor:pointer;display:block}"
+      + ".cc-file{display:flex;align-items:center;gap:9px;margin-top:4px;padding:8px 10px;border:1px solid var(--bd,#e5e7eb);border-radius:9px;background:rgba(0,0,0,.03);text-decoration:none;color:inherit;max-width:250px}"
+      + ".cc-row.me .cc-file{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.35)}"
+      + ".cc-file .cc-fi{font-size:1.4rem;flex-shrink:0}"
+      + ".cc-file .cc-fn{font-size:.83rem;font-weight:600;word-break:break-word;line-height:1.2}"
+      + ".cc-file .cc-fs{font-size:.7rem;opacity:.7}"
       + ".cc-empty{margin:auto;color:var(--gr,#94a3b8);font-size:.9rem;text-align:center;padding:20px}"
       + ".cc-pick{padding:10px 14px;overflow-y:auto}"
       + ".cc-pick h4{font-size:.9rem;margin:6px 2px 10px;color:var(--tx,#334155)}"
@@ -299,6 +309,86 @@
     finally { ta.disabled = false; if (btn) btn.disabled = false; ta.focus(); }
   }
 
+  // ══ Anexos (Cloudflare R2 via Edge Function chat-anexo) ══
+  function _fmtTam(b) {
+    b = Number(b || 0);
+    if (b < 1024) return b + " B";
+    if (b < 1048576) return (b / 1024).toFixed(0) + " KB";
+    return (b / 1048576).toFixed(1) + " MB";
+  }
+  function _ehImagem(tipo) { return /^image\//.test(tipo || ""); }
+
+  // pede um link temporário (assinado) ao servidor; cacheia enquanto válido
+  async function _urlAnexo(canalId, key) {
+    var c = _urlCache[key];
+    var agora = Date.now();
+    if (c && c.exp > agora) return c.url;
+    try {
+      var r = await supa.functions.invoke("chat-anexo", { body: { action: "get", canal_id: canalId, key: key } });
+      if (r.error || !r.data || !r.data.url) return null;
+      _urlCache[key] = { url: r.data.url, exp: agora + 8 * 60 * 1000 }; // ~8 min
+      return r.data.url;
+    } catch (e) { return null; }
+  }
+
+  async function _enviarArquivo(file) {
+    var me = _me(); if (!me || !_canalAtual || !file) return;
+    if (file.size > MAX_ANEXO) { if (typeof toast === "function") toast("⚠️", "Arquivo acima de 10 MB."); return; }
+    var clip = document.getElementById("cc-clip");
+    if (clip) { clip.disabled = true; clip.textContent = "⏳"; }
+    try {
+      // 1) link de upload
+      var r = await supa.functions.invoke("chat-anexo", {
+        body: { action: "put", canal_id: _canalAtual, filename: file.name, tamanho: file.size }
+      });
+      if (r.error || !r.data || !r.data.url) { if (typeof toast === "function") toast("⚠️", "Falha ao preparar o envio."); return; }
+      var putUrl = r.data.url, key = r.data.key;
+      // 2) envia direto pro R2
+      var up = await fetch(putUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+      if (!up.ok) { if (typeof toast === "function") toast("⚠️", "Falha no upload do arquivo."); return; }
+      // 3) grava a mensagem com o anexo (legenda = texto atual, se houver)
+      var ta = document.getElementById("cc-input");
+      var caption = ta ? (ta.value || "").trim() : "";
+      var payload = {
+        canal_id: _canalAtual, autor_id: me.id,
+        autor_nome: me.nome || me.email || "—", autor_ini: me.ini || "?",
+        autor_bg: me.bg || "#4ab848", autor_cor: me.cor || "#fff",
+        conteudo: caption,
+        anexo_path: key, anexo_nome: file.name, anexo_tipo: file.type || "application/octet-stream", anexo_tam: file.size
+      };
+      var ins = await supa.from("chat_mensagens").insert(payload).select().single();
+      if (!ins.error && ins.data) { if (ta) { ta.value = ""; _autoGrow(ta); } _appendUma(ins.data); _marcarLido(_canalAtual); }
+      else if (ins.error && typeof toast === "function") toast("⚠️", "Anexo enviado, mas falhou ao registrar.");
+    } catch (e) { if (typeof toast === "function") toast("⚠️", "Falha ao enviar o arquivo."); }
+    finally { if (clip) { clip.disabled = false; clip.textContent = "📎"; } }
+  }
+
+  // monta o bloco visual do anexo (imagem ou cartão de arquivo) dentro do balão
+  function _montarAnexo(m, bub) {
+    if (_ehImagem(m.anexo_tipo)) {
+      var img = document.createElement("img");
+      img.className = "cc-img"; img.alt = m.anexo_nome || "imagem";
+      img.title = m.anexo_nome || "";
+      bub.appendChild(img);
+      _urlAnexo(m.canal_id, m.anexo_path).then(function (url) {
+        if (!url) return;
+        img.src = url;
+        img.addEventListener("click", function () { window.open(url, "_blank"); });
+      });
+    } else {
+      var a = document.createElement("a");
+      a.className = "cc-file"; a.target = "_blank"; a.rel = "noopener";
+      var ic = document.createElement("span"); ic.className = "cc-fi"; ic.textContent = "📄";
+      var wrap = document.createElement("div");
+      var fn = document.createElement("div"); fn.className = "cc-fn"; fn.textContent = m.anexo_nome || "arquivo";
+      var fs = document.createElement("div"); fs.className = "cc-fs"; fs.textContent = _fmtTam(m.anexo_tam) + " · baixar";
+      wrap.appendChild(fn); wrap.appendChild(fs);
+      a.appendChild(ic); a.appendChild(wrap);
+      bub.appendChild(a);
+      _urlAnexo(m.canal_id, m.anexo_path).then(function (url) { if (url) { a.href = url; try { a.setAttribute("download", m.anexo_nome || ""); } catch (e) {} } });
+    }
+  }
+
   async function _novoCanal() {
     var me = _me(); if (!me) return;
     var nome = window.prompt("Nome do novo canal da equipe (ex: Recepção, Financeiro):");
@@ -338,7 +428,10 @@
       _beep();
       var quem = (m.autor_nome || "Alguém").split(" ")[0];
       var ondeC = _ehDM(m.canal_id) ? "" : (" em #" + _nomeCanal(m.canal_id));
-      var corpo = m.conteudo.length > 40 ? m.conteudo.slice(0, 40) + "…" : m.conteudo;
+      var corpo;
+      if (m.conteudo && m.conteudo.length) corpo = m.conteudo.length > 40 ? m.conteudo.slice(0, 40) + "…" : m.conteudo;
+      else if (m.anexo_path) corpo = "📎 " + (m.anexo_nome || "arquivo");
+      else corpo = "";
       if (typeof toast === "function") toast("💬", quem + ondeC + ": " + corpo);
     }
   }
@@ -378,6 +471,8 @@
           "<div class='cc-head' id='cc-head'>—</div>" +
           "<div class='cc-msgs' id='cc-msgs'></div>" +
           "<div class='cc-foot' id='cc-foot'>" +
+            "<input type='file' id='cc-file' style='display:none'>" +
+            "<button class='cc-clip' id='cc-clip' title='Anexar arquivo (até 10 MB)'>📎</button>" +
             "<textarea id='cc-input' rows='1' placeholder='Escreva uma mensagem…'></textarea>" +
             "<button class='cc-send' id='cc-send'>Enviar</button>" +
           "</div>" +
@@ -387,6 +482,14 @@
 
     var nc = document.getElementById("cc-new-canal"); if (nc) nc.addEventListener("click", _novoCanal);
     var send = document.getElementById("cc-send"); if (send) send.addEventListener("click", _enviar);
+    var clip = document.getElementById("cc-clip");
+    var finp = document.getElementById("cc-file");
+    if (clip && finp) {
+      clip.addEventListener("click", function () { finp.click(); });
+      finp.addEventListener("change", function () {
+        if (finp.files && finp.files[0]) { _enviarArquivo(finp.files[0]); finp.value = ""; }
+      });
+    }
     var ta = document.getElementById("cc-input");
     if (ta) {
       ta.addEventListener("input", function () { _autoGrow(ta); });
@@ -485,10 +588,14 @@
     av.style.background = m.autor_bg || "#4ab848"; av.style.color = m.autor_cor || "#fff"; av.textContent = m.autor_ini || "?";
     var bub = document.createElement("div"); bub.className = "cc-bub";
     if (!meu) { var nome = document.createElement("div"); nome.className = "cc-nome"; nome.textContent = m.autor_nome || "—"; bub.appendChild(nome); }
-    var txt = document.createElement("div");
-    if (m.deletada) { txt.className = "cc-txt cc-del"; txt.textContent = "mensagem removida"; }
-    else { txt.className = "cc-txt"; txt.textContent = m.conteudo; }
-    bub.appendChild(txt);
+    if (m.deletada) {
+      var txtd = document.createElement("div"); txtd.className = "cc-txt cc-del"; txtd.textContent = "mensagem removida"; bub.appendChild(txtd);
+    } else {
+      if (m.conteudo && m.conteudo.length) {
+        var txt = document.createElement("div"); txt.className = "cc-txt"; txt.textContent = m.conteudo; bub.appendChild(txt);
+      }
+      if (m.anexo_path) _montarAnexo(m, bub);
+    }
     var hr = document.createElement("div"); hr.className = "cc-hr"; hr.textContent = _horaFmt(m.criada_em) + (m.editada_em ? " · editada" : "");
     bub.appendChild(hr);
     row.appendChild(av); row.appendChild(bub); return row;
