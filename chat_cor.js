@@ -34,6 +34,7 @@
   var _dmCanalDe = {};       // userId -> canalId(dm) já existente
   var _urlCache = {};        // key(anexo) -> {url, exp}  (evita re-assinar a cada render)
   var MAX_ANEXO = 10 * 1024 * 1024;  // 10 MB
+  var _busca = { termo: "", hits: [], idx: -1 };  // busca dentro da conversa
 
   function _me() { return (typeof CU !== "undefined" && CU) ? CU : null; }
   function _esc(s) {
@@ -96,6 +97,16 @@
       + ".cc-bub{position:relative;background:var(--card,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:12px;padding:7px 11px;min-width:0;color:#1f2937}"
       + ".cc-x{position:absolute;top:-8px;right:-8px;border:none;background:#ef4444;color:#fff;width:20px;height:20px;border-radius:50%;font-size:.62rem;line-height:20px;text-align:center;cursor:pointer;display:none;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.25)}"
       + ".cc-row:hover .cc-x{display:block}"
+      + ".cc-hbtn{border:none;background:transparent;cursor:pointer;font-size:1rem;padding:4px 6px;border-radius:8px;color:var(--tx,#334155)}"
+      + ".cc-hbtn:hover{background:var(--bg,#eef2f7)}"
+      + ".cc-search{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--bd,#e5e7eb);background:var(--bg2,#f8fafc)}"
+      + ".cc-search input{flex:1;border:1px solid var(--bd,#e5e7eb);border-radius:9px;padding:7px 11px;font:inherit;font-size:.88rem;outline:none}"
+      + ".cc-search input:focus{border-color:var(--g,#4ab848)}"
+      + ".cc-search .cc-scnt{font-size:.78rem;color:var(--gr,#94a3b8);min-width:44px;text-align:center}"
+      + ".cc-search button{border:1px solid var(--bd,#e5e7eb);background:#fff;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:.8rem;color:var(--tx,#334155)}"
+      + ".cc-search button:hover{background:var(--bg,#eef2f7)}"
+      + ".cc-hit .cc-bub{outline:2px solid #fde047}"
+      + ".cc-hit-atual .cc-bub{outline:2px solid #f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.25)}"
       + ".cc-row.me .cc-bub{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff}"
       + ".cc-bub .cc-nome{font-size:.74rem;font-weight:700;margin-bottom:2px;opacity:.85}"
       + ".cc-row.me .cc-av{display:none}"
@@ -238,6 +249,7 @@
 
   async function _abrirCanal(canalId) {
     _canalAtual = canalId;
+    _fecharBusca();
     _renderLista();
     var box = document.getElementById("cc-msgs");
     if (box) box.innerHTML = "<div class='cc-empty'>Carregando…</div>";
@@ -479,7 +491,17 @@
           "<div class='cc-list' id='cc-lista-dms' style='flex:1 1 auto'></div>" +
         "</div>" +
         "<div class='cc-main'>" +
-          "<div class='cc-head' id='cc-head'>—</div>" +
+          "<div class='cc-head' id='cc-head'>" +
+            "<span id='cc-head-title'>—</span><span style='flex:1'></span>" +
+            "<button class='cc-hbtn' id='cc-head-search' title='Buscar na conversa'>🔍</button>" +
+          "</div>" +
+          "<div class='cc-search' id='cc-search' style='display:none'>" +
+            "<input id='cc-search-inp' placeholder='Buscar nesta conversa…'>" +
+            "<span class='cc-scnt' id='cc-search-cnt'>0/0</span>" +
+            "<button id='cc-search-prev' title='Anterior'>▲</button>" +
+            "<button id='cc-search-next' title='Próxima'>▼</button>" +
+            "<button id='cc-search-x' title='Fechar'>✕</button>" +
+          "</div>" +
           "<div class='cc-msgs' id='cc-msgs'></div>" +
           "<div class='cc-foot' id='cc-foot'>" +
             "<input type='file' id='cc-file' style='display:none'>" +
@@ -501,6 +523,20 @@
         if (finp.files && finp.files[0]) { _enviarArquivo(finp.files[0]); finp.value = ""; }
       });
     }
+    // busca na conversa
+    var hs = document.getElementById("cc-head-search");
+    var si = document.getElementById("cc-search-inp");
+    if (hs) hs.addEventListener("click", _toggleBusca);
+    if (si) {
+      si.addEventListener("input", function () { _fazerBusca(si.value); });
+      si.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); _irHit(_busca.idx + (e.shiftKey ? -1 : 1)); }
+        else if (e.key === "Escape") { _fecharBusca(); }
+      });
+    }
+    var sp = document.getElementById("cc-search-prev"); if (sp) sp.addEventListener("click", function () { _irHit(_busca.idx - 1); });
+    var sn = document.getElementById("cc-search-next"); if (sn) sn.addEventListener("click", function () { _irHit(_busca.idx + 1); });
+    var sx = document.getElementById("cc-search-x"); if (sx) sx.addEventListener("click", _fecharBusca);
     var ta = document.getElementById("cc-input");
     if (ta) {
       ta.addEventListener("input", function () { _autoGrow(ta); });
@@ -555,7 +591,7 @@
   }
 
   function _atualizarHead() {
-    var head = document.getElementById("cc-head"); if (!head) return;
+    var head = document.getElementById("cc-head-title"); if (!head) return;
     var c = _canalObj(_canalAtual);
     if (!c) { head.textContent = "—"; return; }
     if (c.tipo === "dm") {
@@ -564,6 +600,54 @@
     } else {
       head.innerHTML = "# " + _esc(c.nome || "canal") + (c.descricao ? " <small>" + _esc(c.descricao) + "</small>" : "");
     }
+  }
+
+  // ══ Busca dentro da conversa (cliente, nas mensagens carregadas) ══
+  function _toggleBusca() {
+    var bar = document.getElementById("cc-search");
+    if (!bar) return;
+    if (bar.style.display === "none") {
+      bar.style.display = "flex";
+      var si = document.getElementById("cc-search-inp"); if (si) { si.focus(); si.select(); }
+    } else { _fecharBusca(); }
+  }
+  function _fecharBusca() {
+    var bar = document.getElementById("cc-search"); if (bar) bar.style.display = "none";
+    var si = document.getElementById("cc-search-inp"); if (si) si.value = "";
+    _limparRealce(); _busca = { termo: "", hits: [], idx: -1 };
+    _atualizarContadorBusca();
+  }
+  function _limparRealce() {
+    Array.prototype.forEach.call(document.querySelectorAll("#cc-msgs .cc-hit, #cc-msgs .cc-hit-atual"),
+      function (r) { r.classList.remove("cc-hit"); r.classList.remove("cc-hit-atual"); });
+  }
+  function _fazerBusca(termo) {
+    _limparRealce();
+    _busca.termo = (termo || "").trim().toLowerCase();
+    _busca.hits = []; _busca.idx = -1;
+    if (_busca.termo) {
+      Array.prototype.forEach.call(document.querySelectorAll("#cc-msgs .cc-row"), function (row) {
+        var body = "";
+        var t = row.querySelector(".cc-txt"); if (t && !t.classList.contains("cc-del")) body += " " + t.textContent;
+        var fn = row.querySelector(".cc-fn"); if (fn) body += " " + fn.textContent;
+        if (body.toLowerCase().indexOf(_busca.termo) >= 0) { row.classList.add("cc-hit"); _busca.hits.push(row); }
+      });
+    }
+    if (_busca.hits.length) _irHit(0); else _atualizarContadorBusca();
+  }
+  function _irHit(i) {
+    if (!_busca.hits.length) { _atualizarContadorBusca(); return; }
+    _busca.hits.forEach(function (r) { r.classList.remove("cc-hit-atual"); });
+    var n = _busca.hits.length;
+    _busca.idx = ((i % n) + n) % n;
+    var el = _busca.hits[_busca.idx];
+    el.classList.add("cc-hit-atual");
+    try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) { el.scrollIntoView(); }
+    _atualizarContadorBusca();
+  }
+  function _atualizarContadorBusca() {
+    var cnt = document.getElementById("cc-search-cnt");
+    if (cnt) cnt.textContent = _busca.hits.length ? ((_busca.idx + 1) + "/" + _busca.hits.length) : "0/0";
   }
 
   function _mostrarRodape(mostrar) {
