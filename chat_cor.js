@@ -280,8 +280,13 @@
     }
 
     if (!_canalAtual && _canais.length) {
-      var g = _canais.filter(function (c) { return c.tipo !== "dm"; })[0] || _canais[0];
-      _canalAtual = g.id;
+      var salvo = null; try { salvo = localStorage.getItem("cc_ultimo_canal"); } catch (e) {}
+      if (salvo && _canais.some(function (c) { return c.id === salvo; })) {
+        _canalAtual = salvo;   // restaura a última conversa aberta
+      } else {
+        var g = _canais.filter(function (c) { return c.tipo !== "dm"; })[0] || _canais[0];
+        _canalAtual = g.id;
+      }
     }
     _renderTudo();
     if (_canalAtual) await _abrirCanal(_canalAtual);
@@ -289,6 +294,7 @@
 
   async function _abrirCanal(canalId) {
     _canalAtual = canalId;
+    try { localStorage.setItem("cc_ultimo_canal", canalId); } catch (e) {}  // lembra a última conversa
     _painelPendAberto = false;
     _fecharBusca();
     _renderLista();
