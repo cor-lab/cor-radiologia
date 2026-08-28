@@ -21,7 +21,7 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "5.7 (20260827o)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "5.8 (20260827p)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
@@ -711,9 +711,11 @@
     _naoLidas[m.canal_id] = (_naoLidas[m.canal_id] || 0) + 1;
     _recalcularBadgeMemoria(); _renderLista();
     if (_bootstrap) {
-      var intenso = _minimizado();
-      _alarme(intenso);
-      _ccNotify(m, intenso);
+      // "minimizado" = chat não está em foco (minimizado OU atrás de outra janela OU outra aba)
+      var foraDeFoco = _minimizado();
+      _alarme(foraDeFoco);
+      // pop-up SÓ quando o chat não está na frente; com o chat aberto e ativo, nada de pop-up
+      if (foraDeFoco) _ccNotify(m, foraDeFoco);
     }
   }
   function _onEditada(m) {
