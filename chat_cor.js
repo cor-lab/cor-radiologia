@@ -21,7 +21,7 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "6.1 (20260827s)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "6.2 (20260827t)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
@@ -176,9 +176,16 @@
       + ".cc-cfg .cc-seg button{flex:1;border:1px solid var(--bd,#e5e7eb);background:var(--bg2,#f8fafc);border-radius:8px;padding:7px 4px;font-size:.76rem;cursor:pointer;color:var(--tx,#334155)}"
       + ".cc-cfg .cc-seg button.on{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff;font-weight:700}"
       + ".cc-cfg .cc-testar{width:100%;border:1px dashed var(--bd,#e5e7eb);background:transparent;border-radius:8px;padding:8px;font-size:.8rem;cursor:pointer;color:var(--tx,#334155)}"
-      + ".cc-emoji-panel{position:absolute;left:12px;bottom:60px;z-index:100000;background:var(--card,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.2);padding:8px;width:296px;max-height:214px;overflow-y:auto;display:grid;grid-template-columns:repeat(8,1fr);gap:2px}"
+      + ".cc-emoji-panel{position:absolute;left:12px;bottom:60px;z-index:100000;background:var(--card,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.2);padding:8px;width:300px;max-height:260px;overflow-y:auto}"
+      + ".cc-emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px}"
       + ".cc-emoji{border:none;background:transparent;font-size:1.3rem;cursor:pointer;border-radius:8px;padding:3px;line-height:1.1}"
       + ".cc-emoji:hover{background:var(--bg,#eef2f7)}"
+      + ".cc-emoji-fav{border-bottom:1px solid var(--bd,#e5e7eb);padding-bottom:7px;margin-bottom:6px}"
+      + ".cc-emoji-favrow{display:flex;flex-wrap:wrap;gap:2px;min-height:32px;margin-bottom:6px}"
+      + ".cc-emoji-favhint{font-size:.72rem;color:var(--gr,#94a3b8);padding:7px 3px}"
+      + ".cc-emoji-addwrap{display:flex;gap:5px}"
+      + ".cc-emoji-addwrap input{flex:1;border:1px solid var(--bd,#e5e7eb);border-radius:8px;padding:6px 9px;font-size:1rem;outline:none}"
+      + ".cc-emoji-addwrap button{border:1px solid var(--bd,#e5e7eb);background:var(--bg2,#f8fafc);border-radius:8px;padding:6px 9px;font-size:.74rem;cursor:pointer;white-space:nowrap;color:var(--tx,#334155)}"
       + ".cc-emoji-big{display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding:2px 0}"
       + ".cc-emoji-big img.cc-emoji-anim{width:40px;height:40px}"
       + ".cc-emoji-big span{font-size:36px;line-height:1}"
@@ -902,17 +909,55 @@
     if (p.contains(e.target) || (b && b.contains(e.target))) return;
     _fecharEmojis();
   }
+  // ── Meus emojis (salvos pelo usuário; colados de qualquer lugar) ──
+  function _emojisFav() { try { return JSON.parse(localStorage.getItem("cc_emojisFav") || "[]"); } catch (e) { return []; } }
+  function _salvarFav(arr) { try { localStorage.setItem("cc_emojisFav", JSON.stringify(arr.slice(0, 48))); } catch (e) {} }
+  function _ehEmoji(g) { try { return /\p{Extended_Pictographic}/u.test(g); } catch (e) { return false; } }
+  function _extrairEmojis(s) { var out = []; _graphemes(s || "").forEach(function (g) { if (_ehEmoji(g)) out.push(g); }); return out; }
+  function _renderFavs() {
+    var row = document.getElementById("cc-emoji-favrow"); if (!row) return;
+    var fav = _emojisFav();
+    if (!fav.length) { row.innerHTML = "<span class='cc-emoji-favhint'>Cole abaixo um emoji copiado de qualquer lugar pra salvar aqui</span>"; return; }
+    row.innerHTML = "";
+    fav.forEach(function (x) {
+      var b = document.createElement("button"); b.className = "cc-emoji"; b.type = "button"; b.textContent = x;
+      b.title = "clique: usar · botão direito: remover";
+      b.addEventListener("click", function (ev) { ev.stopPropagation(); _inserirNoInput(x); });
+      b.addEventListener("contextmenu", function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        _salvarFav(_emojisFav().filter(function (y) { return y !== x; })); _renderFavs();
+      });
+      row.appendChild(b);
+    });
+  }
   function _toggleEmojis() {
     if (document.getElementById("cc-emoji-panel")) { _fecharEmojis(); return; }
     var main = document.querySelector(".cc-main"); if (!main) return;
     var p = document.createElement("div"); p.id = "cc-emoji-panel"; p.className = "cc-emoji-panel";
-    var h = "";
+    var h = "<div class='cc-emoji-fav'><div class='cc-emoji-favrow' id='cc-emoji-favrow'></div>" +
+      "<div class='cc-emoji-addwrap'><input id='cc-emoji-add' placeholder='cole um emoji aqui…'>" +
+      "<button id='cc-emoji-addbtn' type='button'>＋ salvar</button></div></div>";
+    h += "<div class='cc-emoji-grid'>";
     for (var i = 0; i < _EMOJIS.length; i++) h += "<button class='cc-emoji' type='button'>" + _EMOJIS[i] + "</button>";
+    h += "</div>";
     p.innerHTML = h;
     main.appendChild(p);
-    Array.prototype.forEach.call(p.querySelectorAll(".cc-emoji"), function (b) {
+    Array.prototype.forEach.call(p.querySelectorAll(".cc-emoji-grid .cc-emoji"), function (b) {
       b.addEventListener("click", function (ev) { ev.stopPropagation(); _inserirNoInput(b.textContent); });
     });
+    _renderFavs();
+    var add = document.getElementById("cc-emoji-add");
+    var addBtn = document.getElementById("cc-emoji-addbtn");
+    function salvar() {
+      var e = _extrairEmojis(add ? add.value : "");
+      if (!e.length) { if (typeof toast === "function") toast("ℹ️", "Cole um emoji no campo primeiro."); return; }
+      var fav = _emojisFav();
+      e.forEach(function (x) { if (fav.indexOf(x) < 0) fav.unshift(x); });
+      _salvarFav(fav); if (add) add.value = ""; _renderFavs();
+      if (typeof toast === "function") toast("⭐", "Emoji(s) salvo(s).");
+    }
+    if (add) add.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); salvar(); } });
+    if (addBtn) addBtn.addEventListener("click", function (ev) { ev.stopPropagation(); salvar(); });
     setTimeout(function () { document.addEventListener("click", _emojiFora, true); }, 0);
   }
 
