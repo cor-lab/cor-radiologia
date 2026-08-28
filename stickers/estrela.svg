@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <g transform="translate(64 64)">
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="6s" repeatCount="indefinite"/>
+      <g>
+        <animateTransform attributeName="transform" type="scale" values="1;1.12;1" dur="1.3s" repeatCount="indefinite"/>
+        <path transform="translate(-64 -64)" d="M64 16 L76 50 L112 50 L83 72 L94 106 L64 85 L34 106 L45 72 L16 50 L52 50 Z" fill="#f5b301" stroke="#e09a00" stroke-width="3" stroke-linejoin="round"/>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <g>
+    <animateTransform attributeName="transform" type="translate" values="0 0; 0 -7; 0 0" dur="1.4s" repeatCount="indefinite"/>
+    <circle cx="64" cy="64" r="52" fill="#4ab848">
+      <animate attributeName="r" values="0;56;52" dur="0.5s" fill="freeze"/>
+    </circle>
+    <path d="M40 66 L57 84 L90 44" fill="none" stroke="#ffffff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="130" stroke-dashoffset="130">
+      <animate attributeName="stroke-dashoffset" from="130" to="0" begin="0.35s" dur="0.5s" fill="freeze"/>
+    </path>
+  </g>
+</svg>

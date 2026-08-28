@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <g transform="translate(64 66)">
+    <circle r="10" fill="#f5b301">
+      <animate attributeName="r" values="6;12;6" dur="1.2s" repeatCount="indefinite"/>
+    </circle>
+    <g transform="rotate(0)"><circle cx="0" cy="0" r="6" fill="#e11d48"><animate attributeName="cy" values="-6;-46" dur="1.2s" begin="0s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="1.2s" begin="0s" repeatCount="indefinite"/></circle></g>
+    <g transform="rotate(45)"><circle cx="0" cy="0" r="6" fill="#f5b301"><animate attributeName="cy" values="-6;-46" dur="1.2s" begin="0.1s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="1.2s" begin="0.1s" repeatCount="indefinite"/></circle></g>
+    <g transform="rotate(90)"><circle cx="0" cy="0" r="6" fill="#4ab848"><animate attributeName="cy" values="-6;-46" dur="1.2s" begin="0.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="1.2s" begin="0.2s" repeatCount="indefinite"/></circle></g>
+    <g transform="rotate(135)"><circle cx="0" cy="0" r="6" fill="#3b82f6"><animate attributeName="cy" values="-6;-46" dur="1.2s" begin="0.3s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="1.2s" begin="0.3s" repeatCount="indefinite"/></circle></g>
+    <g transform="rotate(180)"><circle cx="0" cy="0" r="6" fill="#a855f7"><animate attributeName="cy" values="-6;-46" dur="1.2s" begin="0.15s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="1.2s" begin="0.15s" repeatCount="indefinite"/></circle></g>
+    <g transform="rotate(225)"><circle cx="0" cy="0" r="6" fill="#ec4899"><animate attributeName="cy" values="-6;-46" dur="1.2s" begin="0.25s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="1.2s" begin="0.25s" repeatCount="indefinite"/></circle></g>
+    <g transform="rotate(270)"><circle cx="0" cy="0" r="6" fill="#14b8a6"><animate attributeName="cy" values="-6;-46" dur="1.2s" begin="0.05s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="1.2s" begin="0.05s" repeatCount="indefinite"/></circle></g>
+    <g transform="rotate(315)"><circle cx="0" cy="0" r="6" fill="#f97316"><animate attributeName="cy" values="-6;-46" dur="1.2s" begin="0.35s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="1.2s" begin="0.35s" repeatCount="indefinite"/></circle></g>
+  </g>
+</svg>

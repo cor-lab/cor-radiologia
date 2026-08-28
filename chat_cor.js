@@ -21,7 +21,7 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "6.3 (20260827u)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "6.4 (20260828v)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
@@ -191,6 +191,13 @@
       + ".cc-emoji-big span{font-size:36px;line-height:1}"
       + ".cc-emoji-big.xl img.cc-emoji-anim{width:64px;height:64px}"
       + ".cc-emoji-big.xl span{font-size:58px;line-height:1}"
+      + ".cc-sticker{width:120px;height:120px;display:block}"
+      + ".cc-bub-sticker{background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important}"
+      + ".cc-bub-sticker .cc-hr{color:#64748b}"
+      + ".cc-sticker-panel{position:absolute;left:12px;bottom:60px;z-index:100000;background:var(--card,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.2);padding:8px;width:264px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px}"
+      + ".cc-stk{border:1px solid var(--bd,#e5e7eb);background:var(--bg2,#f8fafc);border-radius:10px;cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center}"
+      + ".cc-stk:hover{background:var(--bg,#eef2f7)}"
+      + ".cc-stk img{width:66px;height:66px}"
       + ".cc-row.me .cc-bub{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff}"
       + ".cc-bub .cc-nome{font-size:.74rem;font-weight:700;margin-bottom:2px;opacity:.85}"
       + ".cc-row.me .cc-av{display:none}"
@@ -627,7 +634,7 @@
     var nm = document.createElement("div"); nm.className = "cc-note-nm";
     nm.textContent = (m.autor_nome || "Alguém") + (_ehDM(m.canal_id) ? "" : " · #" + _nomeCanal(m.canal_id));
     var tx = document.createElement("div"); tx.className = "cc-note-tx";
-    tx.textContent = (m.conteudo && m.conteudo.length) ? m.conteudo : (m.anexo_nome ? "📎 " + m.anexo_nome : "(mensagem)");
+    tx.textContent = (m.conteudo && m.conteudo.length) ? m.conteudo : (m.anexo_nome ? "📎 " + m.anexo_nome : (m.sticker ? "figurinha 🩹" : "(mensagem)"));
     body.appendChild(nm); body.appendChild(tx);
     var ic = document.createElement("div"); ic.className = "cc-note-ic"; ic.textContent = _popFixar ? "📌" : "💬";
     card.appendChild(av); card.appendChild(body); card.appendChild(ic);
@@ -827,6 +834,7 @@
           "<div class='cc-foot' id='cc-foot'>" +
             "<input type='file' id='cc-file' style='display:none'>" +
             "<button class='cc-clip' id='cc-emoji-btn' title='Emojis'>😊</button>" +
+            "<button class='cc-clip' id='cc-sticker-btn' title='Figurinhas'>🩻</button>" +
             "<button class='cc-clip' id='cc-clip' title='Anexar arquivo (até 10 MB)'>📎</button>" +
             "<textarea id='cc-input' rows='1' placeholder='Escreva uma mensagem…'></textarea>" +
             "<button class='cc-send' id='cc-send'>Enviar</button>" +
@@ -839,6 +847,8 @@
     var send = document.getElementById("cc-send"); if (send) send.addEventListener("click", _enviar);
     var eBtn = document.getElementById("cc-emoji-btn");
     if (eBtn) eBtn.addEventListener("click", function (ev) { ev.stopPropagation(); _toggleEmojis(); });
+    var sBtn = document.getElementById("cc-sticker-btn");
+    if (sBtn) sBtn.addEventListener("click", function (ev) { ev.stopPropagation(); _toggleStickers(); });
     var clip = document.getElementById("cc-clip");
     var finp = document.getElementById("cc-file");
     if (clip && finp) {
@@ -890,6 +900,47 @@
 
   // ══ Emojis ══
   var _EMOJIS = ["😀","😃","😄","😁","😆","😅","😂","🤣","😊","🙂","😉","😍","😘","😗","😜","🤪","🤔","🤗","😎","🥳","😴","😇","🙃","😋","😝","🤨","😐","😑","🙄","😬","😥","😢","😭","😤","😠","😡","🥺","😱","😨","😰","🤯","😳","🤒","🤕","🤧","😷","🤢","🥴","👍","👎","👌","🤌","👏","🙌","🙏","💪","🤝","👋","✌️","🤙","👇","👆","☝️","🫶","❤️","🧡","💛","💚","💙","💜","🖤","💯","✅","❌","⚠️","❗","❓","⭐","🔥","✨","🎉","🎊","🥇","📌","📎","📷","📸","🖼️","📄","📁","🗓️","⏰","☎️","📞","💬","📢","🔔","💊","🦷","🩻","🏥","🚑","💉","🧾","👏🏻","🤙🏻"];
+  // ══ Figurinhas (SVG animado, na pasta stickers/) ══
+  var _STICKERS = ["feito", "dente", "coracao", "estrela", "atencao", "festa"];
+  function _fecharStickers() {
+    var p = document.getElementById("cc-sticker-panel"); if (p && p.parentNode) p.parentNode.removeChild(p);
+    document.removeEventListener("click", _stickerFora, true);
+  }
+  function _stickerFora(e) {
+    var p = document.getElementById("cc-sticker-panel"); var b = document.getElementById("cc-sticker-btn");
+    if (!p) return;
+    if (p.contains(e.target) || (b && b.contains(e.target))) return;
+    _fecharStickers();
+  }
+  function _toggleStickers() {
+    if (document.getElementById("cc-sticker-panel")) { _fecharStickers(); return; }
+    var main = document.querySelector(".cc-main"); if (!main) return;
+    var p = document.createElement("div"); p.id = "cc-sticker-panel"; p.className = "cc-sticker-panel";
+    var h = "";
+    for (var i = 0; i < _STICKERS.length; i++) h += "<button class='cc-stk' type='button' data-id='" + _STICKERS[i] + "'><img src='stickers/" + _STICKERS[i] + ".svg' alt='" + _STICKERS[i] + "'></button>";
+    p.innerHTML = h;
+    main.appendChild(p);
+    Array.prototype.forEach.call(p.querySelectorAll(".cc-stk"), function (b) {
+      b.addEventListener("click", function (ev) { ev.stopPropagation(); _enviarSticker(b.getAttribute("data-id")); });
+    });
+    setTimeout(function () { document.addEventListener("click", _stickerFora, true); }, 0);
+  }
+  async function _enviarSticker(id) {
+    var me = _me(); if (!me || !_canalAtual || !id) return;
+    _fecharStickers();
+    var payload = {
+      canal_id: _canalAtual, autor_id: me.id,
+      autor_nome: me.nome || me.email || "—", autor_ini: me.ini || "?",
+      autor_bg: me.bg || "#4ab848", autor_cor: me.cor || "#fff",
+      conteudo: "", sticker: id
+    };
+    try {
+      var r = await supa.from("chat_mensagens").insert(payload).select().single();
+      if (!r.error && r.data) { _appendUma(r.data); _marcarLido(_canalAtual); }
+      else if (r.error && typeof toast === "function") toast("⚠️", "Falha ao enviar a figurinha.");
+    } catch (e) { if (typeof toast === "function") toast("⚠️", "Falha ao enviar a figurinha."); }
+  }
+
   function _inserirNoInput(txt) {
     var ta = document.getElementById("cc-input"); if (!ta) return;
     var ini = (ta.selectionStart != null) ? ta.selectionStart : ta.value.length;
@@ -1101,6 +1152,10 @@
     if (!meu) { var nome = document.createElement("div"); nome.className = "cc-nome"; nome.textContent = m.autor_nome || "—"; bub.appendChild(nome); }
     if (m.deletada) {
       var txtd = document.createElement("div"); txtd.className = "cc-txt cc-del"; txtd.textContent = "mensagem removida"; bub.appendChild(txtd);
+    } else if (m.sticker) {
+      bub.classList.add("cc-bub-sticker");
+      var st = document.createElement("img"); st.className = "cc-sticker"; st.alt = "figurinha";
+      st.src = "stickers/" + m.sticker + ".svg"; bub.appendChild(st);
     } else {
       if (m.conteudo && m.conteudo.length) {
         var nEmoji = _contarSeEmojiOnly(m.conteudo);
@@ -1152,6 +1207,7 @@
   function _resumoMsg(m) {
     if (m.conteudo && m.conteudo.length) return m.conteudo.length > 90 ? m.conteudo.slice(0, 90) + "…" : m.conteudo;
     if (m.anexo_nome) return "📎 " + m.anexo_nome;
+    if (m.sticker) return "figurinha 🩹";
     return "(mensagem)";
   }
   async function _carregarPendencias() {
