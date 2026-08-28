@@ -21,7 +21,7 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "5.8 (20260827p)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "5.9 (20260827q)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
@@ -506,15 +506,20 @@
     } catch (e) { return null; }
   }
 
-  async function _enviarArquivo(file) {
+  function _extImg(mime) {
+    var m = { "image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/gif": ".gif", "image/webp": ".webp", "image/bmp": ".bmp" };
+    return m[mime] || ".png";
+  }
+  async function _enviarArquivo(file, nomeForcado) {
     var me = _me(); if (!me || !_canalAtual || !file) return;
     if (file.size > MAX_ANEXO) { if (typeof toast === "function") toast("⚠️", "Arquivo acima de 10 MB."); return; }
+    var nomeArq = nomeForcado || file.name || ("imagem-" + Date.now() + _extImg(file.type || "image/png"));
     var clip = document.getElementById("cc-clip");
     if (clip) { clip.disabled = true; clip.textContent = "⏳"; }
     try {
       // 1) link de upload
       var r = await supa.functions.invoke("chat-anexo", {
-        body: { action: "put", canal_id: _canalAtual, filename: file.name, tamanho: file.size }
+        body: { action: "put", canal_id: _canalAtual, filename: nomeArq, tamanho: file.size }
       });
       if (r.error || !r.data || !r.data.url) { if (typeof toast === "function") toast("⚠️", "Falha ao preparar o envio."); return; }
       var putUrl = r.data.url, key = r.data.key;
@@ -529,7 +534,7 @@
         autor_nome: me.nome || me.email || "—", autor_ini: me.ini || "?",
         autor_bg: me.bg || "#4ab848", autor_cor: me.cor || "#fff",
         conteudo: caption,
-        anexo_path: key, anexo_nome: file.name, anexo_tipo: file.type || "application/octet-stream", anexo_tam: file.size
+        anexo_path: key, anexo_nome: nomeArq, anexo_tipo: file.type || "application/octet-stream", anexo_tam: file.size
       };
       var ins = await supa.from("chat_mensagens").insert(payload).select().single();
       if (!ins.error && ins.data) { if (ta) { ta.value = ""; _autoGrow(ta); } _appendUma(ins.data); _marcarLido(_canalAtual); }
@@ -817,6 +822,20 @@
     if (ta) {
       ta.addEventListener("input", function () { _autoGrow(ta); });
       ta.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); _enviar(); } });
+      // colar imagem (Ctrl+V / print) direto no chat
+      ta.addEventListener("paste", function (e) {
+        var items = (e.clipboardData && e.clipboardData.items) || [];
+        var imgs = [];
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].kind === "file" && /^image\//.test(items[i].type)) {
+            var f = items[i].getAsFile(); if (f) imgs.push(f);
+          }
+        }
+        if (imgs.length) {
+          e.preventDefault();
+          imgs.forEach(function (f) { _enviarArquivo(f, "colado-" + Date.now() + _extImg(f.type)); });
+        }
+      });
     }
   }
   function _autoGrow(ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; }
