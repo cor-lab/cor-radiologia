@@ -55,31 +55,44 @@
     } catch (e) { return ""; }
   }
 
-  // ── Som (AudioContext compartilhado, destrava no 1º gesto do usuário) ──
-  var _somLigado = true;
-  try { _somLigado = localStorage.getItem("cc_som") !== "0"; } catch (e) {}
+  // ── Som e aviso visual: níveis configuráveis, salvos por dispositivo ──
+  // _somNivel: "alto" | "baixo" | "off"    _popNivel: "forte" | "discreto" | "off"
+  var _somNivel = "alto", _popNivel = "forte", _popFixar = false;
+  try { _somNivel = localStorage.getItem("cc_somNivel") || "alto"; } catch (e) {}
+  try { _popNivel = localStorage.getItem("cc_popNivel") || "forte"; } catch (e) {}
+  try { _popFixar = localStorage.getItem("cc_popFixar") === "1"; } catch (e) {}
   var _ac = null;
   function _acCtx() {
     if (!_ac) { var AC = window.AudioContext || window.webkitAudioContext; if (AC) { try { _ac = new AC(); } catch (e) {} } }
     return _ac;
   }
   function _unlockAudio() { var ac = _acCtx(); if (ac && ac.state === "suspended") { try { ac.resume(); } catch (e) {} } }
-  function _beep() {
-    if (!_somLigado) return;
+  function _minimizado() { try { return document.hidden || !document.hasFocus(); } catch (e) { return false; } }
+
+  function _toque(ac, start, vol, alto) {
+    var o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = alto ? "square" : "sine";           // square = mais estridente/audível
+    o.frequency.setValueAtTime(alto ? 988 : 860, start);
+    o.frequency.exponentialRampToValueAtTime(alto ? 620 : 600, start + 0.22);
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(vol, start + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, start + 0.34);
+    o.start(start); o.stop(start + 0.36);
+  }
+  // intenso = janela minimizada/sem foco -> alarme mais alto e mais longo (repete)
+  function _alarme(intenso) {
+    if (_somNivel === "off") return;
     try {
       var ac = _acCtx(); if (!ac) return;
       if (ac.state === "suspended") { try { ac.resume(); } catch (e) {} }
-      var o = ac.createOscillator(), g = ac.createGain();
-      o.connect(g); g.connect(ac.destination);
-      o.type = "sine";
-      o.frequency.setValueAtTime(880, ac.currentTime);
-      o.frequency.exponentialRampToValueAtTime(620, ac.currentTime + 0.18);
-      g.gain.setValueAtTime(0.0001, ac.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.2, ac.currentTime + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.36);
-      o.start(); o.stop(ac.currentTime + 0.37);
+      var vol = _somNivel === "baixo" ? 0.12 : 0.4;
+      var reps = intenso ? 5 : 1;                 // minimizado: 5 toques (~2s)
+      var t0 = ac.currentTime + 0.01;
+      for (var i = 0; i < reps; i++) _toque(ac, t0 + i * 0.42, vol, intenso);
     } catch (e) {}
   }
+  function _beep() { _alarme(false); }            // compat (teste rápido)
 
   // ══ CSS ══
   function _injetarEstilo() {
@@ -100,7 +113,7 @@
       + ".cc-mini{width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.66rem;font-weight:700}"
       + ".cc-item .cc-cnt{margin-left:auto;background:#ef4444;color:#fff;font-size:.68rem;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-weight:700}"
       + ".cc-item.on .cc-cnt{background:#fff;color:#ef4444}"
-      + ".cc-main{flex:1;display:flex;flex-direction:column;min-width:0}"
+      + ".cc-main{position:relative;flex:1;display:flex;flex-direction:column;min-width:0}"
       + ".cc-head{padding:12px 16px;border-bottom:1px solid var(--bd,#e5e7eb);font-weight:600;font-size:.95rem;display:flex;align-items:center;gap:8px}"
       + ".cc-head small{font-weight:400;color:var(--gr,#94a3b8);font-size:.78rem}"
       + ".cc-msgs{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:2px;background:var(--bg,#f1f5f9)}"
@@ -146,6 +159,21 @@
       + ".cc-note-nm{font-size:.82rem;font-weight:800;color:#166534;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
       + ".cc-note-tx{font-size:.86rem;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}"
       + ".cc-note-ic{margin-left:auto;font-size:1.1rem;align-self:flex-start;opacity:.9}"
+      + ".cc-note-x{position:absolute;top:-8px;right:-8px;border:none;background:#64748b;color:#fff;width:22px;height:22px;border-radius:50%;font-size:.66rem;cursor:pointer;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.3)}"
+      + ".cc-note{position:relative}"
+      + "@keyframes ccpulse{0%{box-shadow:0 10px 30px rgba(0,0,0,.28),0 0 0 0 rgba(224,0,0,.55)}70%{box-shadow:0 10px 30px rgba(0,0,0,.28),0 0 0 16px rgba(224,0,0,0)}100%{box-shadow:0 10px 30px rgba(0,0,0,.28),0 0 0 0 rgba(224,0,0,0)}}"
+      + "@keyframes ccshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-4px)}40%{transform:translateX(4px)}60%{transform:translateX(-3px)}80%{transform:translateX(3px)}}"
+      + ".cc-note.forte{border-left-width:8px;padding:14px 16px;background:linear-gradient(120deg,#fff 50%,#fee2e2);animation:ccpulse 1.1s ease-out 4}"
+      + ".cc-note.forte .cc-note-av{width:46px;height:46px;font-size:.9rem}"
+      + ".cc-note.forte .cc-note-nm{font-size:.98rem}"
+      + ".cc-note.forte .cc-note-tx{font-size:1rem}"
+      + ".cc-note.forte.intenso{border-left-color:#e00000;animation:ccpulse 1s ease-out infinite,ccshake .5s ease-in-out 3}"
+      + ".cc-cfg{position:absolute;top:46px;right:8px;z-index:100000;background:var(--card,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.2);padding:12px;width:238px}"
+      + ".cc-cfg h5{margin:2px 0 6px;font-size:.74rem;letter-spacing:.03em;text-transform:uppercase;color:var(--gr,#94a3b8)}"
+      + ".cc-cfg .cc-seg{display:flex;gap:6px;margin-bottom:12px}"
+      + ".cc-cfg .cc-seg button{flex:1;border:1px solid var(--bd,#e5e7eb);background:var(--bg2,#f8fafc);border-radius:8px;padding:7px 4px;font-size:.76rem;cursor:pointer;color:var(--tx,#334155)}"
+      + ".cc-cfg .cc-seg button.on{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff;font-weight:700}"
+      + ".cc-cfg .cc-testar{width:100%;border:1px dashed var(--bd,#e5e7eb);background:transparent;border-radius:8px;padding:8px;font-size:.8rem;cursor:pointer;color:var(--tx,#334155)}"
       + ".cc-row.me .cc-bub{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff}"
       + ".cc-bub .cc-nome{font-size:.74rem;font-weight:700;margin-bottom:2px;opacity:.85}"
       + ".cc-row.me .cc-av{display:none}"
@@ -295,6 +323,7 @@
   async function _abrirCanal(canalId) {
     _canalAtual = canalId;
     try { localStorage.setItem("cc_ultimo_canal", canalId); } catch (e) {}  // lembra a última conversa
+    _limparNotifCanal(canalId);   // fecha pop-ups fixados dessa conversa (= lido)
     _painelPendAberto = false;
     _fecharBusca();
     _renderLista();
@@ -503,10 +532,12 @@
   }
 
   // ── Toast colorido de mensagem nova (clicável) ──
-  function _ccNotify(m) {
+  function _ccNotify(m, intenso) {
+    if (_popNivel === "off") return;
     var host = document.getElementById("cc-notify-host");
     if (!host) { host = document.createElement("div"); host.id = "cc-notify-host"; host.className = "cc-nhost"; document.body.appendChild(host); }
-    var card = document.createElement("div"); card.className = "cc-note";
+    var card = document.createElement("div");
+    card.className = "cc-note" + (_popNivel === "forte" ? " forte" : "") + (intenso ? " intenso" : "");
     var av = document.createElement("div"); av.className = "cc-note-av";
     av.style.background = m.autor_bg || "#4ab848"; av.style.color = m.autor_cor || "#fff"; av.textContent = m.autor_ini || "?";
     var body = document.createElement("div"); body.className = "cc-note-body";
@@ -515,24 +546,99 @@
     var tx = document.createElement("div"); tx.className = "cc-note-tx";
     tx.textContent = (m.conteudo && m.conteudo.length) ? m.conteudo : (m.anexo_nome ? "📎 " + m.anexo_nome : "(mensagem)");
     body.appendChild(nm); body.appendChild(tx);
-    var ic = document.createElement("div"); ic.className = "cc-note-ic"; ic.textContent = "💬";
+    var ic = document.createElement("div"); ic.className = "cc-note-ic"; ic.textContent = _popFixar ? "📌" : "💬";
     card.appendChild(av); card.appendChild(body); card.appendChild(ic);
     var canal = m.canal_id;
-    card.addEventListener("click", function () { _irParaConversa(canal); if (card.parentNode) card.parentNode.removeChild(card); });
+    card.setAttribute("data-canal", canal);
+    function fecha() { card.classList.remove("show"); setTimeout(function () { if (card.parentNode) card.parentNode.removeChild(card); }, 320); }
+    card.addEventListener("click", function () { _irParaConversa(canal); fecha(); });
+    if (_popFixar) {
+      // botão × pra descartar sem abrir (não fecha sozinho)
+      var x = document.createElement("button"); x.className = "cc-note-x"; x.textContent = "✕";
+      x.addEventListener("click", function (ev) { ev.stopPropagation(); fecha(); });
+      card.appendChild(x);
+    }
     host.appendChild(card);
     requestAnimationFrame(function () { card.classList.add("show"); });
-    setTimeout(function () { card.classList.remove("show"); setTimeout(function () { if (card.parentNode) card.parentNode.removeChild(card); }, 320); }, 5200);
+    if (!_popFixar) {
+      // discreto: 4s | forte: 8s | forte+minimizado: 12s
+      var dur = _popNivel === "forte" ? (intenso ? 12000 : 8000) : 4000;
+      setTimeout(fecha, dur);
+    }
+  }
+  // remove os pop-ups fixados de um canal quando ele é aberto (= lido)
+  function _limparNotifCanal(canalId) {
+    var host = document.getElementById("cc-notify-host"); if (!host) return;
+    Array.prototype.forEach.call(host.querySelectorAll(".cc-note[data-canal='" + canalId + "']"), function (c) {
+      c.classList.remove("show"); setTimeout(function () { if (c.parentNode) c.parentNode.removeChild(c); }, 320);
+    });
   }
   function _irParaConversa(canalId) {
     if (typeof navTo === "function") navTo("chat");
     _abrirCanal(canalId);
   }
-  function _toggleSom() {
-    _somLigado = !_somLigado;
-    try { localStorage.setItem("cc_som", _somLigado ? "1" : "0"); } catch (e) {}
-    var b = document.getElementById("cc-head-som"); if (b) b.textContent = _somLigado ? "🔔" : "🔕";
-    if (_somLigado) { _unlockAudio(); _beep(); if (typeof toast === "function") toast("🔔", "Som das notificações ligado."); }
-    else if (typeof toast === "function") toast("🔕", "Som das notificações desligado.");
+  function _iconeSom() { return _somNivel === "off" ? "🔕" : (_somNivel === "baixo" ? "🔉" : "🔔"); }
+  function _atualizarIconeSom() { var b = document.getElementById("cc-head-som"); if (b) b.textContent = _iconeSom(); }
+  function _marcarSeg(p) {
+    Array.prototype.forEach.call(p.querySelectorAll(".cc-seg[data-grp='som'] button"), function (b) { b.classList.toggle("on", b.getAttribute("data-v") === _somNivel); });
+    Array.prototype.forEach.call(p.querySelectorAll(".cc-seg[data-grp='pop'] button"), function (b) { b.classList.toggle("on", b.getAttribute("data-v") === _popNivel); });
+    Array.prototype.forEach.call(p.querySelectorAll(".cc-seg[data-grp='fix'] button"), function (b) { b.classList.toggle("on", b.getAttribute("data-v") === (_popFixar ? "on" : "off")); });
+  }
+  function _fecharConfig() {
+    var ex = document.getElementById("cc-cfg"); if (ex && ex.parentNode) ex.parentNode.removeChild(ex);
+    document.removeEventListener("click", _cfgFora, true);
+  }
+  function _cfgFora(e) {
+    var p = document.getElementById("cc-cfg"); var b = document.getElementById("cc-head-som");
+    if (!p) return;
+    if (p.contains(e.target) || (b && b.contains(e.target))) return;
+    _fecharConfig();
+  }
+  function _abrirConfig() {
+    if (document.getElementById("cc-cfg")) { _fecharConfig(); return; }
+    var main = document.querySelector(".cc-main"); if (!main) return;
+    _unlockAudio();
+    var p = document.createElement("div"); p.id = "cc-cfg"; p.className = "cc-cfg";
+    p.innerHTML =
+      "<h5>🔊 Som do aviso</h5>" +
+      "<div class='cc-seg' data-grp='som'>" +
+        "<button data-v='alto'>🔔 Alto</button><button data-v='baixo'>🔉 Baixo</button><button data-v='off'>🔕 Não</button></div>" +
+      "<h5>💬 Pop-up de aviso</h5>" +
+      "<div class='cc-seg' data-grp='pop'>" +
+        "<button data-v='forte'>💥 Forte</button><button data-v='discreto'>· Discreto</button><button data-v='off'>Não</button></div>" +
+      "<div class='cc-seg' data-grp='fix'>" +
+        "<button data-v='on'>📌 Fixar até ler</button><button data-v='off'>Some sozinho</button></div>" +
+      "<button class='cc-testar' id='cc-testar'>▶ Testar som + pop-up</button>";
+    main.appendChild(p);
+    _marcarSeg(p);
+    Array.prototype.forEach.call(p.querySelectorAll(".cc-seg[data-grp='som'] button"), function (b) {
+      b.addEventListener("click", function () {
+        _somNivel = b.getAttribute("data-v");
+        try { localStorage.setItem("cc_somNivel", _somNivel); } catch (e) {}
+        _marcarSeg(p); _atualizarIconeSom(); if (_somNivel !== "off") { _unlockAudio(); _alarme(false); }
+      });
+    });
+    Array.prototype.forEach.call(p.querySelectorAll(".cc-seg[data-grp='pop'] button"), function (b) {
+      b.addEventListener("click", function () {
+        _popNivel = b.getAttribute("data-v");
+        try { localStorage.setItem("cc_popNivel", _popNivel); } catch (e) {}
+        _marcarSeg(p);
+      });
+    });
+    Array.prototype.forEach.call(p.querySelectorAll(".cc-seg[data-grp='fix'] button"), function (b) {
+      b.addEventListener("click", function () {
+        _popFixar = b.getAttribute("data-v") === "on";
+        try { localStorage.setItem("cc_popFixar", _popFixar ? "1" : "0"); } catch (e) {}
+        _marcarSeg(p);
+      });
+    });
+    var tb = document.getElementById("cc-testar");
+    if (tb) tb.addEventListener("click", function () {
+      _unlockAudio(); _alarme(true);
+      var me = _me() || {};
+      _ccNotify({ canal_id: _canalAtual, autor_nome: me.nome || "Teste", autor_ini: me.ini || "T", autor_bg: me.bg || "#4ab848", autor_cor: me.cor || "#fff", conteudo: "Exemplo de aviso de mensagem 🔔" }, true);
+    });
+    setTimeout(function () { document.addEventListener("click", _cfgFora, true); }, 0);
   }
 
   async function _novoCanal() {
@@ -571,8 +677,9 @@
     _naoLidas[m.canal_id] = (_naoLidas[m.canal_id] || 0) + 1;
     _recalcularBadgeMemoria(); _renderLista();
     if (_bootstrap) {
-      _beep();
-      _ccNotify(m);
+      var intenso = _minimizado();
+      _alarme(intenso);
+      _ccNotify(m, intenso);
     }
   }
   function _onEditada(m) {
@@ -659,7 +766,7 @@
     if (hp) hp.addEventListener("click", _abrirPendencias);
     _atualizarPendCount();
     var hsom = document.getElementById("cc-head-som");
-    if (hsom) { hsom.textContent = _somLigado ? "🔔" : "🔕"; hsom.addEventListener("click", _toggleSom); }
+    if (hsom) { hsom.textContent = _iconeSom(); hsom.title = "Sons e avisos"; hsom.addEventListener("click", _abrirConfig); }
     if (si) {
       si.addEventListener("input", function () { _fazerBusca(si.value); });
       si.addEventListener("keydown", function (e) {
