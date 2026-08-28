@@ -21,7 +21,7 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "5.9 (20260827q)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "6.0 (20260827r)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
@@ -176,6 +176,9 @@
       + ".cc-cfg .cc-seg button{flex:1;border:1px solid var(--bd,#e5e7eb);background:var(--bg2,#f8fafc);border-radius:8px;padding:7px 4px;font-size:.76rem;cursor:pointer;color:var(--tx,#334155)}"
       + ".cc-cfg .cc-seg button.on{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff;font-weight:700}"
       + ".cc-cfg .cc-testar{width:100%;border:1px dashed var(--bd,#e5e7eb);background:transparent;border-radius:8px;padding:8px;font-size:.8rem;cursor:pointer;color:var(--tx,#334155)}"
+      + ".cc-emoji-panel{position:absolute;left:12px;bottom:60px;z-index:100000;background:var(--card,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.2);padding:8px;width:296px;max-height:214px;overflow-y:auto;display:grid;grid-template-columns:repeat(8,1fr);gap:2px}"
+      + ".cc-emoji{border:none;background:transparent;font-size:1.3rem;cursor:pointer;border-radius:8px;padding:3px;line-height:1.1}"
+      + ".cc-emoji:hover{background:var(--bg,#eef2f7)}"
       + ".cc-row.me .cc-bub{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff}"
       + ".cc-bub .cc-nome{font-size:.74rem;font-weight:700;margin-bottom:2px;opacity:.85}"
       + ".cc-row.me .cc-av{display:none}"
@@ -781,6 +784,7 @@
           "<div class='cc-msgs' id='cc-msgs'></div>" +
           "<div class='cc-foot' id='cc-foot'>" +
             "<input type='file' id='cc-file' style='display:none'>" +
+            "<button class='cc-clip' id='cc-emoji-btn' title='Emojis'>😊</button>" +
             "<button class='cc-clip' id='cc-clip' title='Anexar arquivo (até 10 MB)'>📎</button>" +
             "<textarea id='cc-input' rows='1' placeholder='Escreva uma mensagem…'></textarea>" +
             "<button class='cc-send' id='cc-send'>Enviar</button>" +
@@ -791,6 +795,8 @@
 
     var nc = document.getElementById("cc-new-canal"); if (nc) nc.addEventListener("click", _novoCanal);
     var send = document.getElementById("cc-send"); if (send) send.addEventListener("click", _enviar);
+    var eBtn = document.getElementById("cc-emoji-btn");
+    if (eBtn) eBtn.addEventListener("click", function (ev) { ev.stopPropagation(); _toggleEmojis(); });
     var clip = document.getElementById("cc-clip");
     var finp = document.getElementById("cc-file");
     if (clip && finp) {
@@ -839,6 +845,41 @@
     }
   }
   function _autoGrow(ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; }
+
+  // ══ Emojis ══
+  var _EMOJIS = ["😀","😃","😄","😁","😆","😅","😂","🤣","😊","🙂","😉","😍","😘","😗","😜","🤪","🤔","🤗","😎","🥳","😴","😇","🙃","😋","😝","🤨","😐","😑","🙄","😬","😥","😢","😭","😤","😠","😡","🥺","😱","😨","😰","🤯","😳","🤒","🤕","🤧","😷","🤢","🥴","👍","👎","👌","🤌","👏","🙌","🙏","💪","🤝","👋","✌️","🤙","👇","👆","☝️","🫶","❤️","🧡","💛","💚","💙","💜","🖤","💯","✅","❌","⚠️","❗","❓","⭐","🔥","✨","🎉","🎊","🥇","📌","📎","📷","📸","🖼️","📄","📁","🗓️","⏰","☎️","📞","💬","📢","🔔","💊","🦷","🩻","🏥","🚑","💉","🧾","👏🏻","🤙🏻"];
+  function _inserirNoInput(txt) {
+    var ta = document.getElementById("cc-input"); if (!ta) return;
+    var ini = (ta.selectionStart != null) ? ta.selectionStart : ta.value.length;
+    var fim = (ta.selectionEnd != null) ? ta.selectionEnd : ta.value.length;
+    ta.value = ta.value.slice(0, ini) + txt + ta.value.slice(fim);
+    var pos = ini + txt.length;
+    try { ta.selectionStart = ta.selectionEnd = pos; } catch (e) {}
+    ta.focus(); _autoGrow(ta);
+  }
+  function _fecharEmojis() {
+    var p = document.getElementById("cc-emoji-panel"); if (p && p.parentNode) p.parentNode.removeChild(p);
+    document.removeEventListener("click", _emojiFora, true);
+  }
+  function _emojiFora(e) {
+    var p = document.getElementById("cc-emoji-panel"); var b = document.getElementById("cc-emoji-btn");
+    if (!p) return;
+    if (p.contains(e.target) || (b && b.contains(e.target))) return;
+    _fecharEmojis();
+  }
+  function _toggleEmojis() {
+    if (document.getElementById("cc-emoji-panel")) { _fecharEmojis(); return; }
+    var main = document.querySelector(".cc-main"); if (!main) return;
+    var p = document.createElement("div"); p.id = "cc-emoji-panel"; p.className = "cc-emoji-panel";
+    var h = "";
+    for (var i = 0; i < _EMOJIS.length; i++) h += "<button class='cc-emoji' type='button'>" + _EMOJIS[i] + "</button>";
+    p.innerHTML = h;
+    main.appendChild(p);
+    Array.prototype.forEach.call(p.querySelectorAll(".cc-emoji"), function (b) {
+      b.addEventListener("click", function (ev) { ev.stopPropagation(); _inserirNoInput(b.textContent); });
+    });
+    setTimeout(function () { document.addEventListener("click", _emojiFora, true); }, 0);
+  }
 
   function _renderLista() {
     var bc = document.getElementById("cc-lista-canais");
