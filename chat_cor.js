@@ -21,7 +21,7 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "6.2 (20260827t)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "6.3 (20260827u)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
@@ -935,7 +935,7 @@
     var main = document.querySelector(".cc-main"); if (!main) return;
     var p = document.createElement("div"); p.id = "cc-emoji-panel"; p.className = "cc-emoji-panel";
     var h = "<div class='cc-emoji-fav'><div class='cc-emoji-favrow' id='cc-emoji-favrow'></div>" +
-      "<div class='cc-emoji-addwrap'><input id='cc-emoji-add' placeholder='cole um emoji aqui…'>" +
+      "<div class='cc-emoji-addwrap'><input id='cc-emoji-add' placeholder='cole o emoji aqui (ex: 😀 — não link)'>" +
       "<button id='cc-emoji-addbtn' type='button'>＋ salvar</button></div></div>";
     h += "<div class='cc-emoji-grid'>";
     for (var i = 0; i < _EMOJIS.length; i++) h += "<button class='cc-emoji' type='button'>" + _EMOJIS[i] + "</button>";
@@ -950,7 +950,7 @@
     var addBtn = document.getElementById("cc-emoji-addbtn");
     function salvar() {
       var e = _extrairEmojis(add ? add.value : "");
-      if (!e.length) { if (typeof toast === "function") toast("ℹ️", "Cole um emoji no campo primeiro."); return; }
+      if (!e.length) { if (typeof toast === "function") toast("ℹ️", "Isso não é um emoji. Cole o emoji em si (ex: 😀) — não um link/texto."); if (add) { add.value = ""; add.focus(); } return; }
       var fav = _emojisFav();
       e.forEach(function (x) { if (fav.indexOf(x) < 0) fav.unshift(x); });
       _salvarFav(fav); if (add) add.value = ""; _renderFavs();
