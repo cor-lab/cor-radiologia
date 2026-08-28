@@ -21,7 +21,7 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "5.6 (20260827n)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "5.7 (20260827o)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
@@ -310,8 +310,14 @@
     }
 
     if (!_canalAtual && _canais.length) {
+      // 1º: conversa vinda da notificação (#canal=... na URL)
+      var alvo = null;
+      try { var mh = /[#&?]canal=([0-9a-fA-F-]+)/.exec(location.hash + location.search); if (mh) alvo = mh[1]; } catch (e) {}
       var salvo = null; try { salvo = localStorage.getItem("cc_ultimo_canal"); } catch (e) {}
-      if (salvo && _canais.some(function (c) { return c.id === salvo; })) {
+      if (alvo && _canais.some(function (c) { return c.id === alvo; })) {
+        _canalAtual = alvo;
+        try { history.replaceState(null, "", location.pathname); } catch (e) {}  // limpa a URL
+      } else if (salvo && _canais.some(function (c) { return c.id === salvo; })) {
         _canalAtual = salvo;   // restaura a última conversa aberta
       } else {
         var g = _canais.filter(function (c) { return c.tipo !== "dm"; })[0] || _canais[0];
@@ -1096,6 +1102,18 @@
     onLogin: function () { if (!_iniciado) _iniciar(); },
     onLogout: _desligar,
     abrir: function () { if (typeof navTo === "function") navTo("chat"); },
+    // abre uma conversa específica (usado pelo clique na notificação)
+    abrirConversa: function (canalId) {
+      if (!canalId) { if (typeof navTo === "function") navTo("chat"); return; }
+      if (!_iniciado) _iniciar();
+      // aguarda os canais carregarem, se necessário
+      var tentar = function (n) {
+        if (_canais.some(function (c) { return c.id === canalId; })) { _irParaConversa(canalId); }
+        else if (n > 0) { setTimeout(function () { tentar(n - 1); }, 400); }
+        else { if (typeof navTo === "function") navTo("chat"); }
+      };
+      tentar(10);
+    },
     _estado: function () { return { canalAtual: _canalAtual, canais: _canais, naoLidas: _naoLidas }; }
   };
 })();

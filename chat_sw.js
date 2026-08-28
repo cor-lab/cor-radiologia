@@ -18,6 +18,7 @@ self.addEventListener("push", function (event) {
     body: data.body || "",
     tag: data.tag || "chat-cor",
     renotify: true,
+    requireInteraction: true,   // fica na tela até o usuário clicar/fechar (não some sozinha)
     data: {
       canal_id: data.canal_id || null,
       url: (self.registration && self.registration.scope) || "/"
@@ -40,7 +41,9 @@ self.addEventListener("notificationclick", function (event) {
           return;
         }
       }
-      if (self.clients.openWindow) return self.clients.openWindow(alvo);
+      // nenhuma janela aberta -> abre uma nova já na conversa (via #canal=...)
+      var url = alvo + (canal ? ("#canal=" + canal) : "");
+      if (self.clients.openWindow) return self.clients.openWindow(url);
     })
   );
 });

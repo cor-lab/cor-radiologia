@@ -102,11 +102,14 @@
     });
   }
 
-  // service worker manda a página abrir o chat quando clicam na notificação
+  // service worker manda a página abrir o chat NA CONVERSA da notificação
   function _ouvirCliqueNotif() {
     if (!("serviceWorker" in navigator)) return;
     navigator.serviceWorker.addEventListener("message", function (e) {
-      if (e.data && e.data.chatOpen && typeof navTo === "function") navTo("chat");
+      if (!e.data || !e.data.chatOpen) return;
+      try { window.focus(); } catch (x) {}
+      if (window.ChatCOR && ChatCOR.abrirConversa) ChatCOR.abrirConversa(e.data.canal_id);
+      else if (typeof navTo === "function") navTo("chat");
     });
   }
 
