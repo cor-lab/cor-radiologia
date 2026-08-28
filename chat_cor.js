@@ -21,6 +21,8 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
+  var _CHAT_VER = "5.6 (20260827n)";   // versão deste módulo (aparece no menu 🔔)
+  try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
   var _canais = [];          // todos os canais visíveis (canal + dm)
@@ -57,10 +59,10 @@
 
   // ── Som e aviso visual: níveis configuráveis, salvos por dispositivo ──
   // _somNivel: "alto" | "baixo" | "off"    _popNivel: "forte" | "discreto" | "off"
-  var _somNivel = "alto", _popNivel = "forte", _popFixar = false;
+  var _somNivel = "alto", _popNivel = "forte", _popFixar = true;
   try { _somNivel = localStorage.getItem("cc_somNivel") || "alto"; } catch (e) {}
   try { _popNivel = localStorage.getItem("cc_popNivel") || "forte"; } catch (e) {}
-  try { _popFixar = localStorage.getItem("cc_popFixar") === "1"; } catch (e) {}
+  try { _popFixar = localStorage.getItem("cc_popFixar") !== "0"; } catch (e) {}  // padrão LIGADO
   var _ac = null;
   function _acCtx() {
     if (!_ac) { var AC = window.AudioContext || window.webkitAudioContext; if (AC) { try { _ac = new AC(); } catch (e) {} } }
@@ -318,6 +320,31 @@
     }
     _renderTudo();
     if (_canalAtual) await _abrirCanal(_canalAtual);
+  }
+
+  // Atualização LEVE da lista de canais (não reconstrói a tela nem reabre a
+  // conversa) — usada quando chega mensagem de uma conversa nova, pra NÃO
+  // limpar os pop-ups fixados nem apagar as mensagens já na tela.
+  async function _atualizarListaCanais() {
+    var r = await supa.from("chat_canais")
+      .select("id,nome,descricao,tipo,arquivado").eq("arquivado", false)
+      .order("criado_em", { ascending: true });
+    if (r.error || !r.data) return;
+    _canais = r.data;
+    var me = _me();
+    var dmIds = _canais.filter(function (c) { return c.tipo === "dm"; }).map(function (c) { return c.id; });
+    _dmOutro = {}; _dmCanalDe = {};
+    if (dmIds.length) {
+      var rm = await supa.from("chat_membros").select("canal_id,membro_id").in("canal_id", dmIds);
+      if (!rm.error && rm.data) rm.data.forEach(function (m) {
+        if (me && m.membro_id !== me.id) {
+          var u = _usersById[m.membro_id] || { nome: "Usuário", ini: "?", bg: "#64748b", cor: "#fff" };
+          _dmOutro[m.canal_id] = u;
+          _dmCanalDe[m.membro_id] = m.canal_id;
+        }
+      });
+    }
+    _renderLista();
   }
 
   async function _abrirCanal(canalId) {
@@ -608,7 +635,8 @@
         "<button data-v='forte'>💥 Forte</button><button data-v='discreto'>· Discreto</button><button data-v='off'>Não</button></div>" +
       "<div class='cc-seg' data-grp='fix'>" +
         "<button data-v='on'>📌 Fixar até ler</button><button data-v='off'>Some sozinho</button></div>" +
-      "<button class='cc-testar' id='cc-testar'>▶ Testar som + pop-up</button>";
+      "<button class='cc-testar' id='cc-testar'>▶ Testar som + pop-up</button>" +
+      "<div style='margin-top:9px;text-align:center;font-size:.68rem;color:var(--gr,#94a3b8)'>chat v" + _CHAT_VER + "</div>";
     main.appendChild(p);
     _marcarSeg(p);
     Array.prototype.forEach.call(p.querySelectorAll(".cc-seg[data-grp='som'] button"), function (b) {
@@ -665,7 +693,7 @@
 
     // canal novo (ex.: alguém me mandou a 1ª DM) -> recarrega a lista
     var conhecido = _canais.some(function (c) { return c.id === m.canal_id; });
-    if (!conhecido) { await _carregarCanais(); }
+    if (!conhecido) { await _atualizarListaCanais(); }
 
     if (m.autor_id === me.id) { if (m.canal_id === _canalAtual) _appendUma(m); return; }
 
