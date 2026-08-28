@@ -21,7 +21,7 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "6.0 (20260827r)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "6.1 (20260827s)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
@@ -179,6 +179,11 @@
       + ".cc-emoji-panel{position:absolute;left:12px;bottom:60px;z-index:100000;background:var(--card,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.2);padding:8px;width:296px;max-height:214px;overflow-y:auto;display:grid;grid-template-columns:repeat(8,1fr);gap:2px}"
       + ".cc-emoji{border:none;background:transparent;font-size:1.3rem;cursor:pointer;border-radius:8px;padding:3px;line-height:1.1}"
       + ".cc-emoji:hover{background:var(--bg,#eef2f7)}"
+      + ".cc-emoji-big{display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding:2px 0}"
+      + ".cc-emoji-big img.cc-emoji-anim{width:40px;height:40px}"
+      + ".cc-emoji-big span{font-size:36px;line-height:1}"
+      + ".cc-emoji-big.xl img.cc-emoji-anim{width:64px;height:64px}"
+      + ".cc-emoji-big.xl span{font-size:58px;line-height:1}"
       + ".cc-row.me .cc-bub{background:var(--g,#4ab848);border-color:var(--g,#4ab848);color:#fff}"
       + ".cc-bub .cc-nome{font-size:.74rem;font-weight:700;margin-bottom:2px;opacity:.85}"
       + ".cc-row.me .cc-av{display:none}"
@@ -547,6 +552,36 @@
   }
 
   // monta o bloco visual do anexo (imagem ou cartão de arquivo) dentro do balão
+  // ── Emojis grandes + animados (quando a mensagem é só emoji) ──
+  function _graphemes(s) {
+    try { var seg = new Intl.Segmenter(undefined, { granularity: "grapheme" }); return Array.from(seg.segment(s), function (x) { return x.segment; }); }
+    catch (e) { return Array.from(s); }
+  }
+  function _contarSeEmojiOnly(s) {
+    s = (s || "").trim(); if (!s) return 0;
+    var resto;
+    try { resto = s.replace(/[\p{Extended_Pictographic}‍️\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}\s]/gu, ""); }
+    catch (e) { return 0; }              // navegador antigo sem \p{} -> texto normal
+    if (resto.length) return 0;          // tem texto normal junto -> não é "só emoji"
+    return _graphemes(s.replace(/\s/g, "")).length;
+  }
+  function _montarEmojiGrande(conteudo, n) {
+    var wrap = document.createElement("div");
+    wrap.className = "cc-emoji-big" + (n <= 2 ? " xl" : "");
+    _graphemes(conteudo.replace(/\s/g, "")).forEach(function (cl) {
+      var seq = Array.from(cl).map(function (c) { return c.codePointAt(0).toString(16); }).join("_");
+      var img = document.createElement("img");
+      img.className = "cc-emoji-anim"; img.alt = cl; img.loading = "lazy";
+      img.src = "https://fonts.gstatic.com/s/e/notoemoji/latest/" + seq + "/512.gif";
+      img.onerror = function () {                 // sem animação -> mostra o emoji grande (texto)
+        var sp = document.createElement("span"); sp.textContent = cl;
+        if (img.parentNode) img.parentNode.replaceChild(sp, img);
+      };
+      wrap.appendChild(img);
+    });
+    return wrap;
+  }
+
   function _montarAnexo(m, bub) {
     if (_ehImagem(m.anexo_tipo)) {
       var img = document.createElement("img");
@@ -1023,7 +1058,12 @@
       var txtd = document.createElement("div"); txtd.className = "cc-txt cc-del"; txtd.textContent = "mensagem removida"; bub.appendChild(txtd);
     } else {
       if (m.conteudo && m.conteudo.length) {
-        var txt = document.createElement("div"); txt.className = "cc-txt"; txt.textContent = m.conteudo; bub.appendChild(txt);
+        var nEmoji = _contarSeEmojiOnly(m.conteudo);
+        if (nEmoji >= 1 && nEmoji <= 6) {
+          bub.appendChild(_montarEmojiGrande(m.conteudo, nEmoji));   // só emoji -> grande + animado
+        } else {
+          var txt = document.createElement("div"); txt.className = "cc-txt"; txt.textContent = m.conteudo; bub.appendChild(txt);
+        }
       }
       if (m.anexo_path) _montarAnexo(m, bub);
     }
