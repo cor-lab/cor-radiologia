@@ -235,6 +235,61 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-08-29 (v6.11): FIX DA FAIXA DE STATUS NAS DOCUMENTACOES. O azul-claro
+              agora altera somente o fundo e as bordas finas do card, sem
+              sobrescrever a cor da faixa lateral definida pelo status.
+
+  2026-08-29 (v6.10): DOCUMENTACOES DESTACADAS NA AGENDA. Cards cujo nome do
+              exame contem "Documentacao" recebem fundo azul-claro suave. A
+              faixa lateral continua representando o status do atendimento.
+              Exames apenas digitais continuam sem cor especifica.
+
+  2026-08-29 (v6.9): CARDS DA AGENDA COM FUNDO UNICO. Agendado, realizado,
+              aguardando e cancelado agora usam o mesmo fundo branco. O status
+              permanece indicado apenas pela faixa lateral e pelo check. Isso
+              elimina a impressao de que exames digitais possuem cor propria.
+
+  2026-08-29 (v6.8): AGENDA REFINADA sem alterar os formularios. Barra de
+              navegacao reorganizada, grade de horarios mais legivel e cards
+              com hierarquia melhor entre horario, paciente e exame. Corrigido
+              o encaixe dos agendamentos de 10 minutos, que podiam invadir o
+              card seguinte por causa da altura minima de 54px. Exames digitais
+              continuam sem cor exclusiva; as cores representam apenas status.
+
+  2026-08-29 (v6.7): REVERT do visual da agenda da v6.6 — Vine preferiu o
+              anterior (cards brancos com barra grossa de status, grade e data
+              como eram). MANTIDOS da v6.6: aba renomeada "Agendar"→"Agenda" e
+              o fix do alinhamento dos checkboxes de método de pagamento.
+              Sobrou um seletor .ag-cl.hh neutro no CSS (inofensivo, classe
+              não é mais emitida).
+
+  2026-08-29 (v6.6): VISUAL DA AGENDA REFINADO (pedido do Vine). Cards com
+              cantos arredondados (10px), barra de status fina (5px, ::before)
+              em vez da grossa de 10px, fundo levemente tingido por status,
+              sombra suave + hover com elevação, hora em DM Mono e nome do
+              paciente em destaque, linha nova com o DENTISTA no card (.ed,
+              corta por overflow em cards baixos), check de realizado virou
+              badge circular. Grade: linha da hora cheia mais marcada (.ag-cl.hh),
+              hover no slot vazio mostra "+", data por extenso na barra
+              ("Sexta, 28/08/2026"). Aba "Agendar" renomeada p/ "Agenda" e fix
+              do alinhamento dos checkboxes de método de pagamento (width:100%
+              herdado esticava a caixinha). Zero mudança de lógica/dados.
+
+  2026-08-29 (v6.5): NOVA ABA "➕ Novo" — cadastro em tela cheia (pedido do
+              Vine, simulação aprovada). A aba Agendar agora mostra SÓ a agenda
+              em largura total; o formulário de Novo Agendamento/Atendimento
+              ganhou aba própria ("novo"), dividida ao meio: esquerda = dados do
+              paciente + dentista + pagamento/entrega (campos em 2-3 colunas,
+              seções tituladas), direita = coluna inteira de exames com busca e
+              resumo. TODOS os IDs e funções foram preservados (pNome, pExWrap,
+              dSel, confAg, limparFormNovoAg, updAgSum, máscaras, CEP...) — o
+              form agora é montado UMA vez (_ensureFormNovo) e NÃO é mais
+              apagado ao trocar de aba no meio de um cadastro. Clicar num slot
+              vazio da agenda (agCC) preenche data/hora e leva pra aba Novo.
+              PERMS: chave "novo" espelha "agendar" em todos os perfis. Botões
+              que apontavam pro form via navTo('agendar') agora usam
+              abrirNovoAg()/navTo('novo') (dashboard + preencherAgDaCora).
+
   2026-07-25 (v3.39): MÉTODO DE PAGAMENTO (Cartão/Dinheiro/Pix). Nova coluna
               agendamentos.metodo_pagamento e um seletor no modal do atendimento
               (logo abaixo do status), pra registrar na hora de atender. Clicar
@@ -2638,43 +2693,59 @@ tr:last-child td{border-bottom:none}
 @media(max-width:680px){.fg2,.fg3{grid-template-columns:1fr}.stats-row{grid-template-columns:1fr 1fr}.exgr{grid-template-columns:1fr 1fr}.rwgr{grid-template-columns:1fr}}
 
 /* ══ AGENDA CALENDÁRIO ══ */
-.ag-toolbar{display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.08);flex-wrap:wrap;background:rgba(18,36,78,.6);backdrop-filter:blur(8px)}
-.ag-nav button{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--wh);cursor:pointer;border-radius:7px;padding:6px 11px;font-size:.82rem;font-weight:700;transition:all .15s;margin-right:4px;font-family:"DM Sans",sans-serif}
+.ag-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) auto minmax(370px,1fr);align-items:center;gap:18px;padding:13px 18px;border-bottom:1px solid rgba(255,255,255,.09);background:rgba(18,36,78,.88);box-shadow:0 3px 12px rgba(0,0,0,.12)}
+.ag-toolbar-left{display:flex;align-items:center;gap:12px;min-width:0}
+.ag-nav{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.ag-nav button{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.11);color:var(--wh);cursor:pointer;border-radius:7px;padding:0;font-size:1.05rem;font-weight:700;transition:background .15s,border-color .15s,color .15s;margin:0;font-family:"DM Sans",sans-serif}
 .ag-nav button:hover{background:rgba(74,184,72,.2);border-color:var(--g)}
-.ag-tbtn{background:linear-gradient(135deg,var(--g),var(--gl))!important;color:#fff!important;border-color:transparent!important}
-.ag-dr{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:var(--wh);border-radius:7px;padding:6px 12px;font-family:"DM Sans",sans-serif;font-size:.82rem}
-.ag-vb{display:flex;border:1px solid rgba(255,255,255,.12);border-radius:8px;overflow:hidden;margin-left:auto}
+.ag-nav .ag-tbtn{width:auto;padding:0 14px;background:linear-gradient(135deg,var(--g),var(--gl))!important;color:#fff!important;border-color:transparent!important;font-size:.76rem}
+.ag-dr{min-width:118px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);color:var(--wh);border-radius:7px;padding:7px 12px;text-align:center;font-family:"DM Mono",monospace;font-size:.78rem;font-weight:600;white-space:nowrap}
+.ag-vb{display:flex;border:1px solid rgba(255,255,255,.12);border-radius:8px;overflow:hidden;justify-self:center}
 .ag-vb button{background:rgba(255,255,255,.04);border:none;color:var(--gr);cursor:pointer;padding:6px 18px;font-size:.82rem;font-weight:700;transition:all .15s;border-right:1px solid rgba(255,255,255,.08);font-family:"DM Sans",sans-serif}
 .ag-vb button:last-child{border-right:none}
 .ag-vb button.active{background:rgba(74,184,72,.18);color:var(--g)}
+.ag-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;justify-self:end}
+.ag-actions .btn{min-height:34px;justify-content:center}
+.ag-new-at{background:#0796ad;color:#fff;box-shadow:0 2px 10px rgba(7,150,173,.2)}
+.ag-new-at:hover{background:#07859a;transform:translateY(-1px);box-shadow:0 5px 16px rgba(7,150,173,.28)}
 .ag-wrap2{display:grid;grid-template-columns:1fr 520px;height:calc(100vh - 130px);overflow:hidden}
-.ag-main2{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid rgba(255,255,255,.07)}
-.ag-gw{flex:1;overflow-y:auto;overflow-x:auto}
+.ag-main2{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid rgba(255,255,255,.07);background:#0d1830}
+.ag-gw{flex:1;overflow-y:auto;overflow-x:auto;background:rgba(7,18,40,.24)}
 .ag-gw::-webkit-scrollbar{width:5px;height:5px}
 .ag-gw::-webkit-scrollbar-thumb{background:rgba(74,184,72,.3);border-radius:3px}
-.ag-tc{width:50px;flex-shrink:0;position:sticky;left:0;z-index:10;background:rgba(13,24,48,.97)}
-.ag-ts{height:18px;display:flex;align-items:flex-start;justify-content:flex-end;padding-right:8px;padding-top:0;font-size:.62rem;color:var(--gr);font-family:"DM Mono",monospace;border-top:1px solid rgba(255,255,255,.05);line-height:1}
-.ag-ts.hf{border-top-color:rgba(255,255,255,.02);font-size:0}
-.ag-dc{flex:1;border-left:1px solid rgba(255,255,255,.06);position:relative;min-width:140px}
-.ag-dh{text-align:center;padding:10px 4px;position:sticky;top:0;background:rgba(18,36,78,.98);z-index:5;border-bottom:1px solid rgba(255,255,255,.08)}
+.ag-tc{width:62px;flex-shrink:0;position:sticky;left:0;z-index:10;background:rgba(13,24,48,.985);border-right:1px solid rgba(255,255,255,.075);box-shadow:4px 0 10px rgba(0,0,0,.08)}
+.ag-corner{height:52px;border-bottom:1px solid rgba(255,255,255,.09)}
+.ag-ts{display:flex;align-items:flex-start;justify-content:flex-end;padding-right:9px;padding-top:3px;font-size:.63rem;color:#91a3b9;font-family:"DM Mono",monospace;border-top:1px solid transparent;line-height:1}
+.ag-ts.hh{border-top-color:rgba(255,255,255,.105)}
+.ag-ts.hf{font-size:0}
+.ag-dc{flex:1;border-left:1px solid rgba(255,255,255,.055);position:relative;min-width:160px}
+.ag-dh{height:52px;text-align:center;padding:0 4px;position:sticky;top:0;background:rgba(18,36,78,.985);z-index:5;border-bottom:1px solid rgba(255,255,255,.09);display:flex;flex-direction:column;align-items:center;justify-content:center}
 .ag-dh .dw{color:var(--gr);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
 .ag-dh .dd{font-size:1.08rem;font-family:"Playfair Display",serif;line-height:1.2;margin-top:2px}
 .ag-dh.tod .dd{background:var(--g);color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:2px auto 0;font-size:.9rem}
-.ag-cl{height:14px;border-top:1px solid rgba(255,255,255,.045);cursor:pointer;transition:background .1s}
+.ag-cl{height:14px;border-top:1px solid transparent;cursor:pointer;transition:background .1s}
 .ag-cl:hover{background:rgba(74,184,72,.06)}
-.ag-cl.hf{border-top-color:rgba(255,255,255,.018)}
-.ag-ev{position:absolute;border-radius:6px;padding:5px 8px 5px 14px;font-size:.78rem;cursor:pointer;overflow:hidden;z-index:2;box-shadow:0 1px 6px rgba(0,0,0,.18);transition:filter .14s,transform .14s;display:flex;flex-direction:column;gap:2px;border:1px solid rgba(0,0,0,.1);background:#fff;color:#1a1a2e;border-left:none}
-.ag-ev:hover{filter:brightness(.97);z-index:3;transform:scale(1.01);box-shadow:0 3px 12px rgba(0,0,0,.22)}
-.et{font-size:.72rem;font-weight:700;font-family:"DM Sans",sans-serif;white-space:nowrap;letter-spacing:.01em;line-height:1.4;color:#1a1a2e}
+.ag-cl.hh{border-top-color:rgba(255,255,255,.105)}
+.ag-cl.hm{border-top-color:rgba(255,255,255,.052)}
+.ag-cl.hf{border-top-color:rgba(255,255,255,.016)}
+.ag-ev{position:absolute;border-radius:6px;padding:5px 28px 5px 12px;font-size:.78rem;cursor:pointer;overflow:hidden;z-index:2;box-shadow:0 2px 6px rgba(0,0,0,.2);transition:filter .14s,transform .14s,box-shadow .14s;display:flex;flex-direction:column;gap:3px;border:1px solid rgba(13,24,48,.16);background:#fff;color:#1a1a2e;border-left:none}
+.ag-ev:hover{filter:brightness(.985);z-index:3;transform:translateY(-1px);box-shadow:0 5px 13px rgba(0,0,0,.25)}
+.et{display:flex;align-items:baseline;gap:8px;min-width:0;font-family:"DM Sans",sans-serif;line-height:1.25;color:#1a1a2e}
+.e-time{flex-shrink:0;font-family:"DM Mono",monospace;font-size:.68rem;font-weight:700;color:#435069;white-space:nowrap}
+.e-name{min-width:0;font-size:.78rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .en{font-weight:700;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1a1a2e}
-.es{font-size:.70rem;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#333}
-.eck{position:absolute;right:5px;top:4px;font-size:.7rem;color:#4ab848}
+.es{font-size:.69rem;line-height:1.2;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#333}
+.ag-ev.ag-short{padding-top:4px;padding-bottom:3px;gap:1px}
+.ag-ev.ag-short .es{font-size:.65rem;line-height:1.1}
+.eck{position:absolute;right:7px;top:5px;font-size:.72rem;font-weight:800;color:#3aa738}
 .ag-nl{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--rd),rgba(224,82,82,.4));z-index:4;pointer-events:none}
 .ag-nl::before{content:"";position:absolute;left:-1px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--rd);box-shadow:0 0 8px rgba(224,82,82,.5)}
-.ec0{background:#fff;border-left:10px solid #b4825f;color:#1a1a2e}
-.ec1{background:#f0faf0;border-left:10px solid #4ab848;color:#1a1a2e}
-.ec2{background:#fffef5;border-left:10px solid #c9a84c;color:#1a1a2e}
-.ec3{background:#f4f4f8;border-left:10px solid #8890a0;color:#1a1a2e}
+.ec0,.ec1,.ec2,.ec3{background:#fff;color:#1a1a2e}
+.ec0{border-left:10px solid #b4825f}
+.ec1{border-left:10px solid #4ab848}
+.ec2{border-left:10px solid #c9a84c}
+.ec3{border-left:10px solid #8890a0}
+.ag-ev.ag-doc{background:#eaf4ff;border-top-color:#b8d8f2;border-right-color:#b8d8f2;border-bottom-color:#b8d8f2}
 .ag-sd{overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:12px;background:rgba(18,36,78,.55);border-left:1px solid rgba(255,255,255,.06)}
 /* ── Form de agendamento COMPACTO (pedido do Vine): reduz ~pela metade o
    espaçamento vertical, sem tocar na lista de exames. ── */
@@ -2689,6 +2760,41 @@ tr:last-child td{border-bottom:none}
 .ag-sd #pExWrap{margin-top:2px}
 .ag-st2{font-family:"Playfair Display",serif;font-size:1rem;color:var(--g);margin-bottom:4px;letter-spacing:.01em}
 .ag-si{background:rgba(74,184,72,.08);border:1px solid rgba(74,184,72,.2);border-radius:8px;padding:9px 12px;font-size:.79rem;color:var(--g);display:none}
+
+@media(max-width:1100px) and (min-width:761px){
+  .ag-toolbar{grid-template-columns:1fr auto;gap:10px 16px}
+  .ag-vb{justify-self:end}
+  .ag-actions{grid-column:1/-1;justify-self:end}
+}
+
+/* ══ v6.5 — AGENDA TELA CHEIA + ABA ➕ NOVO (form em 2 colunas iguais) ══ */
+.ag-wrap-full{display:grid;grid-template-columns:1fr;height:calc(100vh - 130px);overflow:hidden}
+.ag-wrap-full .ag-main2{border-right:none}
+.novo-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.novo-ttl{font-family:"Playfair Display",serif;font-size:1.15rem}
+.novo-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch;height:calc(100vh - 190px)}
+/* as duas colunas: mesmo tamanho, cada uma rola por dentro */
+.novo-col{background:rgba(18,36,78,.45);border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;min-height:0}
+/* a esquerda reusa a classe .ag-sd (herda o form compacto + regras mobile),
+   mas sem o visual de sidebar */
+#page-novo .ag-sd{border-left:none;max-height:none;height:auto;background:rgba(18,36,78,.45)}
+.novo-sub{font-size:.7rem;color:var(--tl);letter-spacing:.08em;text-transform:uppercase;font-weight:700;margin-top:8px;display:flex;align-items:center;gap:8px}
+.novo-sub::after{content:"";flex:1;height:1px;background:rgba(45,212,191,.2)}
+.fg3n{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+/* coluna de exames: a lista cresce e rola por dentro; resumo fica embaixo */
+.novo-exames{overflow:hidden}
+.novo-exames .field{flex:1;display:flex;flex-direction:column;min-height:0}
+#page-novo #pExWrap{max-height:none;flex:1;min-height:140px}
+.novo-exames #agSumDiv{max-height:45%;overflow-y:auto;flex-shrink:0}
+@media(max-width:900px){
+  .ag-wrap-full{height:auto;min-height:0;overflow:visible;display:flex;flex-direction:column}
+  .novo-grid{grid-template-columns:1fr;height:auto}
+  .novo-col{overflow:visible}
+  #page-novo #pExWrap{max-height:320px;flex:none}
+  .novo-exames{overflow:visible}
+  .novo-exames .field{flex:none}
+  .novo-exames #agSumDiv{max-height:none}
+}
 
 
 .exck-wrap{display:flex;flex-direction:column;gap:3px}
@@ -3083,38 +3189,70 @@ tr:last-child td{border-bottom:none}
 
   /* Agenda: calendário em cima e formulário abaixo */
   .ag-toolbar{
+    display:flex;
     padding:10px 12px;
     gap:8px;
     align-items:stretch;
   }
 
-  .ag-nav{
+  .ag-toolbar-left{
     flex:1 1 100%;
+    display:flex;
+    align-items:stretch;
+    gap:8px;
+    min-width:0;
+  }
+
+  .ag-nav{
+    flex:0 0 auto;
     display:flex;
   }
 
   .ag-nav button{
-    flex:1 1 auto;
+    flex:0 0 42px;
     min-height:42px;
-    margin-right:4px;
+    height:42px;
+    margin:0;
   }
 
+  .ag-nav .ag-tbtn{padding:0 12px}
+
   .ag-dr{
-    flex:1 1 58%;
+    flex:1 1 auto;
     width:auto;
     min-width:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
   }
 
   .ag-vb{
-    flex:1 1 100%;
-    width:100%;
-    margin-left:0;
+    flex:1 1 calc(45% - 4px);
+    width:auto;
+    justify-self:auto;
   }
 
   .ag-vb button{
     flex:1 1 50%;
     min-height:42px;
     padding:7px 10px;
+  }
+
+  .ag-actions{
+    flex:1 1 100%;
+    width:100%;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+    justify-self:auto;
+  }
+
+  .ag-actions .btn{
+    width:100%;
+    min-height:42px;
+    white-space:normal;
+    text-align:center;
+    line-height:1.15;
   }
 
   .ag-wrap2{
@@ -3138,7 +3276,7 @@ tr:last-child td{border-bottom:none}
   }
 
   .ag-tc{
-    width:44px;
+    width:50px;
   }
 
   .ag-dc{
@@ -3796,7 +3934,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v6.4 - 2026-08-28";
+var APP_VERSION = "v6.11 - 2026-08-29";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -7181,7 +7319,8 @@ async function dbResgatar(dentId,premId,pts){
   <button data-p="dashboard">Painel</button>
   <button data-p="atendimento">Atendimento</button>
   <button data-p="pacientes">Pacientes</button>
-  <button data-p="agendar">Agendar</button>
+  <button data-p="agendar">Agenda</button>
+  <button data-p="novo">➕ Novo</button>
   <button data-p="convenios">Convênios</button>
   <button data-p="cashback">Pontos</button>
   <button data-p="dentistas">Dentistas</button>
@@ -7399,6 +7538,7 @@ async function dbResgatar(dentId,premId,pts){
 <div class="page" id="page-historico"><div class="pi pg-scroll" id="pgHist"></div></div>
 <div class="page" id="page-pacientes"><div class="pi pg-scroll" id="pgPac"></div></div>
 <div class="page" id="page-agendar"><div class="pi" id="pgAg"></div></div>
+<div class="page" id="page-novo"><div class="pi" id="pgNovo"></div></div>
 <div class="page" id="page-convenios"><div class="pi" id="pgCv"></div></div>
 <div class="page" id="page-cashback"><div class="pi pg-scroll" id="pgCb"></div></div>
 <div class="page" id="page-dentistas"><div class="pi pg-scroll" id="pgDt"></div></div>
@@ -7412,10 +7552,10 @@ async function dbResgatar(dentId,premId,pts){
 var USERS = [];
 // Dados reais vêm do Supabase via loadAllData()
 var PERMS = {
-  admin:    {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1,reportes:1,whatsapp:1,reversoes:1},
-  agenda:   {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,convenios:0,cashback:0,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:1},
-  cashback: {dashboard:1,atendimento:0,historico:0,pacientes:0,agendar:0,convenios:0,cashback:1,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:0},
-  dentista: {dashboard:0,atendimento:0,historico:0,pacientes:0,agendar:0,convenios:0,cashback:1,dentistas:0,usuarios:0,config:0,reportes:0,whatsapp:0}
+  admin:    {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,novo:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1,reportes:1,whatsapp:1,reversoes:1},
+  agenda:   {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,novo:1,convenios:0,cashback:0,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:1},
+  cashback: {dashboard:1,atendimento:0,historico:0,pacientes:0,agendar:0,novo:0,convenios:0,cashback:1,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:0},
+  dentista: {dashboard:0,atendimento:0,historico:0,pacientes:0,agendar:0,novo:0,convenios:0,cashback:1,dentistas:0,usuarios:0,config:0,reportes:0,whatsapp:0}
 };
 var RL = {admin:"Administrador",agenda:"Agenda",cashback:"Cashback",dentista:"Dentista"};
 var RE = {admin:"⚙️",agenda:"📅",cashback:"🪙",dentista:"🦷"};
@@ -7625,7 +7765,7 @@ function navTo(page) {
   var nb = document.querySelector("#nav button[data-p='" + page + "']");
   if (nb) nb.classList.add("active");
   var map = {
-    dashboard: rdash, atendimento: ratendimento, historico: rhistorico, pacientes: rpacientes, agendar: ragendar,
+    dashboard: rdash, atendimento: ratendimento, historico: rhistorico, pacientes: rpacientes, agendar: ragendar, novo: rnovo,
     convenios: rconv, cashback: rcash, dentistas: rdent,
     usuarios: rusrs, config: rcfg, reportes: window.rReportes, whatsapp: window.rWhatsApp,
     reversoes: rReversoes
@@ -8632,7 +8772,7 @@ function renderAtendimento() {
   h += "<div>";
   h += renderAtCalendario();
   // Botão para agendar
-  h += "<button class='btn btng' style='width:100%;justify-content:center;padding:11px;margin-top:12px' onclick=\"navTo('agendar')\">+ Novo Agendamento</button>";
+  h += "<button class='btn btng' style='width:100%;justify-content:center;padding:11px;margin-top:12px' onclick=\"abrirNovoAg(false)\">+ Novo Agendamento</button>";
   h += "</div>";
 
   h += "</div>";
@@ -9007,6 +9147,8 @@ function rdash() {
 }
 
 // ══ AGENDAR ══
+// ⚡ v6.5 — AGENDA EM TELA CHEIA. O formulário de novo agendamento saiu daqui
+// e ganhou aba própria ("➕ Novo", ver rnovo/_ensureFormNovo logo abaixo).
 function ragendar() {
   if (!canAcc("agendar")) {
     deny(document.getElementById("pgAg"));
@@ -9018,38 +9160,121 @@ function ragendar() {
   sSlot = null;
 
   var h = "";
-  h += "<div class=\"ag-wrap2\"><div class=\"ag-main2\">";
+  h += "<div class=\"ag-wrap-full\"><div class=\"ag-main2\">";
   h += "<div class=\"ag-toolbar\">";
-  h += "<div class=\"ag-nav\">";
+  h += "<div class=\"ag-toolbar-left\"><div class=\"ag-nav\">";
   h += "<button onclick=\"agNav(-1)\">&#8249;</button>";
   h += "<button class=\"ag-tbtn\" onclick=\"agGoToday()\">HOJE</button>";
   h += "<button onclick=\"agNav(1)\">&#8250;</button>";
   h += "</div>";
   h += "<span class=\"ag-dr\" id=\"agDR\">—</span>";
+  h += "</div>";
   h += "<div class=\"ag-vb\"><button id=\"agBD\" class=\"active\" onclick=\"setAgV('dia')\">DIA</button><button id=\"agBS\" onclick=\"setAgV('semana')\">SEMANA</button></div>";
-  h += "<button class=\"btn btng bsm\" style=\"margin-left:8px\" onclick=\"document.getElementById('agSd').scrollTop=0\">+ Agendar</button>";
+  h += "<span class=\"ag-actions\">";
+  h += "<button class=\"btn btng bsm\" onclick=\"abrirNovoAg(false)\">+ Novo Agendamento</button>";
+  h += "<button class=\"btn bsm ag-new-at\" onclick=\"abrirNovoAg(true)\">⚡ Novo Atendimento</button>";
+  h += "</span>";
   h += "</div>";
 
   h += "<div class=\"ag-gw\" id=\"agGW\"></div>";
+  h += "</div></div>";
+
+  document.getElementById("pgAg").innerHTML = h;
+
+  // Garante que o formulário da aba ➕ Novo exista no DOM (agCC, CORA e
+  // handlers antigos escrevem nos campos mesmo com a aba Novo fechada).
+  _ensureFormNovo();
+
+  var td = new Date();
+  agView = "dia";
+  agBase = new Date(td.getFullYear(), td.getMonth(), td.getDate());
+
+  rndAg();
+  updAgSum();
+}
+
+// ⚡ v6.5 — ABA "➕ NOVO": formulário em tela cheia, duas colunas do mesmo
+// tamanho (esquerda = dados do paciente/dentista/pagamento; direita = exames).
+// O form é montado UMA ÚNICA VEZ por sessão (build-once): trocar de aba no
+// meio de um cadastro NÃO apaga mais o que foi digitado. Limpar é só pelos
+// botões "+ Novo Agendamento" / "⚡ Novo Atendimento" (limparFormNovoAg).
+// TODOS os ids/handlers são os mesmos do form antigo — nada muda na lógica.
+function abrirNovoAg(modoAtendimento){
+  navTo("novo");
+  if(typeof limparFormNovoAg === "function") limparFormNovoAg(modoAtendimento === true);
+}
+
+function rnovo(){
+  if (!canAcc("agendar")) {
+    deny(document.getElementById("pgNovo"));
+    return;
+  }
+  _ensureFormNovo();
+  // Como o form é build-once, o select de dentistas poderia ficar velho se um
+  // dentista for cadastrado durante a sessão. Reconstrói as opções a cada
+  // visita à aba, preservando a seleção e sem tocar no resto do form.
+  var _ds = document.getElementById("dSel");
+  if(_ds && Array.isArray(dents)){
+    var _cur = _ds.value;
+    var _opts = "<option value=\"\">— Selecione —</option>";
+    dents.forEach(function(d){ _opts += "<option value=\"" + d.id + "\">" + esc(d.n) + "</option>"; });
+    _ds.innerHTML = _opts;
+    _ds.value = _cur;
+  }
+}
+
+function _ensureFormNovo(){
+  if(!canAcc("agendar")) return;
+  // Já montado? Preserva o que a recepção estiver digitando.
+  if(document.getElementById("pNome")) return;
+
+  var h = "";
+  h += "<div class=\"novo-head\">";
+  h += "<span class=\"novo-ttl\" id=\"novoTtl\">➕ Novo Agendamento</span>";
+  h += "<div style=\"display:flex;gap:8px\">";
+  h += "<button class=\"btn btng bsm\" onclick=\"limparFormNovoAg()\">+ Novo Agendamento</button>";
+  h += "<button class=\"btn bsm\" style=\"background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff\" onclick=\"limparFormNovoAg(true)\">⚡ Novo Atendimento</button>";
+  h += "</div>";
+  h += "<button class=\"btn btno bsm\" style=\"margin-left:auto\" onclick=\"navTo('agendar')\">📅 Voltar à agenda</button>";
   h += "</div>";
 
-  h += "<div class=\"ag-sd\" id=\"agSd\">";
-  h += "<div style=\"display:flex;gap:8px;margin-bottom:14px\">";
-  h += "<button class=\"btn btng\" style=\"flex:1;justify-content:center;padding:14px;font-size:15px;font-weight:600\" onclick=\"limparFormNovoAg()\">+ Novo Agendamento</button>";
-  h += "<button class=\"btn btnt\" style=\"flex:1;justify-content:center;padding:14px;font-size:15px;font-weight:600;background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff\" onclick=\"limparFormNovoAg(true)\">⚡ Novo Atendimento</button>";
-  h += "</div>";
+  h += "<div class=\"novo-grid\">";
+
+  // ─── COLUNA ESQUERDA: dados do paciente + dentista + pagamento ───
+  h += "<div class=\"ag-sd novo-col\" id=\"agSd\">";
   h += "<div class=\"ag-si\" id=\"agSI\"></div>";
 
+  h += "<div class=\"novo-sub\">👤 Dados do paciente</div>";
   h += "<div class=\"field\"><label>Paciente</label><input type=\"text\" id=\"pNome\" placeholder=\"Nome completo\" autocomplete=\"off\"></div>";
+  h += "<div class=\"fg3n\">";
   h += "<div class=\"field\"><label>Telefone</label><input type=\"text\" id=\"pTel\" placeholder=\"(49) 99999-9999\" oninput=\"maskPhone(this)\"></div>";
+  h += "<div class=\"field\"><label>CPF</label><input type=\"text\" id=\"pCpf\" placeholder=\"000.000.000-00\" oninput=\"maskCPF(this)\"></div>";
   h += "<div class=\"field\"><label>E-mail</label><input type=\"email\" id=\"pEmail\" placeholder=\"paciente@email.com\"></div>";
-
+  h += "</div>";
   h += "<div class=\"fg2\">";
-  h += "<div class=\"field\"><label>Data</label><input type=\"date\" id=\"pData\"></div>";
-  h += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"pHora\" value=\"08:00\"></div>";
+  h += "<div class=\"field\"><label>Data Nascimento</label><input type=\"date\" id=\"pDataNasc\"></div>";
+  h += "<div class=\"field\"><label>Sexo</label><select id=\"pSexo\"><option value=\"\">--</option><option value=\"M\">Masculino</option><option value=\"F\">Feminino</option></select></div>";
   h += "</div>";
 
+  h += "<div class=\"novo-sub\">📍 Endereço</div>";
+  h += "<div class=\"fg3n\">";
+  h += "<div class=\"field\"><label>CEP</label><input type=\"text\" id=\"pCep\" placeholder=\"00000-000\" oninput=\"onCepInputAuto(this, false)\"></div>";
+  h += "<div class=\"field\"><label>Numero</label><input type=\"text\" id=\"pNumero\" placeholder=\"123\"></div>";
+  h += "<div class=\"field\"><label>UF</label><input type=\"text\" id=\"pUf\" placeholder=\"RS\" maxlength=\"2\"></div>";
+  h += "</div>";
   h += "<div class=\"fg2\">";
+  h += "<div class=\"field\"><label>Logradouro</label><input type=\"text\" id=\"pLogradouro\" placeholder=\"Rua / Avenida\"></div>";
+  h += "<div class=\"field\"><label>Complemento</label><input type=\"text\" id=\"pComplemento\" placeholder=\"Apto, sala, bloco...\"></div>";
+  h += "</div>";
+  h += "<div class=\"fg2\">";
+  h += "<div class=\"field\"><label>Bairro</label><input type=\"text\" id=\"pBairro\" placeholder=\"Bairro\"></div>";
+  h += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"pMunicipio\" placeholder=\"Cidade\"></div>";
+  h += "</div>";
+
+  h += "<div class=\"novo-sub\">📅 Agendamento</div>";
+  h += "<div class=\"fg3n\">";
+  h += "<div class=\"field\"><label>Data</label><input type=\"date\" id=\"pData\"></div>";
+  h += "<div class=\"field\"><label>Hora</label><input type=\"time\" id=\"pHora\" value=\"08:00\"></div>";
   h += "<div class=\"field\"><label>Duracao</label><select id=\"pDur\">";
   h += "<option value=\"10\">10 min</option>";
   h += "<option value=\"15\">15 min</option>";
@@ -9058,31 +9283,10 @@ function ragendar() {
   h += "<option value=\"60\">1h</option>";
   h += "<option value=\"90\">1h 30min</option>";
   h += "</select></div>";
-  h += "<div class=\"field\"><label>CPF</label><input type=\"text\" id=\"pCpf\" placeholder=\"000.000.000-00\" oninput=\"maskCPF(this)\"></div>";
   h += "</div>";
 
+  h += "<div class=\"novo-sub\">🦷 Dentista</div>";
   h += "<div class=\"fg2\">";
-  h += "<div class=\"field\"><label>Data Nascimento</label><input type=\"date\" id=\"pDataNasc\"></div>";
-  h += "<div class=\"field\"><label>Sexo</label><select id=\"pSexo\"><option value=\"\">--</option><option value=\"M\">Masculino</option><option value=\"F\">Feminino</option></select></div>";
-  h += "</div>";
-
-  h += "<div class=\"field\"><label>CEP</label><input type=\"text\" id=\"pCep\" placeholder=\"00000-000\" oninput=\"onCepInputAuto(this, false)\"></div>";
-
-  h += "<div class=\"field\"><label>Logradouro</label><input type=\"text\" id=\"pLogradouro\" placeholder=\"Rua / Avenida\"></div>";
-  h += "<div class=\"field\"><label>Numero</label><input type=\"text\" id=\"pNumero\" placeholder=\"123\"></div>";
-  h += "<div class=\"field\"><label>Complemento</label><input type=\"text\" id=\"pComplemento\" placeholder=\"Apto, sala, bloco...\"></div>";
-
-  h += "<div class=\"fg2\">";
-  h += "<div class=\"field\"><label>Bairro</label><input type=\"text\" id=\"pBairro\" placeholder=\"Bairro\"></div>";
-  h += "<div class=\"field\"><label>UF</label><input type=\"text\" id=\"pUf\" placeholder=\"RS\" maxlength=\"2\"></div>";
-  h += "</div>";
-
-  h += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"pMunicipio\" placeholder=\"Cidade\"></div>";
-  h += "<div class='field'><label>Exames</label>";
-  h += "<input type='text' id='pExSearch' placeholder='Buscar exame...' oninput=\"filtrarExames(this,'pExames')\" style='margin-bottom:6px'>";
-  h += "<div id='pExWrap'></div>";
-  h += "</div>";
-
   h += "<div class=\"field\"><label>Buscar dentista</label><input type=\"text\" id=\"dBusca\" placeholder=\"Digite para filtrar dentistas\" oninput=\"filtrarDentistasAg()\"></div>";
   h += "<div class=\"field\"><label>Dentista</label><select id=\"dSel\" onchange=\"mostrarEndDent()\">";
   h += "<option value=\"\">— Selecione —</option>";
@@ -9090,8 +9294,11 @@ function ragendar() {
     h += "<option value=\"" + d.id + "\">" + esc(d.n) + "</option>";
   });
   h += "</select></div>";
+  h += "</div>";
   h += "<div id='dentEndInfo' style='font-size:.78rem;color:var(--gr);padding:0 2px 4px;margin-top:-6px'></div>";
 
+  h += "<div class=\"novo-sub\">💰 Pagamento e entrega</div>";
+  h += "<div class=\"fg3n\">";
   h += "<div class=\"field\">";
   h += "<label>Forma de pagamento</label>";
   h += "<select id=\"pFormaPg\" onchange=\"updAgSum()\" style=\"cursor:pointer\">";
@@ -9101,18 +9308,6 @@ function ragendar() {
   h += "<option value=\"10x\">10x (sem desconto)</option>";
   h += "</select>";
   h += "</div>";
-
-  // v3.50 — Novo Atendimento (walk-in) também exige método de pagamento.
-  // A linha só aparece no modo atendimento (limparFormNovoAg controla).
-  h += "<div class=\"field\" id=\"pMetodoPgRow\" style=\"display:none\">";
-  h += "<label>💰 Método de pagamento <span style='color:#ef4444'>*</span></label>";
-  h += "<div style=\"display:flex;gap:10px;flex-wrap:wrap;padding:6px 2px\">";
-  [["cartao","💳 Cartão"],["dinheiro","💵 Dinheiro"],["pix","📱 Pix"],["guia","📄 Guia"],["pontos","🪙 Pontos"]].forEach(function(mp){
-    h += "<label style=\"display:flex;align-items:center;gap:5px;cursor:pointer;font-size:.85rem\"><input type=\"checkbox\" id=\"pMpg_" + mp[0] + "\" style=\"margin:0\">" + mp[1] + "</label>";
-  });
-  h += "</div></div>";
-
-  h += "<div class=\"fg2\">";
   h += "<div class=\"field\"><label>Forma de Entrega</label><select id=\"pFormaEntrega\">";
   h += "<option value=\"digital\">Digital</option>";
   h += "<option value=\"paciente_retira\">Paciente Retira</option>";
@@ -9121,12 +9316,35 @@ function ragendar() {
   h += "<div class=\"field\"><label>Previsão de Entrega</label><input type=\"date\" id=\"pPrevisaoEntrega\"></div>";
   h += "</div>";
 
-  h += "<div class=\"field\"><label>Observacoes</label><textarea id=\"pObs\" style=\"min-height:120px\"></textarea></div>";
-  h += "<button class=\"btn btng\" id=\"btnConfAg\" style=\"width:100%;justify-content:center;padding:11px\" onclick=\"confAg(window._modoAtendimento === true)\">Confirmar Agendamento</button>";
-  h += "<div id=\"agSumDiv\"></div>";
+  // v3.50 — Novo Atendimento (walk-in) também exige método de pagamento.
+  // A linha só aparece no modo atendimento (limparFormNovoAg controla).
+  h += "<div class=\"field\" id=\"pMetodoPgRow\" style=\"display:none\">";
+  h += "<label>💰 Método de pagamento <span style='color:#ef4444'>*</span></label>";
+  h += "<div style=\"display:flex;gap:14px;flex-wrap:wrap;padding:6px 2px;align-items:center\">";
+  // v6.5.1 — checkbox com tamanho fixo (o CSS de .field input aplica width:100%
+  // e esticava a caixinha, quebrando o texto embaixo do emoji) + nowrap.
+  [["cartao","💳 Cartão"],["dinheiro","💵 Dinheiro"],["pix","📱 Pix"],["guia","📄 Guia"],["pontos","🪙 Pontos"]].forEach(function(mp){
+    h += "<label style=\"display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;text-transform:none;letter-spacing:0\"><input type=\"checkbox\" id=\"pMpg_" + mp[0] + "\" style=\"margin:0;width:16px;height:16px;min-height:0;flex:none;padding:0;accent-color:var(--g)\">" + mp[1] + "</label>";
+  });
   h += "</div></div>";
 
-  document.getElementById("pgAg").innerHTML = h;
+  h += "<div class=\"field\"><label>Observacoes</label><textarea id=\"pObs\" style=\"min-height:90px\"></textarea></div>";
+  h += "<button class=\"btn btng\" id=\"btnConfAg\" style=\"width:100%;justify-content:center;padding:13px;font-size:1rem\" onclick=\"confAg(window._modoAtendimento === true)\">Confirmar Agendamento</button>";
+  h += "</div>";
+
+  // ─── COLUNA DIREITA: exames (coluna inteira) + resumo ───
+  h += "<div class=\"novo-col novo-exames\">";
+  h += "<div class=\"novo-sub\" style=\"margin-top:0\">🩻 Exames</div>";
+  h += "<div class='field'>";
+  h += "<input type='text' id='pExSearch' placeholder='🔍 Buscar exame...' oninput=\"filtrarExames(this,'pExames')\" style='margin-bottom:6px'>";
+  h += "<div id='pExWrap'></div>";
+  h += "</div>";
+  h += "<div id=\"agSumDiv\"></div>";
+  h += "</div>";
+
+  h += "</div>";
+
+  document.getElementById("pgNovo").innerHTML = h;
 
   document.getElementById("pExWrap").innerHTML =
     exChecklistHtml("pExames", [], "updAgSum");
@@ -9136,11 +9354,6 @@ function ragendar() {
   if (df2) {
     df2.value = td.getFullYear() + "-" + pad(td.getMonth() + 1) + "-" + pad(td.getDate());
   }
-
-  agView = "dia";
-  agBase = new Date(td.getFullYear(), td.getMonth(), td.getDate());
-
-  rndAg();
   updAgSum();
 }
 setTimeout(function(){
@@ -9197,10 +9410,10 @@ function rndAg() {
   }
   var totalMins=(AGE-AGS)*60; var slots=totalMins/5;
   var h="<div style=\"display:flex\">";
-  h+="<div class=\"ag-tc\"><div style=\"height:44px;border-bottom:1px solid rgba(255,255,255,.07)\"></div>";
+  h+="<div class=\"ag-tc\"><div class=\"ag-corner\"></div>";
   for(var i=0;i<slots;i++){
     var mm=AGS*60+i*5; var isH=(mm%60===0);
-    h+="<div class=\"ag-ts"+(isH?"":" hf")+"\">"+(isH?m2t(mm):"")+"</div>";
+    h+="<div class=\"ag-ts"+(isH?" hh":" hf")+"\" style=\"height:"+AGSZ+"px\">"+(isH?m2t(mm):"")+"</div>";
   }
   h+="</div><div style=\"flex:1;display:flex\">";
   days.forEach(function(day){
@@ -9210,7 +9423,8 @@ function rndAg() {
     h+="<div class=\""+dcls+"\"><div class=\"dw\">"+dns[day.getDay()]+"</div><div class=\"dd\">"+day.getDate()+"</div></div>";
     h+="<div style=\"position:relative\">";
     for(var i2=0;i2<slots;i2++){
-      var mm2=AGS*60+i2*5; var hfcls=(mm2%30!==0)?" hf":"";
+      var mm2=AGS*60+i2*5;
+      var hfcls=(mm2%60===0)?" hh":((mm2%30===0)?" hm":" hf");
       var cd=agFI(day); var ct=m2t(mm2);
       h+="<div class=\"ag-cl"+hfcls+"\" style=\"height:"+AGSZ+"px\" onclick=\"agCC('"+cd+"','"+ct+"')\" ></div>";
     }
@@ -9249,7 +9463,7 @@ function rndAg() {
     });
     dayAgs.forEach(function(a,idx){
       var sm=t2m(a.hr); var dur=a.dur||30; var em2=sm+dur;
-      var top2=((sm-AGS*60)/5)*AGSZ; var ht=Math.max((dur/5)*AGSZ,54);
+      var top2=((sm-AGS*60)/5)*AGSZ; var ht=Math.max((dur/5)*AGSZ,34);
       var ec=evCols[idx];
       var colW=100/ec.totalCols;
       var evLeft=(ec.col*colW)+1;
@@ -9264,11 +9478,16 @@ function rndAg() {
       } else {
         nomesEx = ex2 ? ex2.n : "—";
       }
-      var cl=ECS[a.st]||"ec0";
-      h += "<div class=\"ag-ev "+cl+"\" style=\"top:"+top2+"px;height:"+ht+"px;left:"+evLeft+"%;width:"+evWidth+"%\" onclick=\"agEV(event,"+a.id+")\">";
-      h+="<div class=\"et\">"+esc(a.hr)+" – "+esc(m2t(em2))+" | <strong>"+esc(a.pac)+"</strong></div>";
+      var agSt=a.status_clinico||a.st;
+      var cl=ECS[agSt]||"ec0";
+      var shortCls=dur<=10?" ag-short":"";
+      var nomeExNorm=String(nomesEx||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+      var docCls=nomeExNorm.indexOf("documentacao")!==-1?" ag-doc":"";
+      var evTitle=esc(a.hr+" - "+m2t(em2)+" | "+a.pac+" | "+nomesEx);
+      h += "<div class=\"ag-ev "+cl+shortCls+docCls+"\" title=\""+evTitle+"\" style=\"top:"+top2+"px;height:"+ht+"px;left:"+evLeft+"%;width:"+evWidth+"%\" onclick=\"agEV(event,"+a.id+")\">";
+      h+="<div class=\"et\"><span class=\"e-time\">"+esc(a.hr)+"–"+esc(m2t(em2))+"</span><span class=\"e-name\">"+esc(a.pac)+"</span></div>";
       h+="<div class=\"es\">"+esc(nomesEx)+"</div>";
-      if(a.st==="realizado") h+="<div class=\"eck\">&#10003;</div>";
+      if(agSt==="realizado") h+="<div class=\"eck\">&#10003;</div>";
       h+="</div>";
     });
     if(isT){var now3=new Date();var nm3=now3.getHours()*60+now3.getMinutes();if(nm3>=AGS*60&&nm3<AGE*60){var nt=((nm3-AGS*60)/5)*AGSZ;h+="<div class=\"ag-nl\" style=\"top:"+nt+"px\"></div>";}}
@@ -9285,10 +9504,14 @@ function rndAg() {
   }
 }
 function agCC(ds,ts) {
+  // v6.5 — clique em slot vazio da agenda: garante o form da aba Novo,
+  // preenche data/hora e navega pra lá (o form fica em aba própria agora).
+  if(typeof _ensureFormNovo === "function") _ensureFormNovo();
   var df3=document.getElementById("pData"); var hf3=document.getElementById("pHora");
   if(df3) df3.value=ds; if(hf3) hf3.value=ts;
   var si=document.getElementById("agSI");
   if(si){var p2=ds.split("-");si.style.display="block";si.innerHTML="Selecionado: "+p2[2]+"/"+p2[1]+"/"+p2[0]+" as "+ts;}
+  navTo("novo");
   var sd=document.getElementById("agSd");
   if(sd) sd.scrollTop=0;
 }
@@ -10712,6 +10935,10 @@ async function confAg(isAtendimento) {
 
   document.getElementById("MA").classList.add("open");
 
+  // v6.5 — form agora mora na aba ➕ Novo: depois de confirmar, volta pra
+  // agenda (atrás do modal de confirmação) pra recepção ver o slot ocupado.
+  try{ navTo("agendar"); }catch(e){}
+
   document.getElementById("pNome").value = "";
   document.getElementById("pTel").value = "";
   document.getElementById("pObs").value = "";
@@ -11045,6 +11272,9 @@ function limparFormNovoAg(modoAtendimento){
       btnConf.style.background = "";
     }
   }
+  // v6.5 — título da aba ➕ Novo acompanha o modo
+  var _ttlNovo = document.getElementById("novoTtl");
+  if (_ttlNovo) _ttlNovo.textContent = (modoAtendimento === true) ? "⚡ Novo Atendimento (walk-in)" : "➕ Novo Agendamento";
 
   // Resetar resumo
   if(typeof updAgSum === "function") updAgSum();
@@ -11127,8 +11357,8 @@ function preencherAgDaCora(dados){
     if(typeof toast==="function") toast("⚠️","Sem dados de agendamento");
     return;
   }
-  // 1. vai pra aba Agendar (isso renderiza o formulário)
-  navTo("agendar");
+  // 1. vai pra aba ➕ Novo (v6.5 — o formulário mora lá agora; rnovo o monta)
+  navTo("novo");
   // 2. limpa o form pra começar do zero (modo agendamento, não atendimento)
   //    e depois preenche. Damos um tempo pro DOM montar.
   setTimeout(function(){
