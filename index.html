@@ -235,6 +235,12 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-08-29 (v6.12): FIX DE STATUS VISUAL NA AGENDA. Restaurada a prioridade
+              do campo principal `st` para definir faixa e check dos cards.
+              Alguns atendimentos realizados antigos ainda possuem
+              status_clinico desatualizado como agendado, o que os deixava com
+              faixa salmao apesar de ja estarem realizados.
+
   2026-08-29 (v6.11): FIX DA FAIXA DE STATUS NAS DOCUMENTACOES. O azul-claro
               agora altera somente o fundo e as bordas finas do card, sem
               sobrescrever a cor da faixa lateral definida pelo status.
@@ -3934,7 +3940,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v6.11 - 2026-08-29";
+var APP_VERSION = "v6.12 - 2026-08-29";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -9478,7 +9484,7 @@ function rndAg() {
       } else {
         nomesEx = ex2 ? ex2.n : "—";
       }
-      var agSt=a.status_clinico||a.st;
+      var agSt=a.st||a.status||a.status_clinico||"agendado";
       var cl=ECS[agSt]||"ec0";
       var shortCls=dur<=10?" ag-short":"";
       var nomeExNorm=String(nomesEx||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
