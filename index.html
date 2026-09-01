@@ -235,6 +235,12 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-08-31 (v7.0): STATUS DE EXECUÇÃO DOS EXAMES no AppCOR. A agenda
+              mostra o andamento informado pelo Digital-COR/tomógrafo e o
+              modal do agendamento detalha concluídos, pendências e liberação.
+              Visualização somente leitura para a secretaria; atualiza junto
+              do polling existente de 15s, sem criar uma segunda rotina.
+
   2026-08-29 (v6.9.1): AJUSTE do azul de documentação (Vine): fundo azul em
               QUALQUER status (não só agendado — realizado ficava de fora), e a
               BARRA LATERAL volta a indicar o status (salmão/verde/amarelo).
@@ -3363,6 +3369,55 @@ tr:last-child td{border-bottom:none}
     min-height:340px;
   }
 }
+
+/* ══ v7.0 — acompanhamento da execucao dos exames ══ */
+.exec-ag-badge{
+  position:absolute;
+  right:4px;
+  bottom:3px;
+  max-width:calc(100% - 8px);
+  padding:2px 5px;
+  border-radius:5px;
+  font-size:.54rem;
+  line-height:1.15;
+  font-weight:800;
+  letter-spacing:.025em;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  box-shadow:0 1px 3px rgba(0,0,0,.18);
+}
+.exec-ag-badge.exec-wait{background:#e7eef6;color:#334155;border:1px solid #b9c8d8}
+.exec-ag-badge.exec-progress{background:#fff1cf;color:#7a4b00;border:1px solid #e3bd63}
+.exec-ag-badge.exec-ready{background:#d9f0eb;color:#075e50;border:1px solid #7fc8b8}
+.exec-ag-badge.exec-released{background:#147d68;color:#fff;border:1px solid #0f6656}
+.exec-ag-badge.exec-released-pending{background:#b86b16;color:#fff;border:1px solid #92520e}
+.exec-inline-badge{font-size:.56rem;line-height:1.15;font-weight:800;padding:2px 5px;border-radius:5px;white-space:nowrap;flex-shrink:0}
+.exec-inline-badge.exec-wait{background:#e7eef6;color:#334155;border:1px solid #b9c8d8}
+.exec-inline-badge.exec-progress{background:#fff1cf;color:#7a4b00;border:1px solid #e3bd63}
+.exec-inline-badge.exec-ready{background:#d9f0eb;color:#075e50;border:1px solid #7fc8b8}
+.exec-inline-badge.exec-released{background:#147d68;color:#fff;border:1px solid #0f6656}
+.exec-inline-badge.exec-released-pending{background:#b86b16;color:#fff;border:1px solid #92520e}
+.exec-modal{
+  margin:10px 0 2px;
+  padding:12px 14px;
+  border-radius:10px;
+  border:1px solid rgba(148,163,184,.35);
+  background:rgba(148,163,184,.08);
+}
+.exec-modal.exec-ready,.exec-modal.exec-released{border-color:rgba(16,185,129,.55);background:rgba(16,185,129,.12)}
+.exec-modal.exec-progress,.exec-modal.exec-released-pending{border-color:rgba(245,158,11,.55);background:rgba(245,158,11,.11)}
+.exec-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.exec-modal-title{font-weight:800;font-size:.94rem}
+.exec-modal-state{font-size:.7rem;font-weight:800;padding:4px 7px;border-radius:999px;background:rgba(255,255,255,.12);white-space:nowrap}
+.exec-modal-count{margin-top:3px;font-size:.76rem;color:var(--gr)}
+.exec-modal-track{height:6px;margin:9px 0 8px;border-radius:999px;overflow:hidden;background:rgba(148,163,184,.25)}
+.exec-modal-track>span{display:block;height:100%;border-radius:inherit;background:#168873}
+.exec-modal-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 12px;margin-top:7px}
+.exec-modal-item{font-size:.76rem;line-height:1.3;min-width:0}
+.exec-modal-item.ok{color:#69cdb8}.exec-modal-item.pending{color:#f0b45f}
+.exec-modal-release{margin-top:9px;padding-top:8px;border-top:1px solid rgba(148,163,184,.22);font-size:.8rem;line-height:1.45}
+@media(max-width:680px){.exec-modal-list{grid-template-columns:1fr}}
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -3882,7 +3937,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v6.9.1 - 2026-08-29";
+var APP_VERSION = "v7.0 - 2026-08-31";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -6204,10 +6259,11 @@ async function loadAllData(){
       supa.from("premios").select("*").eq("ativo",true).order("pontos_necessarios"),
       supa.from("usuarios").select("*").eq("ativo",true).order("nome"),
       supa.from("cashback_ajustes").select("*").order("created_at",{ascending:false}),
-      supa.from("dentista_enderecos").select("*").order("id")
+      supa.from("dentista_enderecos").select("*").order("id"),
+      supa.from("agendamento_execucao").select("*").order("atualizado_em",{ascending:false}).limit(3000)
     ]);
 
-    var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7], ajR = r[8], deR = r[9];
+    var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7], ajR = r[8], deR = r[9], execR = r[10];
 
     // ⚡ FIX (2026-07-24) — Exames vêm EMBUTIDOS na query de agendamentos, só dos
     // 2000 carregados. Antes usava fetchAllAgEx() que puxava TODAS as linhas de
@@ -6238,10 +6294,13 @@ async function loadAllData(){
     if (usR && usR.error) errosCarregamento.push('usuarios: ' + usR.error.message);
     if (ajR && ajR.error) errosCarregamento.push('cashback_ajustes: ' + ajR.error.message);
     if (deR && deR.error) errosCarregamento.push('dentista_enderecos: ' + deR.error.message);
+    if (execR && execR.error) errosCarregamento.push('agendamento_execucao: ' + execR.error.message);
     if (errosCarregamento.length > 0) {
       console.error('[COR] loadAllData erros:', errosCarregamento);
       toast('⚠️ Carregamento parcial', errosCarregamento.length + ' tabela(s) falharam. Detalhes no console (F12). Pode ser necessario recarregar a pagina.');
     }
+
+    if (execR && !execR.error) _execAtualizarMapa(execR.data || []);
 
     // Buscar dentistas restantes (paginado)
     var allDents = dR.data || [];
@@ -6274,7 +6333,8 @@ async function loadAllData(){
           n: e.nome,
           ico: e.icone || "🩻",
           p: parseFloat(e.preco_particular || 0),
-          pts: e.pontos_cashback || 0
+          pts: e.pontos_cashback || 0,
+          exec: e.execucao_protocolo || null
         };
       });
     }
@@ -7824,8 +7884,15 @@ function iniciarAutoRefresh(){
   _autoRefreshTimer = setInterval(async function(){
     if(!CU) return;
     try{
-      // Recarregar agendamentos
-      var agR = await supa.from("agendamentos").select("*,agendamento_exames(*)").order("data_exame",{ascending:false}).limit(2000);
+      // Recarregar agendamentos e o resumo do fluxo de execucao na mesma
+      // rodada. Assim o AppCOR acompanha o Digital-COR sem criar outro timer.
+      var autoR = await Promise.all([
+        supa.from("agendamentos").select("*,agendamento_exames(*)").order("data_exame",{ascending:false}).limit(2000),
+        supa.from("agendamento_execucao").select("*").order("atualizado_em",{ascending:false}).limit(3000)
+      ]);
+      var agR = autoR[0];
+      var execR = autoR[1];
+      if(execR && !execR.error) _execAtualizarMapa(execR.data || []);
       // ⚡ FIX (2026-07-24) — exames embutidos (só dos 2000 carregados). Ver nota
       // em loadAllData: fetchAllAgEx tinha teto de 30k e, pós-backfill, sumia com
       // os exames dos atendimentos recentes a cada auto-refresh (15s).
@@ -7930,6 +7997,7 @@ function iniciarAutoRefresh(){
           if(!temBuscaAtiva) renderAtendimento();
         }
         else if(pid === "dashboard" && typeof rdash === "function") rdash();
+        else if(pid === "agendar" && typeof rndAg === "function") rndAg();
       }
     }catch(e){
       console.log("Auto-refresh erro:", e.message);
@@ -7965,6 +8033,120 @@ function cpts(exId, nivel) { var ex=fex(exId); var b=(nlv[nivel]||nlv.Bronze).bo
 function waFmt(tpl,vars) { var v={}; for(var k in vars) v[k]=vars[k]; if(v.exame) v.exame=v.exame.replace(/\s*\([^)]*\)/g,'').trim(); var s=tpl; for(var k in v) s=s.split("{"+k+"}").join(v[k]); return s; }
 function waHtml(msg) { return esc(msg).replace(/\n/g,"<br>").replace(/\*(.*?)\*/g,"<strong>$1</strong>"); }
 
+// ══ v7.0 — STATUS DE EXECUCAO (somente leitura no AppCOR) ══
+function _execAtualizarMapa(rows){
+  var novo = {};
+  (rows || []).forEach(function(row){
+    if(row && row.agendamento_id != null) novo[String(row.agendamento_id)] = row;
+  });
+  EXECUCAO_STATUS = novo;
+}
+function _execResumo(a){
+  return a && EXECUCAO_STATUS[String(a.id)] ? EXECUCAO_STATUS[String(a.id)] : null;
+}
+function _execTemProtocolo(a){
+  if(!a) return false;
+  if(_execResumo(a)) return true;
+  var itens = Array.isArray(a.exames) && a.exames.length ? a.exames : [{exame_id:a.ex}];
+  return itens.some(function(it){
+    var tipo = fex(it.exame_id);
+    return !!(tipo && tipo.exec);
+  });
+}
+function _execLista(value){
+  if(Array.isArray(value)) return value;
+  if(typeof value === "string"){
+    try{ var parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; }catch(_){ return []; }
+  }
+  return [];
+}
+function _execRotulo(item){
+  return String((item && (item.label || item.rotulo || item.key || item.requisito_chave)) || "Exame");
+}
+function _execHora(value){
+  var text = String(value || "");
+  if(!text) return "";
+  try{
+    var d = new Date(text);
+    if(!isNaN(d.getTime())){
+      var parts = new Intl.DateTimeFormat("pt-BR", {
+        timeZone:"America/Sao_Paulo", day:"2-digit", month:"2-digit", year:"numeric",
+        hour:"2-digit", minute:"2-digit", hour12:false
+      }).formatToParts(d);
+      var vals = {};
+      parts.forEach(function(part){ vals[part.type] = part.value; });
+      return vals.day+"/"+vals.month+"/"+vals.year+" "+vals.hour+":"+vals.minute;
+    }
+  }catch(_){ }
+  var m = text.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  return m ? m[3]+"/"+m[2]+"/"+m[1]+" "+m[4]+":"+m[5] : text;
+}
+function _execMeta(a){
+  var row = _execResumo(a);
+  if(!row){
+    return _execTemProtocolo(a)
+      ? {cls:"exec-wait", label:"AGUARDANDO EXAMES", title:"Acompanhamento ainda nao iniciado no Digital-COR", row:null}
+      : null;
+  }
+  var total = Number(row.unidades_obrigatorias || 0);
+  var done = Number(row.unidades_concluidas || 0);
+  var status = String(row.status || "nao_iniciado");
+  if(row.saida_com_pendencias || status === "saiu_com_pendencias"){
+    return {cls:"exec-released-pending", label:"LIBERADO C/ PEND.", title:"Paciente liberado com pendencias", row:row};
+  }
+  if(row.saida_em || status === "saiu_completo"){
+    return {cls:"exec-released", label:"PACIENTE LIBERADO", title:"Paciente liberado; todos os exames concluidos", row:row};
+  }
+  if(status === "completo" || (total > 0 && done >= total)){
+    return {cls:"exec-ready", label:"EXAMES PRONTOS", title:"Todos os exames foram concluidos", row:row};
+  }
+  if(done > 0){
+    return {cls:"exec-progress", label:done+"/"+total+" PRONTOS", title:"Exames em andamento: "+done+" de "+total, row:row};
+  }
+  return {cls:"exec-progress", label:"EXAMES PENDENTES", title:"Nenhum exame concluido ainda", row:row};
+}
+function execAgendaBadge(a){
+  var meta = _execMeta(a);
+  if(!meta) return "";
+  return "<div class=\"exec-ag-badge "+meta.cls+"\" title=\""+esc(meta.title)+"\">"+esc(meta.label)+"</div>";
+}
+function execInlineBadge(a){
+  var meta = _execMeta(a);
+  if(!meta) return "";
+  return "<span class=\"exec-inline-badge "+meta.cls+"\" title=\""+esc(meta.title)+"\">"+esc(meta.label)+"</span>";
+}
+function execModalStatus(a){
+  var meta = _execMeta(a);
+  if(!meta) return "";
+  var row = meta.row;
+  if(!row){
+    return "<div class=\"exec-modal exec-wait\"><div class=\"exec-modal-head\"><div><div class=\"exec-modal-title\">🩻 Status dos exames</div><div class=\"exec-modal-count\">O acompanhamento ainda nao foi iniciado no Digital-COR.</div></div><span class=\"exec-modal-state\">Aguardando</span></div></div>";
+  }
+  var total = Number(row.unidades_obrigatorias || 0);
+  var done = Number(row.unidades_concluidas || 0);
+  var progress = Math.max(0, Math.min(100, Number(row.progresso || (total ? Math.round(done*100/total) : 0))));
+  var concluidos = _execLista(row.concluidos);
+  var pendencias = _execLista(row.pendencias);
+  var itens = "";
+  concluidos.forEach(function(item){ itens += "<div class=\"exec-modal-item ok\">✓ "+esc(_execRotulo(item))+"</div>"; });
+  pendencias.forEach(function(item){
+    var detalhe = item && item.detail ? " · "+String(item.detail) : "";
+    itens += "<div class=\"exec-modal-item pending\">○ "+esc(_execRotulo(item)+detalhe)+"</div>";
+  });
+  var liberacao = "";
+  if(row.saida_em){
+    var titulo = row.saida_com_pendencias ? "Paciente liberado com pendencias" : "Paciente liberado — exames completos";
+    liberacao = "<div class=\"exec-modal-release\"><strong>"+esc(titulo)+"</strong><br>"+
+      esc(_execHora(row.saida_em))+(row.saida_por_nome ? " · "+esc(row.saida_por_nome) : "")+
+      (row.justificativa_pendencia ? "<br><span style=\"color:var(--gr)\">Justificativa: "+esc(row.justificativa_pendencia)+"</span>" : "")+"</div>";
+  }else if(pendencias.length){
+    liberacao = "<div class=\"exec-modal-release\" style=\"color:var(--or)\">Paciente ainda possui exames pendentes.</div>";
+  }
+  return "<div class=\"exec-modal "+meta.cls+"\"><div class=\"exec-modal-head\"><div><div class=\"exec-modal-title\">🩻 Status dos exames</div><div class=\"exec-modal-count\">"+done+" de "+total+" concluidos</div></div><span class=\"exec-modal-state\">"+esc(meta.title)+"</span></div>"+
+    "<div class=\"exec-modal-track\"><span style=\"width:"+progress+"%\"></span></div>"+
+    (itens ? "<div class=\"exec-modal-list\">"+itens+"</div>" : "")+liberacao+"</div>";
+}
+
 // ══ DATA ══
 // Arrays iniciam vazios — dados reais vêm do Supabase via loadAllData()
 var exT = [];
@@ -7975,6 +8157,7 @@ var prems = [];
 const API_BASE = "https://flpvzvtbhuyjjdqyrsza.supabase.co/functions/v1";
 
 var ags = [];
+var EXECUCAO_STATUS = {}; // agendamento_id -> resumo de agendamento_execucao
 var waT = {
   ag: "🦷 *COR — Centro Odontologico de Radiologia*\n\nOla, {nome}!\n\nAgendamento confirmado:\nExame: {exame}\nData: {data}\nHorario: {hora}\nLocal: {clinica}\n\nQualquer duvida é só chamar!",
   lb: "🦷 *COR — Lembrete*\n\nOla, {nome}! Amanha voce tem:\nExame: {exame}\nHorario: {hora}\n\nNao esqueca seus documentos!",
@@ -8681,6 +8864,7 @@ function renderAtendimento() {
         h += "<div class='at-mini-bottom'>";
         h += "<div class='at-mini-meta'>";
         h += "<span class='badge " + ({agendado:"bo",realizado:"bg",cancelado:"bgr",aguardando:"bgo"}[st] || "bgr") + "' style='font-size:.58rem;padding:1px 5px'>" + (sl[st] || st) + "</span>";
+        h += execInlineBadge(a);
         if(_semReq) h += "<span style='background:#ef4444;color:#fff;font-weight:700;font-size:.56rem;padding:1px 5px;border-radius:4px;flex-shrink:0'>SEM REQUISIÇÃO</span>";
         if(a.firebird_seq_atend) h += "<span style='color:var(--tl);font-weight:700;font-size:.7rem'>#" + a.firebird_seq_atend + "</span>";
         h += "<span>🦷 " + esc(d.n) + "</span>";
@@ -9432,6 +9616,7 @@ function rndAg() {
       h+="<div class=\"et\">"+esc(a.hr)+" – "+esc(m2t(em2))+" | <strong>"+esc(a.pac)+"</strong></div>";
       h+="<div class=\"es\">"+esc(nomesEx)+"</div>";
       if(a.st==="realizado") h+="<div class=\"eck\">&#10003;</div>";
+      h+=execAgendaBadge(a);
       h+="</div>";
     });
     if(isT){var now3=new Date();var nm3=now3.getHours()*60+now3.getMinutes();if(nm3>=AGS*60&&nm3<AGE*60){var nt=((nm3-AGS*60)/5)*AGSZ;h+="<div class=\"ag-nl\" style=\"top:"+nt+"px\"></div>";}}
@@ -9769,6 +9954,7 @@ function agEV(ev, id) {
   else if(a.status_fiscal==="cancelada") b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">🚫</span> <span style=\"color:var(--or)\">Nota cancelada</span></div>";
   b += "</div>";
   b += "<span class=\"badge " + (sc[a.st] || "bgr") + "\" style=\"align-self:flex-start\">" + (sl[a.st] || a.st) + "</span></div>";
+  b += execModalStatus(a);
   // Método de pagamento — múltipla escolha (v3.45: + Guia e Pontos)
   // v3.46: aviso destacado quando tentou Realizar sem método marcado
   var _mpgAlerta = (window._mpgAlertaId === a.id) && !String(a.metodo_pagamento || "").trim();
