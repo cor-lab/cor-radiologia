@@ -235,6 +235,12 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-09-01 (v7.2): CAVUM UNIMED CLASSIFICADO COMO TELE LATERAL. O item
+              exato fb_396 (Radiografia Adenóide ou Cavum UNIMED) passa a
+              preencher o requisito Telerradiografia lateral / nicho TL mesmo
+              antes da migração do catálogo. Análise Cefalométrica/Modelo
+              permanece sem checklist próprio.
+
   2026-09-01 (v7.1): STATUS MAIS RESILIENTE E CABEÇALHO REORGANIZADO.
               As consultas do andamento agora repetem automaticamente em caso
               de falha transitória, sem substituir dados válidos por erro.
@@ -3969,7 +3975,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v7.1 - 2026-09-01";
+var APP_VERSION = "v7.2 - 2026-09-01";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -8208,12 +8214,26 @@ function _execAtualizarSaude(resumoR, itensR){
     if(typeof toast === "function") toast("↻ Atualizando status", "A consulta falhou apos tres tentativas. O AppCOR tentara novamente automaticamente.");
   }
 }
-function _execProtocolo(tipo){
+var EXECUCAO_PROTOCOLS_FALLBACK = {
+  fb_396:{
+    version:1,
+    category:"individual",
+    requirements:[{
+      key:"tele_lateral",
+      label:"Telerradiografia lateral",
+      mode:"slots_all",
+      slots:["tl"]
+    }]
+  }
+};
+function _execProtocolo(tipo, exame){
   var protocolo = tipo && tipo.exec;
   if(typeof protocolo === "string"){
     try{ protocolo = JSON.parse(protocolo); }catch(_){ protocolo = null; }
   }
-  return protocolo && Array.isArray(protocolo.requirements) ? protocolo : null;
+  if(protocolo && Array.isArray(protocolo.requirements)) return protocolo;
+  var exameId = String((exame && exame.exame_id) || (tipo && tipo.id) || "").trim();
+  return EXECUCAO_PROTOCOLS_FALLBACK[exameId] || null;
 }
 function _execRequisitosEsperados(a){
   var esperados = [];
@@ -8221,7 +8241,7 @@ function _execRequisitosEsperados(a){
   var exames = Array.isArray(a && a.exames) && a.exames.length ? a.exames : [{id:null, exame_id:a && a.ex}];
   exames.forEach(function(exame){
     var tipo = fex(exame.exame_id);
-    var protocolo = _execProtocolo(tipo);
+    var protocolo = _execProtocolo(tipo, exame);
     if(!protocolo) return;
     (protocolo.requirements || []).forEach(function(req){
       var key = String((req && req.key) || "").trim();
@@ -8309,11 +8329,7 @@ function _execResumo(a){
 function _execTemProtocolo(a){
   if(!a) return false;
   if(_execResumo(a)) return true;
-  var itens = Array.isArray(a.exames) && a.exames.length ? a.exames : [{exame_id:a.ex}];
-  return itens.some(function(it){
-    var tipo = fex(it.exame_id);
-    return !!(tipo && tipo.exec);
-  });
+  return _execRequisitosEsperados(a).length > 0;
 }
 function _execLista(value){
   if(Array.isArray(value)) return value;
