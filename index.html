@@ -235,6 +235,15 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-09-01 (v7.1): STATUS MAIS RESILIENTE E CABEÇALHO REORGANIZADO.
+              As consultas do andamento agora repetem automaticamente em caso
+              de falha transitória, sem substituir dados válidos por erro.
+              No desktop, identidade/usuário ficam na primeira faixa e as abas
+              operacionais ocupam uma segunda faixa única. Convênios, Usuários,
+              Config, Reportes e Reversões ficam reunidos no novo menu
+              Administração, visível somente para administradores. No celular,
+              permanece a navegação horizontal.
+
   2026-08-31 (v7.0): STATUS DE EXECUÇÃO DOS EXAMES no AppCOR. A agenda
               mostra o andamento informado pelo Digital-COR/tomógrafo e o
               modal do agendamento detalha concluídos, pendências e liberação.
@@ -2414,18 +2423,33 @@ select:focus{
 /* APP */
 #AS{display:none}
 header{position:sticky;top:0;z-index:200;background:rgba(13,24,48,.96);backdrop-filter:blur(20px);
-  border-bottom:1px solid rgba(74,184,72,.12);padding:0 24px;display:flex;
-  align-items:center;justify-content:space-between;height:62px;gap:12px;
+  border-bottom:1px solid rgba(74,184,72,.12);padding:8px 24px 0;display:grid;
+  grid-template-columns:auto auto minmax(24px,1fr) auto;grid-template-areas:"logo version . user" "nav nav nav nav";
+  align-items:center;min-height:88px;column-gap:10px;row-gap:6px;
   box-shadow:0 2px 12px rgba(0,0,0,.2)}
-.hlogo img{height:36px;width:auto;object-fit:contain}
-.app-ver-badge{font-family:DM Mono,Consolas,monospace;font-size:.68rem;color:var(--gr);opacity:.55;padding:2px 7px;border:1px solid var(--gr);border-radius:10px;letter-spacing:.3px;margin-left:8px;user-select:all;transition:opacity .2s}
+.hlogo{grid-area:logo;display:flex;align-items:center;min-width:0}
+.hlogo img{display:block;height:36px;width:auto;object-fit:contain}
+.app-ver-badge{grid-area:version;font-family:DM Mono,Consolas,monospace;font-size:.68rem;color:var(--gr);opacity:.55;padding:2px 7px;border:1px solid var(--gr);border-radius:10px;letter-spacing:.3px;user-select:all;transition:opacity .2s}
 .app-ver-badge:hover{opacity:.9;cursor:default}
 nav{display:flex;gap:2px;flex-wrap:wrap}
-nav button{background:none;border:none;cursor:pointer;padding:8px 14px;border-radius:8px;
+header nav{grid-area:nav;width:100%;display:flex;flex-wrap:nowrap;justify-content:space-between;gap:4px;overflow:visible;padding-bottom:8px}
+header nav button{flex:1 0 auto;min-width:max-content;white-space:nowrap;background:none;border:none;cursor:pointer;padding:7px 10px;border-radius:8px;
   font-family:"DM Sans",sans-serif;font-size:.82rem;font-weight:500;color:var(--gr);transition:all .18s}
 nav button:hover{color:var(--wh);background:rgba(255,255,255,.06)}
 nav button.active{color:var(--g);background:rgba(74,184,72,.1);font-weight:600}
-.hr{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.nav-admin-toggle{display:none}
+.nav-admin-toggle .nav-admin-caret{display:inline-block;margin-left:5px;font-size:.68rem;transition:transform .18s}
+.nav-admin-toggle[aria-expanded="true"] .nav-admin-caret{transform:rotate(180deg)}
+.nav-admin-menu{position:absolute;top:calc(100% + 7px);right:24px;z-index:320;display:none;width:230px;padding:8px;
+  background:rgba(13,24,48,.99);border:1px solid rgba(255,255,255,.13);border-radius:12px;
+  box-shadow:0 14px 34px rgba(0,0,0,.45);backdrop-filter:blur(20px)}
+.nav-admin-menu.open{display:grid;gap:4px}
+.nav-admin-menu button{position:relative;width:100%;display:flex;align-items:center;gap:7px;text-align:left;white-space:nowrap;
+  background:transparent;border:none;border-radius:8px;padding:10px 12px;cursor:pointer;color:var(--gr);
+  font-family:"DM Sans",sans-serif;font-size:.82rem;font-weight:500;transition:all .16s}
+.nav-admin-menu button:hover{color:var(--wh);background:rgba(255,255,255,.07)}
+.nav-admin-menu button.active{color:var(--g);background:rgba(74,184,72,.12);font-weight:600}
+.hr{grid-area:user;display:flex;align-items:center;gap:10px;flex-shrink:0}
 .upill{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.05);
   border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:4px 11px;}
 .uav{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;
@@ -2961,6 +2985,11 @@ tr:last-child td{border-bottom:none}
     gap:6px;
   }
 
+  .nav-admin-menu{
+    right:max(12px,env(safe-area-inset-right));
+    width:min(230px,calc(100vw - 24px));
+  }
+
   .upill{
     min-height:36px;
     padding:4px;
@@ -3392,12 +3421,14 @@ tr:last-child td{border-bottom:none}
 .exec-ag-badge.exec-ready{background:#d9f0eb;color:#075e50;border:1px solid #7fc8b8}
 .exec-ag-badge.exec-released{background:#147d68;color:#fff;border:1px solid #0f6656}
 .exec-ag-badge.exec-released-pending{background:#b86b16;color:#fff;border:1px solid #92520e}
+.exec-ag-badge.exec-error{background:#fee2e2;color:#991b1b;border:1px solid #ef9a9a}
 .exec-inline-badge{font-size:.56rem;line-height:1.15;font-weight:800;padding:2px 5px;border-radius:5px;white-space:nowrap;flex-shrink:0}
 .exec-inline-badge.exec-wait{background:#e7eef6;color:#334155;border:1px solid #b9c8d8}
 .exec-inline-badge.exec-progress{background:#fff1cf;color:#7a4b00;border:1px solid #e3bd63}
 .exec-inline-badge.exec-ready{background:#d9f0eb;color:#075e50;border:1px solid #7fc8b8}
 .exec-inline-badge.exec-released{background:#147d68;color:#fff;border:1px solid #0f6656}
 .exec-inline-badge.exec-released-pending{background:#b86b16;color:#fff;border:1px solid #92520e}
+.exec-inline-badge.exec-error{background:#fee2e2;color:#991b1b;border:1px solid #ef9a9a}
 .exec-modal{
   margin:10px 0 2px;
   padding:12px 14px;
@@ -3407,6 +3438,7 @@ tr:last-child td{border-bottom:none}
 }
 .exec-modal.exec-ready,.exec-modal.exec-released{border-color:rgba(16,185,129,.55);background:rgba(16,185,129,.12)}
 .exec-modal.exec-progress,.exec-modal.exec-released-pending{border-color:rgba(245,158,11,.55);background:rgba(245,158,11,.11)}
+.exec-modal.exec-error{border-color:rgba(239,68,68,.55);background:rgba(239,68,68,.10)}
 .exec-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .exec-modal-title{font-weight:800;font-size:.94rem}
 .exec-modal-state{font-size:.7rem;font-weight:800;padding:4px 7px;border-radius:999px;background:rgba(255,255,255,.12);white-space:nowrap}
@@ -3937,7 +3969,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v7.0 - 2026-08-31";
+var APP_VERSION = "v7.1 - 2026-09-01";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -6247,6 +6279,59 @@ async function fetchAllAgEx(){
   return { data: todos, error: null };
 }
 
+// O tomografo confirma o item exato antes de o resumo geral ser recalculado.
+// Carregar os itens dos atendimentos recentes evita que essa confirmacao fique
+// invisivel no AppCOR. O recorte de dois dias mantem o polling leve.
+function _execEsperar(ms){
+  return new Promise(function(resolve){ setTimeout(resolve, ms); });
+}
+async function _execConsultarComRetry(factory){
+  var ultimo = null;
+  for(var tentativa=0; tentativa<3; tentativa++){
+    try{
+      ultimo = await factory();
+      if(ultimo && !ultimo.error) return ultimo;
+    }catch(e){
+      ultimo = {data:null, error:e};
+    }
+    if(tentativa < 2) await _execEsperar(tentativa === 0 ? 350 : 900);
+  }
+  return ultimo || {data:null, error:{message:"Falha desconhecida consultando status"}};
+}
+async function fetchExecucaoResumos(){
+  return _execConsultarComRetry(function(){
+    return supa.from("agendamento_execucao").select("*").order("atualizado_em",{ascending:false}).limit(3000);
+  });
+}
+async function fetchExecucaoItensRecentes(agRows){
+  var limite = new Date();
+  limite.setHours(0,0,0,0);
+  limite.setDate(limite.getDate() - 2);
+  var limiteIso = limite.getFullYear()+"-"+pad(limite.getMonth()+1)+"-"+pad(limite.getDate());
+  var ids = [];
+  var vistos = {};
+  (agRows || []).forEach(function(a){
+    if(!a || a.id == null || String(a.data_exame || "") < limiteIso) return;
+    var id = String(a.id);
+    if(!vistos[id]){ vistos[id] = true; ids.push(a.id); }
+  });
+  if(!ids.length) return {data:[], error:null};
+
+  var todos = [];
+  for(var i=0; i<ids.length; i+=200){
+    var parte = ids.slice(i, i+200);
+    var r = await _execConsultarComRetry(function(){
+      return supa.from("agendamento_execucao_itens")
+        .select("*")
+        .in("agendamento_id", parte)
+        .order("id", {ascending:true});
+    });
+    if(r.error) return {data:todos, error:r.error};
+    todos = todos.concat(r.data || []);
+  }
+  return {data:todos, error:null};
+}
+
 async function loadAllData(){
   try{
     var r = await Promise.all([
@@ -6260,10 +6345,11 @@ async function loadAllData(){
       supa.from("usuarios").select("*").eq("ativo",true).order("nome"),
       supa.from("cashback_ajustes").select("*").order("created_at",{ascending:false}),
       supa.from("dentista_enderecos").select("*").order("id"),
-      supa.from("agendamento_execucao").select("*").order("atualizado_em",{ascending:false}).limit(3000)
+      fetchExecucaoResumos()
     ]);
 
     var exR = r[0], cvR = r[1], cpR = r[2], dR = r[3], agR = r[4], agexR = r[5], prR = r[6], usR = r[7], ajR = r[8], deR = r[9], execR = r[10];
+    var execItensR = await fetchExecucaoItensRecentes((agR && agR.data) || []);
 
     // ⚡ FIX (2026-07-24) — Exames vêm EMBUTIDOS na query de agendamentos, só dos
     // 2000 carregados. Antes usava fetchAllAgEx() que puxava TODAS as linhas de
@@ -6273,7 +6359,7 @@ async function loadAllData(){
     agexR = { data: [], error: null };
     (agR.data || []).forEach(function(a){
       (a.agendamento_exames || []).forEach(function(e){
-        agexR.data.push({ agendamento_id: a.id, exame_id: e.exame_id, convenio_id: e.convenio_id, preco: e.preco, nome_exame: e.nome_exame, ordem: e.ordem });
+        agexR.data.push({ id:e.id, agendamento_id: a.id, exame_id: e.exame_id, convenio_id: e.convenio_id, preco: e.preco, nome_exame: e.nome_exame, ordem: e.ordem });
       });
     });
 
@@ -6295,12 +6381,15 @@ async function loadAllData(){
     if (ajR && ajR.error) errosCarregamento.push('cashback_ajustes: ' + ajR.error.message);
     if (deR && deR.error) errosCarregamento.push('dentista_enderecos: ' + deR.error.message);
     if (execR && execR.error) errosCarregamento.push('agendamento_execucao: ' + execR.error.message);
+    if (execItensR && execItensR.error) errosCarregamento.push('agendamento_execucao_itens: ' + execItensR.error.message);
     if (errosCarregamento.length > 0) {
       console.error('[COR] loadAllData erros:', errosCarregamento);
       toast('⚠️ Carregamento parcial', errosCarregamento.length + ' tabela(s) falharam. Detalhes no console (F12). Pode ser necessario recarregar a pagina.');
     }
 
     if (execR && !execR.error) _execAtualizarMapa(execR.data || []);
+    if (execItensR && !execItensR.error) _execAtualizarItens(execItensR.data || []);
+    _execAtualizarSaude(execR, execItensR);
 
     // Buscar dentistas restantes (paginado)
     var allDents = dR.data || [];
@@ -6412,6 +6501,7 @@ async function loadAllData(){
     (agexR.data || []).forEach(function(x){
       if(!mapAgEx[x.agendamento_id]) mapAgEx[x.agendamento_id] = [];
       mapAgEx[x.agendamento_id].push({
+        id: x.id || null,
         exame_id: x.exame_id,
         convenio_id: x.convenio_id || "",
         preco: parseFloat(x.preco || 0),
@@ -6426,6 +6516,7 @@ async function loadAllData(){
 
         if(!itens.length && a.exame_id){
           itens = [{
+            id: null,
             exame_id: a.exame_id,
             convenio_id: a.convenio_id || "",
             preco: parseFloat(a.valor || 0),
@@ -7329,15 +7420,18 @@ async function dbResgatar(dentId,premId,pts){
   <button data-p="pacientes">Pacientes</button>
   <button data-p="agendar">Agenda</button>
   <button data-p="novo">➕ Novo</button>
-  <button data-p="convenios">Convênios</button>
   <button data-p="cashback">Pontos</button>
   <button data-p="dentistas">Dentistas</button>
+  <button data-p="whatsapp">💬 WhatsApp<span id="waNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
+  <button type="button" id="navAdminToggle" class="nav-admin-toggle" aria-haspopup="true" aria-expanded="false">⚙ Administração <span class="nav-admin-caret">▼</span></button>
+</nav>
+<div id="navAdminMenu" class="nav-admin-menu" aria-label="Navegação administrativa">
+  <button data-p="convenios">Convênios</button>
   <button data-p="usuarios">Usuários</button>
   <button data-p="config">Config</button>
   <button data-p="reportes">🚩 Reportes<span id="rpNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
-  <button data-p="whatsapp">💬 WhatsApp<span id="waNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
   <button data-p="reversoes">↩️ Reversões</button>
-</nav>
+</div>
 <div class="hr">
   <div class="upill">
     <div class="uav" id="uAv"></div>
@@ -7577,6 +7671,7 @@ function doLogin() {
 
 function doLogout() {
   CU = null;
+  fecharNavAdmin();
   document.getElementById("AS").style.display = "none";
   document.getElementById("LS").style.display = "flex";
   document.getElementById("lEmail").value = "";
@@ -7591,6 +7686,26 @@ function canAcc(p) { return CU && !!((PERMS[CU.role] || {})[p]); }
 // nem gerenciar credencial.
 function podeEditarDent() { return !!(CU && CU.role === "admin"); }
 
+function navBotoesPaginas() {
+  return document.querySelectorAll("#nav button[data-p], #navAdminMenu button[data-p]");
+}
+
+function fecharNavAdmin() {
+  var menu = document.getElementById("navAdminMenu");
+  var toggle = document.getElementById("navAdminToggle");
+  if (menu) menu.classList.remove("open");
+  if (toggle) toggle.setAttribute("aria-expanded", "false");
+}
+
+function alternarNavAdmin() {
+  var menu = document.getElementById("navAdminMenu");
+  var toggle = document.getElementById("navAdminToggle");
+  if (!menu || !toggle || toggle.style.display === "none") return;
+  var abrir = !menu.classList.contains("open");
+  menu.classList.toggle("open", abrir);
+  toggle.setAttribute("aria-expanded", abrir ? "true" : "false");
+}
+
 function applyNav() {
   var u = CU;
   var av = document.getElementById("uAv");
@@ -7599,9 +7714,12 @@ function applyNav() {
   if (un) un.textContent = u.nome.split(" ").slice(0, 2).join(" ");
   var rb = document.getElementById("uRb");
   if (rb) { rb.textContent = RE[u.role] + " " + RL[u.role]; rb.className = "rb " + RC[u.role]; }
-  document.querySelectorAll("#nav button").forEach(function(btn) {
+  navBotoesPaginas().forEach(function(btn) {
     btn.style.display = (PERMS[u.role] || {})[btn.dataset.p] ? "" : "none";
   });
+  var adminToggle = document.getElementById("navAdminToggle");
+  if (adminToggle) adminToggle.style.display = u.role === "admin" ? "block" : "none";
+  fecharNavAdmin();
 }
 
 function deny(el) {
@@ -7767,11 +7885,17 @@ function closeMa() { document.getElementById("MA").classList.remove("open"); }
 // ══ NAV ══
 function navTo(page) {
   document.querySelectorAll(".page").forEach(function(p) { p.classList.remove("active"); });
-  document.querySelectorAll("#nav button").forEach(function(b) { b.classList.remove("active"); });
+  navBotoesPaginas().forEach(function(b) { b.classList.remove("active"); });
+  var adminToggle = document.getElementById("navAdminToggle");
+  if (adminToggle) adminToggle.classList.remove("active");
   var pe = document.getElementById("page-" + page);
   if (pe) pe.classList.add("active");
-  var nb = document.querySelector("#nav button[data-p='" + page + "']");
-  if (nb) nb.classList.add("active");
+  var nb = document.querySelector("header button[data-p='" + page + "']");
+  if (nb) {
+    nb.classList.add("active");
+    if (nb.closest("#navAdminMenu") && adminToggle) adminToggle.classList.add("active");
+  }
+  fecharNavAdmin();
   var map = {
     dashboard: rdash, atendimento: ratendimento, historico: rhistorico, pacientes: rpacientes, agendar: ragendar, novo: rnovo,
     convenios: rconv, cashback: rcash, dentistas: rdent,
@@ -7808,7 +7932,20 @@ document.addEventListener("DOMContentLoaded", function() {
   }, true);
 
   document.getElementById("nav").addEventListener("click", function(e) {
-    if (e.target.dataset.p) navTo(e.target.dataset.p);
+    var toggle = e.target.closest("#navAdminToggle");
+    if (toggle) { alternarNavAdmin(); return; }
+    var btn = e.target.closest("button[data-p]");
+    if (btn) navTo(btn.dataset.p);
+  });
+  document.getElementById("navAdminMenu").addEventListener("click", function(e) {
+    var btn = e.target.closest("button[data-p]");
+    if (btn) navTo(btn.dataset.p);
+  });
+  document.addEventListener("click", function(e) {
+    if (!e.target.closest("#navAdminToggle") && !e.target.closest("#navAdminMenu")) fecharNavAdmin();
+  });
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") fecharNavAdmin();
   });
   // Modal não fecha mais ao clicar fora — apenas pelo botão X ou Voltar
   document.getElementById("lPass").addEventListener("keydown", function(e) {
@@ -7888,18 +8025,21 @@ function iniciarAutoRefresh(){
       // rodada. Assim o AppCOR acompanha o Digital-COR sem criar outro timer.
       var autoR = await Promise.all([
         supa.from("agendamentos").select("*,agendamento_exames(*)").order("data_exame",{ascending:false}).limit(2000),
-        supa.from("agendamento_execucao").select("*").order("atualizado_em",{ascending:false}).limit(3000)
+        fetchExecucaoResumos()
       ]);
       var agR = autoR[0];
       var execR = autoR[1];
       if(execR && !execR.error) _execAtualizarMapa(execR.data || []);
+      var execItensR = await fetchExecucaoItensRecentes((agR && agR.data) || []);
+      if(execItensR && !execItensR.error) _execAtualizarItens(execItensR.data || []);
+      _execAtualizarSaude(execR, execItensR);
       // ⚡ FIX (2026-07-24) — exames embutidos (só dos 2000 carregados). Ver nota
       // em loadAllData: fetchAllAgEx tinha teto de 30k e, pós-backfill, sumia com
       // os exames dos atendimentos recentes a cada auto-refresh (15s).
       var agexR = { data: [] };
       (agR.data || []).forEach(function(a){
         (a.agendamento_exames || []).forEach(function(e){
-          agexR.data.push({ agendamento_id: a.id, exame_id: e.exame_id, convenio_id: e.convenio_id, preco: e.preco, nome_exame: e.nome_exame, ordem: e.ordem });
+          agexR.data.push({ id:e.id, agendamento_id: a.id, exame_id: e.exame_id, convenio_id: e.convenio_id, preco: e.preco, nome_exame: e.nome_exame, ordem: e.ordem });
         });
       });
 
@@ -7908,6 +8048,7 @@ function iniciarAutoRefresh(){
         (agexR.data || []).forEach(function(x){
           if(!mapAgEx[x.agendamento_id]) mapAgEx[x.agendamento_id] = [];
           mapAgEx[x.agendamento_id].push({
+            id: x.id || null,
             exame_id: x.exame_id,
             convenio_id: x.convenio_id || "",
             preco: parseFloat(x.preco || 0),
@@ -7928,7 +8069,7 @@ function iniciarAutoRefresh(){
         ags = agR.data.map(function(a){
           var itens = mapAgEx[a.id] || [];
           if(!itens.length && a.exame_id){
-            itens = [{exame_id:a.exame_id,convenio_id:a.convenio_id||"",preco:parseFloat(a.valor||0),nome_exame:"",ordem:1}];
+            itens = [{id:null,exame_id:a.exame_id,convenio_id:a.convenio_id||"",preco:parseFloat(a.valor||0),nome_exame:"",ordem:1}];
           }
           itens.sort(function(x,y){return (x.ordem||0)-(y.ordem||0);});
 
@@ -8041,8 +8182,129 @@ function _execAtualizarMapa(rows){
   });
   EXECUCAO_STATUS = novo;
 }
+function _execAtualizarItens(rows){
+  var novo = {};
+  (rows || []).forEach(function(row){
+    if(!row || row.agendamento_id == null) return;
+    var key = String(row.agendamento_id);
+    if(!novo[key]) novo[key] = [];
+    novo[key].push(row);
+  });
+  EXECUCAO_ITENS = novo;
+}
+function _execAtualizarSaude(resumoR, itensR){
+  var erros = [];
+  if(resumoR && resumoR.error) erros.push("resumo: "+resumoR.error.message);
+  if(itensR && itensR.error) erros.push("itens: "+itensR.error.message);
+  if(!erros.length){
+    EXECUCAO_SAUDE.erro = "";
+    EXECUCAO_SAUDE.atualizado_em = Date.now();
+    return;
+  }
+  EXECUCAO_SAUDE.erro = erros.join(" | ");
+  var agora = Date.now();
+  if(agora - Number(EXECUCAO_SAUDE.ultimo_aviso || 0) > 60000){
+    EXECUCAO_SAUDE.ultimo_aviso = agora;
+    if(typeof toast === "function") toast("↻ Atualizando status", "A consulta falhou apos tres tentativas. O AppCOR tentara novamente automaticamente.");
+  }
+}
+function _execProtocolo(tipo){
+  var protocolo = tipo && tipo.exec;
+  if(typeof protocolo === "string"){
+    try{ protocolo = JSON.parse(protocolo); }catch(_){ protocolo = null; }
+  }
+  return protocolo && Array.isArray(protocolo.requirements) ? protocolo : null;
+}
+function _execRequisitosEsperados(a){
+  var esperados = [];
+  var automaticos = {};
+  var exames = Array.isArray(a && a.exames) && a.exames.length ? a.exames : [{id:null, exame_id:a && a.ex}];
+  exames.forEach(function(exame){
+    var tipo = fex(exame.exame_id);
+    var protocolo = _execProtocolo(tipo);
+    if(!protocolo) return;
+    (protocolo.requirements || []).forEach(function(req){
+      var key = String((req && req.key) || "").trim();
+      if(!key) return;
+      var modo = String(req.mode || "");
+      var item = {
+        key:key,
+        label:String(req.label || (tipo && tipo.n) || key),
+        mode:modo,
+        agendamento_exame_id:exame.id == null ? null : exame.id
+      };
+      if(modo === "manual_order_item"){
+        item.label = String((exame && exame.nome_exame) || (tipo && tipo.n) || item.label);
+        esperados.push(item);
+      }else if(!automaticos[key]){
+        automaticos[key] = true;
+        item.agendamento_exame_id = null;
+        esperados.push(item);
+      }
+    });
+  });
+  return esperados;
+}
+function _execEstadoDoRequisito(estados, esperado){
+  var candidatos = (estados || []).filter(function(row){
+    return String(row.requisito_chave || "") === esperado.key;
+  });
+  if(esperado.mode === "manual_order_item" && esperado.agendamento_exame_id != null){
+    var exato = candidatos.find(function(row){
+      return String(row.agendamento_exame_id || "") === String(esperado.agendamento_exame_id);
+    });
+    if(exato) return exato;
+  }
+  return candidatos.length === 1 ? candidatos[0] : null;
+}
+function _execReconciliar(a, row){
+  if(!a) return row || null;
+  var estados = EXECUCAO_ITENS[String(a.id)];
+  if(!estados || !estados.length) return row || null;
+  var esperados = _execRequisitosEsperados(a);
+  if(!esperados.length) return row || null;
+
+  var base = {};
+  Object.keys(row || {}).forEach(function(k){ base[k] = row[k]; });
+  base.agendamento_id = a.id;
+  var concluidos = [];
+  var pendencias = [];
+  esperados.forEach(function(esperado){
+    var estado = _execEstadoDoRequisito(estados, esperado);
+    var ok = !!(estado && estado.status === "concluido");
+    var rotulo = String((estado && estado.rotulo) || esperado.label || esperado.key);
+    var item = {key:esperado.key, label:rotulo, agendamento_exame_id:esperado.agendamento_exame_id};
+    if(ok){
+      concluidos.push(item);
+    }else{
+      item.status = estado && estado.status ? estado.status : "pendente";
+      item.detail = esperado.mode === "manual_order_item"
+        ? "Aguardando confirmacao do tomografo"
+        : "Aguardando arquivo no Digital-COR";
+      pendencias.push(item);
+    }
+  });
+
+  var total = esperados.length;
+  var done = concluidos.length;
+  base._resumo_divergente = !!row && (
+    Number(row.unidades_obrigatorias || 0) !== total ||
+    Number(row.unidades_concluidas || 0) !== done
+  );
+  base.unidades_obrigatorias = total;
+  base.unidades_concluidas = done;
+  base.progresso = total ? Math.round(done * 100 / total) : 0;
+  base.concluidos = concluidos;
+  base.pendencias = pendencias;
+  if(!base.saida_em && String(base.status || "").indexOf("saiu_") !== 0){
+    base.status = total && done === total ? "completo" : (done ? "em_andamento" : "nao_iniciado");
+    base._derivado_completo = total > 0 && done === total;
+  }
+  return base;
+}
 function _execResumo(a){
-  return a && EXECUCAO_STATUS[String(a.id)] ? EXECUCAO_STATUS[String(a.id)] : null;
+  if(!a) return null;
+  return _execReconciliar(a, EXECUCAO_STATUS[String(a.id)] || null);
 }
 function _execTemProtocolo(a){
   if(!a) return false;
@@ -8083,6 +8345,9 @@ function _execHora(value){
 }
 function _execMeta(a){
   var row = _execResumo(a);
+  if(EXECUCAO_SAUDE.erro && _execTemProtocolo(a)){
+    return {cls:"exec-wait", label:"ATUALIZANDO STATUS...", title:"Reconectando automaticamente ao status dos exames: "+EXECUCAO_SAUDE.erro, row:row};
+  }
   if(!row){
     return _execTemProtocolo(a)
       ? {cls:"exec-wait", label:"AGUARDANDO EXAMES", title:"Acompanhamento ainda nao iniciado no Digital-COR", row:null}
@@ -8096,6 +8361,9 @@ function _execMeta(a){
   }
   if(row.saida_em || status === "saiu_completo"){
     return {cls:"exec-released", label:"PACIENTE LIBERADO", title:"Paciente liberado; todos os exames concluidos", row:row};
+  }
+  if(row._derivado_completo){
+    return {cls:"exec-released", label:"PACIENTE LIBERADO", title:"Paciente liberado; confirmacoes recebidas diretamente dos setores", row:row};
   }
   if(status === "completo" || (total > 0 && done >= total)){
     return {cls:"exec-ready", label:"EXAMES PRONTOS", title:"Todos os exames foram concluidos", row:row};
@@ -8134,17 +8402,22 @@ function execModalStatus(a){
     itens += "<div class=\"exec-modal-item pending\">○ "+esc(_execRotulo(item)+detalhe)+"</div>";
   });
   var liberacao = "";
+  var sincronizacao = row._resumo_divergente
+    ? "<div class=\"exec-modal-release\" style=\"color:var(--or)\">O resumo geral estava atrasado; o AppCOR reconciliou os itens confirmados diretamente pelos setores.</div>"
+    : "";
   if(row.saida_em){
     var titulo = row.saida_com_pendencias ? "Paciente liberado com pendencias" : "Paciente liberado — exames completos";
     liberacao = "<div class=\"exec-modal-release\"><strong>"+esc(titulo)+"</strong><br>"+
       esc(_execHora(row.saida_em))+(row.saida_por_nome ? " · "+esc(row.saida_por_nome) : "")+
       (row.justificativa_pendencia ? "<br><span style=\"color:var(--gr)\">Justificativa: "+esc(row.justificativa_pendencia)+"</span>" : "")+"</div>";
+  }else if(row._derivado_completo){
+    liberacao = "<div class=\"exec-modal-release\"><strong>Paciente liberado — exames completos</strong><br>Status confirmado diretamente pelos setores.</div>";
   }else if(pendencias.length){
     liberacao = "<div class=\"exec-modal-release\" style=\"color:var(--or)\">Paciente ainda possui exames pendentes.</div>";
   }
   return "<div class=\"exec-modal "+meta.cls+"\"><div class=\"exec-modal-head\"><div><div class=\"exec-modal-title\">🩻 Status dos exames</div><div class=\"exec-modal-count\">"+done+" de "+total+" concluidos</div></div><span class=\"exec-modal-state\">"+esc(meta.title)+"</span></div>"+
     "<div class=\"exec-modal-track\"><span style=\"width:"+progress+"%\"></span></div>"+
-    (itens ? "<div class=\"exec-modal-list\">"+itens+"</div>" : "")+liberacao+"</div>";
+    (itens ? "<div class=\"exec-modal-list\">"+itens+"</div>" : "")+sincronizacao+liberacao+"</div>";
 }
 
 // ══ DATA ══
@@ -8158,6 +8431,8 @@ const API_BASE = "https://flpvzvtbhuyjjdqyrsza.supabase.co/functions/v1";
 
 var ags = [];
 var EXECUCAO_STATUS = {}; // agendamento_id -> resumo de agendamento_execucao
+var EXECUCAO_ITENS = {}; // agendamento_id -> confirmacoes exatas dos setores
+var EXECUCAO_SAUDE = {erro:"", atualizado_em:0, ultimo_aviso:0};
 var waT = {
   ag: "🦷 *COR — Centro Odontologico de Radiologia*\n\nOla, {nome}!\n\nAgendamento confirmado:\nExame: {exame}\nData: {data}\nHorario: {hora}\nLocal: {clinica}\n\nQualquer duvida é só chamar!",
   lb: "🦷 *COR — Lembrete*\n\nOla, {nome}! Amanha voce tem:\nExame: {exame}\nHorario: {hora}\n\nNao esqueca seus documentos!",
