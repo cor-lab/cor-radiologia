@@ -3833,13 +3833,17 @@ async function renderDocsGuias(ag) {
 // A fonte da verdade é o FotonWeb (arquivos {SEQ}reqfrente.jpg etc., que também
 // chegam pelo scanner/bridge). Verificamos em lote, com cache de 2 min, e
 // pintamos de vermelho o card sem "Requisição frente/verso".
-var _reqDocsCache = {};      // seq -> { temReq: bool, t: ms }
+var _reqDocsCache = {};      // seq -> { temReq: bool, temGuia: bool, t: ms }
 var _reqDocsPendentes = {};  // seq -> true (consulta em andamento)
 var _REQ_TTL_MS = 120000;
 
 function _reqTem(seq){
   var c = _reqDocsCache[seq];
   return c ? c.temReq : null;   // null = ainda não verificado
+}
+function _guiaTem(seq){
+  var c = _reqDocsCache[seq];
+  return c && typeof c.temGuia === "boolean" ? c.temGuia : null;
 }
 
 async function _reqVerificarLote(lista){
@@ -3868,9 +3872,13 @@ async function _reqVerificarLote(lista){
         var tem = docs.some(function(d){
           return (d.slot === "reqfrente" || d.slot === "reqverso") && d.exists;
         });
+        var temGuia = docs.some(function(d){
+          return (d.slot === "guiaunimed" || d.slot === "unimed2" || d.slot === "unimed3") && d.exists;
+        });
         var antes = _reqDocsCache[seq] ? _reqDocsCache[seq].temReq : null;
-        _reqDocsCache[seq] = { temReq: tem, t: Date.now() };
-        if(antes !== tem) mudou = true;
+        var guiaAntes = _reqDocsCache[seq] ? _reqDocsCache[seq].temGuia : null;
+        _reqDocsCache[seq] = { temReq: tem, temGuia: temGuia, t: Date.now() };
+        if(antes !== tem || guiaAntes !== temGuia) mudou = true;
       }catch(_){ }
       finally{ delete _reqDocsPendentes[seq]; }
     }));
@@ -3975,7 +3983,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v7.2 - 2026-09-01";
+var APP_VERSION = "v7.3 - 2026-09-01";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -9132,10 +9140,14 @@ function renderAtendimento() {
         // v3.47 — sem requisição anexada (frente/verso) => card vermelho.
         // Sem SEQ ainda (sincronizando) também destaca: não há doc possível.
         var _semReq = false;
+        var _semGuia = false;
         if(st !== "cancelado"){
           _semReq = a.firebird_seq_atend ? (_reqTem(a.firebird_seq_atend) === false) : true;
+          if(_metodosPgList(a).indexOf("guia") !== -1){
+            _semGuia = a.firebird_seq_atend ? (_guiaTem(a.firebird_seq_atend) === false) : true;
+          }
         }
-        h += "<div class='at-mini st-" + st + (_semReq ? " sem-req" : "") + "' onclick='agEV(" + a.id + ")'>";
+        h += "<div class='at-mini st-" + st + ((_semReq || _semGuia) ? " sem-req" : "") + "' onclick='agEV(" + a.id + ")'>";
 
         // Linha 1: nome + hora
         h += "<div class='at-mini-top'>";
@@ -9157,6 +9169,7 @@ function renderAtendimento() {
         h += "<span class='badge " + ({agendado:"bo",realizado:"bg",cancelado:"bgr",aguardando:"bgo"}[st] || "bgr") + "' style='font-size:.58rem;padding:1px 5px'>" + (sl[st] || st) + "</span>";
         h += execInlineBadge(a);
         if(_semReq) h += "<span style='background:#ef4444;color:#fff;font-weight:700;font-size:.56rem;padding:1px 5px;border-radius:4px;flex-shrink:0'>SEM REQUISIÇÃO</span>";
+        if(_semGuia) h += "<span style='background:#ef4444;color:#fff;font-weight:700;font-size:.56rem;padding:1px 5px;border-radius:4px;flex-shrink:0'>SEM GUIA</span>";
         if(a.firebird_seq_atend) h += "<span style='color:var(--tl);font-weight:700;font-size:.7rem'>#" + a.firebird_seq_atend + "</span>";
         h += "<span>🦷 " + esc(d.n) + "</span>";
         // ⚡ Sessão 1 simplificação 06/05/2026 — usa fmtValorAg em vez de a.vl
