@@ -4070,7 +4070,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v7.6 - 2026-09-02";
+var APP_VERSION = "v7.7 - 2026-09-05";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -7770,9 +7770,10 @@ async function dbResgatar(dentId,premId,pts){
       <div class="field">
         <label>Forma de pagamento final</label>
         <select id="nfFormaPg" onchange="atualizarValorNota()">
-          <option value="avista">À vista (20% desc.)</option>
-          <option value="3x">3x (10% desc.)</option>
-          <option value="4x">4x (10% desc.)</option>
+          <option value="avista">À vista — pix/débito/dinheiro (25% desc.)</option>
+          <option value="credito">Crédito à vista (20% desc.)</option>
+          <option value="3x">3x (15% desc.)</option>
+          <option value="4x">4x (15% desc.)</option>
           <option value="10x">10x (sem desconto)</option>
         </select>
       </div>
@@ -10107,9 +10108,10 @@ function _ensureFormNovo(){
   h += "<div class=\"field\">";
   h += "<label>Forma de pagamento</label>";
   h += "<select id=\"pFormaPg\" onchange=\"updAgSum()\" style=\"cursor:pointer\">";
-  h += "<option value=\"avista\">À vista (20% desc.)</option>";
-  h += "<option value=\"3x\">3x (10% desc.)</option>";
-  h += "<option value=\"4x\">4x (10% desc.)</option>";
+  h += "<option value=\"avista\">À vista — pix/débito/dinheiro (25% desc.)</option>";
+  h += "<option value=\"credito\">Crédito à vista (20% desc.)</option>";
+  h += "<option value=\"3x\">3x (15% desc.)</option>";
+  h += "<option value=\"4x\">4x (15% desc.)</option>";
   h += "<option value=\"10x\">10x (sem desconto)</option>";
   h += "</select>";
   h += "</div>";
@@ -11373,9 +11375,10 @@ function openEditAg(id) {
 
   b += "<div class=\"field\"><label>Forma de pagamento prevista</label><select id=\"eFormaPg\" onchange=\"updAgSumEdit()\">";
   [
-    {v:"avista",l:"À vista (20% desc.)"},
-    {v:"3x",l:"3x (10% desc.)"},
-    {v:"4x",l:"4x (10% desc.)"},
+    {v:"avista",l:"À vista — pix/débito/dinheiro (25% desc.)"},
+    {v:"credito",l:"Crédito à vista (20% desc.)"},
+    {v:"3x",l:"3x (15% desc.)"},
+    {v:"4x",l:"4x (15% desc.)"},
     {v:"10x",l:"10x (sem desconto)"}
   ].forEach(function(op){
     b += "<option value=\"" + op.v + "\"" + (((a.forma_pagamento_prevista || "avista") === op.v) ? " selected" : "") + ">" + op.l + "</option>";
@@ -12508,10 +12511,17 @@ function maskPhone(el){
     try { el.setSelectionRange(newPos, newPos); } catch(e) { /* ignora */ }
   }
 }
+// ⚡ v7.7 (05/09/26) — nova política de pagamento (reajuste set/2026):
+//   avista (pix/débito/dinheiro) 25% | credito (cartão à vista) 20% | 3x/4x 15% | 10x 0%.
+//   "credito" é valor NOVO em forma_pagamento — exige as CHECK constraints de agendamentos
+//   liberadas ANTES do deploy (02_forma_pagamento_credito.sql).
+//   Agendamentos antigos guardam desconto_percentual próprio; a regra nova só vale para
+//   quem recalcular (novo atendimento / troca de forma na edição ou na NF).
 function obterDescontoPagamento(formaPagamento){
-  if(formaPagamento === "avista") return 20;
-  if(formaPagamento === "3x") return 10;
-  if(formaPagamento === "4x") return 10;
+  if(formaPagamento === "avista") return 25;
+  if(formaPagamento === "credito") return 20;
+  if(formaPagamento === "3x") return 15;
+  if(formaPagamento === "4x") return 15;
   if(formaPagamento === "10x") return 0;
   return 0;
 }
@@ -15941,7 +15951,8 @@ function updAgSum(){
   calcPg.valor_faturado += prSemDesconto;
 
   var formaLabel = "À vista";
-  if(formaPagamentoPrevista === "3x") formaLabel = "3x";
+  if(formaPagamentoPrevista === "credito") formaLabel = "Crédito à vista";
+  else if(formaPagamentoPrevista === "3x") formaLabel = "3x";
   else if(formaPagamentoPrevista === "4x") formaLabel = "4x";
   else if(formaPagamentoPrevista === "10x") formaLabel = "10x";
 
