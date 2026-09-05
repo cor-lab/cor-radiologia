@@ -2875,6 +2875,22 @@ tr:last-child td{border-bottom:none}
   font-size:.78rem;
   text-align:right;
 }
+/* v7.8 — grupos expansíveis (periapicais / interproximais / fotos) */
+.exck-grp{
+  display:flex;align-items:center;gap:8px;
+  padding:6px 10px;
+  border:1px solid rgba(74,184,72,.35);
+  border-radius:7px;
+  background:rgba(74,184,72,.10);
+  font-size:.80rem;font-weight:700;
+  cursor:pointer;user-select:none;
+  min-height:36px;
+}
+.exck-grp .exck-caret{display:inline-block;width:14px;transition:transform .15s}
+.exck-grp.aberto .exck-caret{transform:rotate(90deg)}
+.exck-grp .exck-grp-n{margin-left:auto;font-weight:500;font-size:.72rem;opacity:.8}
+.exck-row.exck-sub{margin-left:16px}
+.exck-row.exck-sub.exck-oculto{display:none}
 
 /* ══════════════════════════════════════════════════════
    LAYOUT MÓVEL — iPhone / telas compactas
@@ -4070,7 +4086,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v7.7 - 2026-09-05";
+var APP_VERSION = "v7.8 - 2026-09-05";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -4242,12 +4258,30 @@ function exChecklistHtml(idBase, selected, onChangeFn){
   h += "<div class='exck-wrap'>";
   h += "<div id='" + idBase + "' class='exck-list'>";
 
+  // ⚡ v7.8 — periapicais, interproximais e fotos viram um grupo que expande ao clicar.
+  // Membros ficam ocultos até abrir o grupo (ou se algum já estiver marcado).
+  // Ordem dentro do grupo é numérica (1, 2, 3… 16), não alfabética ("10 Fotos" antes de "2 Fotos").
+  var grupos = {}; var ordemGrupos = []; var lista = [];
   (exT || []).forEach(function(ex){
+    var g = exckGrupoDe(ex.n);
+    if(!g){ lista.push({ex:ex}); return; }
+    if(!grupos[g.chave]){ grupos[g.chave] = {def:g, itens:[]}; ordemGrupos.push(g.chave); lista.push({grupo:g.chave}); }
+    grupos[g.chave].itens.push(ex);
+  });
+  // grupo entra na posição alfabética do seu rótulo (Fotos entre E e I, Interproximais antes de
+  // "Interproximais de Anteriores", Radiografias Periapicais depois de Radiografia Panorâmica).
+  lista.sort(function(x, y){
+    var kx = x.ex ? String(x.ex.n || "") : grupos[x.grupo].def.rotulo;
+    var ky = y.ex ? String(y.ex.n || "") : grupos[y.grupo].def.rotulo;
+    return kx.localeCompare(ky, "pt-BR", {sensitivity:"base"});
+  });
+  var idx = 0;
+  function linhaExame(ex, grupoChave, aberto){
     var sel = mapSel[ex.id] || null;
     var checked = sel ? "checked" : "";
     var preco = sel ? sel.preco : Number(ex.p || 0);
 
-    h += "<div class='exck-row' data-exame='" + ex.id + "' data-nome='" + String(ex.n || "").toLowerCase().replace(/'/g, "&apos;") + "'>";
+    h += "<div class='exck-row" + (grupoChave ? " exck-sub" + (aberto ? "" : " exck-oculto") : "") + "' data-exame='" + ex.id + "' data-idx='" + (idx++) + "'" + (grupoChave ? " data-grupo='" + grupoChave + "'" : "") + " data-nome='" + String(ex.n || "").toLowerCase().replace(/'/g, "&apos;") + "'>";
 
     // checkbox
     h += "<input type='checkbox' value='" + ex.id + "' " + checked + " onchange=\"toggleExame('" + idBase + "','" + ex.id + "','" + onChangeFn + "')\">";
@@ -4286,12 +4320,58 @@ function exChecklistHtml(idBase, selected, onChangeFn){
     h += "</div>";
 
     h += "</div>";
+  }
+
+  lista.forEach(function(item){
+    if(item.ex){ linhaExame(item.ex, "", true); return; }
+    var G = grupos[item.grupo]; if(!G) return;
+    G.itens.sort(function(a,b){ return exckNumero(a.n) - exckNumero(b.n); });
+    var marcados = G.itens.filter(function(ex){ return !!mapSel[ex.id]; }).length;
+    var aberto = marcados > 0;
+    h += "<div class='exck-grp" + (aberto ? " aberto" : "") + "' data-grupo='" + G.def.chave + "' data-idx='" + (idx++) + "' onclick=\"toggleGrupoEx('" + idBase + "','" + G.def.chave + "')\">";
+    h += "<span class='exck-caret'>▶</span><span>" + G.def.icone + " " + esc(G.def.rotulo) + "</span>";
+    h += "<span class='exck-grp-n'>" + (marcados ? marcados + " marcado" + (marcados > 1 ? "s" : "") : G.itens.length + " opções") + "</span>";
+    h += "</div>";
+    G.itens.forEach(function(ex){ linhaExame(ex, G.def.chave, aberto); });
   });
 
   h += "</div>";
   h += "</div>";
 
   return h;
+}
+// v7.8 — definição dos grupos expansíveis. Regex ancorado: "Interproximais de Anteriores",
+// "Periapical (SUS)", "Levantamento Periapical Completo" etc. NÃO entram.
+var EXCK_GRUPOS = [
+  {chave:"periapical",    rotulo:"Radiografias Periapicais", icone:"🩻", re:/^(\d+ radiografias periapicais|radiografia periapical)$/i},
+  {chave:"interproximal", rotulo:"Interproximais",           icone:"🎯", re:/^\d+ interproxima(l|is)$/i},
+  {chave:"foto",          rotulo:"Fotos",                    icone:"📸", re:/^\d+ fotos?$/i}
+];
+function exckGrupoDe(nome){
+  var n = String(nome || "").trim();
+  for(var i=0;i<EXCK_GRUPOS.length;i++){ if(EXCK_GRUPOS[i].re.test(n)) return EXCK_GRUPOS[i]; }
+  return null;
+}
+function exckNumero(nome){ var m = String(nome || "").match(/^(\d+)/); return m ? parseInt(m[1],10) : 1; }
+function toggleGrupoEx(idBase, chave){
+  var root = document.getElementById(idBase); if(!root) return;
+  var cab = root.querySelector(".exck-grp[data-grupo='" + chave + "']"); if(!cab) return;
+  var abrir = !cab.classList.contains("aberto");
+  cab.classList.toggle("aberto", abrir);
+  root.querySelectorAll(".exck-sub[data-grupo='" + chave + "']").forEach(function(row){
+    row.classList.toggle("exck-oculto", !abrir);
+    row.style.display = abrir ? "grid" : "none";
+  });
+}
+function atualizarGrupoEx(idBase, exId){
+  var root = document.getElementById(idBase); if(!root) return;
+  var row = root.querySelector("[data-exame='" + exId + "']"); if(!row) return;
+  var chave = row.getAttribute("data-grupo"); if(!chave) return;
+  var cab = root.querySelector(".exck-grp[data-grupo='" + chave + "']"); if(!cab) return;
+  var subs = Array.from(root.querySelectorAll(".exck-sub[data-grupo='" + chave + "']"));
+  var marcados = subs.filter(function(r){ var c = r.querySelector("input[type='checkbox']"); return c && c.checked; }).length;
+  var lab = cab.querySelector(".exck-grp-n");
+  if(lab) lab.textContent = marcados ? (marcados + " marcado" + (marcados > 1 ? "s" : "")) : (subs.length + " opções");
 }
 function toggleExame(idBase, exId, onChangeFn){
   var root = document.getElementById(idBase);
@@ -4307,6 +4387,7 @@ function toggleExame(idBase, exId, onChangeFn){
 
   if(sl) sl.disabled = !marcado;
   if(ip) ip.disabled = !marcado;
+  atualizarGrupoEx(idBase, exId); // v7.8
 
   if(marcado){
     // Auto-selecionar convênio ao marcar exame
@@ -4396,14 +4477,34 @@ function filtrarExames(inp, idBase){
   if(!root) return;
 
   var rows = Array.from(root.querySelectorAll("[data-exame]"));
+  var cabs = Array.from(root.querySelectorAll(".exck-grp"));
 
+  // v7.8 — sem termo: volta à ordem original (data-idx) com os grupos fechados/abertos como estavam.
+  if(!termo){
+    cabs.forEach(function(c){ c.style.display = "flex"; });
+    rows.forEach(function(row){
+      var g = row.getAttribute("data-grupo");
+      if(!g){ row.style.display = "grid"; return; }
+      var cab = root.querySelector(".exck-grp[data-grupo='" + g + "']");
+      var aberto = cab && cab.classList.contains("aberto");
+      row.classList.toggle("exck-oculto", !aberto);
+      row.style.display = aberto ? "grid" : "none";
+    });
+    rows.concat(cabs)
+      .sort(function(a, b){ return Number(a.getAttribute("data-idx") || 0) - Number(b.getAttribute("data-idx") || 0); })
+      .forEach(function(el){ root.appendChild(el); });
+    return;
+  }
+
+  // com termo: esconde cabeçalhos, mostra todo exame que casa (inclusive os de grupo) e ordena por relevância.
+  cabs.forEach(function(c){ c.style.display = "none"; });
   rows.forEach(function(row){
     var nome = String(row.getAttribute("data-nome") || "")
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "");
 
-    var match = !termo || nome.indexOf(termo) >= 0;
+    var match = nome.indexOf(termo) >= 0;
     row.style.display = match ? "grid" : "none";
 
     var score = 9999;
@@ -4417,7 +4518,8 @@ function filtrarExames(inp, idBase){
   rows
     .filter(function(row){ return row.style.display !== "none"; })
     .sort(function(a, b){
-      return Number(a.dataset.score || 9999) - Number(b.dataset.score || 9999);
+      var d = Number(a.dataset.score || 9999) - Number(b.dataset.score || 9999);
+      return d !== 0 ? d : Number(a.getAttribute("data-idx") || 0) - Number(b.getAttribute("data-idx") || 0);
     })
     .forEach(function(row){
       root.appendChild(row);
