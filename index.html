@@ -235,6 +235,17 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-09-07 (v7.9): BLOQUEIO POR SETOR E POR INTERVALO DE DATAS. A tela de
+              bloqueios ganhou "Tipo de bloqueio": Clinica toda (feriado),
+              Equipamento (manutencao — para todos os exames que usam o aparelho)
+              e Setor/tipo de exame (funcionario ausente — para SO aquele exame;
+              ex.: parar documentacao mantem a panoramica). Campo "Data fim"
+              opcional cobre ferias/ausencias de varios dias. Colunas novas em
+              agenda_bloqueios: data_fim e categorias[]. A CORA le a tabela direto
+              (equipamentos/categorias/intervalo). O trigger de sincronizacao so
+              cria ocupacoes sinteticas e trava sobreposicao para bloqueio GERAL
+              ("todos"); equipamento/setor sao honrados pela CORA e podem coexistir.
+
   2026-09-02 (v7.6): MODO FERIADO / BLOQUEIO DA AGENDA. Somente o perfil
               Administrador pode bloquear o dia inteiro, manha, tarde ou um intervalo
               personalizado. A migracao 005 cria ocupacoes tecnicas de cinco
@@ -3534,6 +3545,9 @@ tr:last-child td{border-bottom:none}
 .ag-block-item{display:grid;grid-template-columns:82px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 10px;border:1px solid rgba(248,113,113,.27);border-radius:9px;background:rgba(127,29,29,.12)}
 .ag-block-date{font-weight:800;color:#fca5a5;font-size:.76rem}.ag-block-desc{min-width:0;font-size:.73rem}.ag-block-desc strong{display:block;color:var(--wh)}.ag-block-desc span{display:block;margin-top:2px;color:var(--gr);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ag-block-empty{padding:16px;text-align:center;border:1px dashed rgba(148,163,184,.25);border-radius:9px;color:var(--gr);font-size:.74rem}
+.ab-chk-row{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:5px}
+.ab-chk{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;cursor:pointer;padding:5px 9px;border:1px solid rgba(148,163,184,.28);border-radius:8px;background:rgba(148,163,184,.06)}
+.ab-chk input{margin:0;cursor:pointer}
 @media(max-width:760px){.ag-block-form{grid-template-columns:1fr}.ag-block-custom{grid-template-columns:1fr 1fr}.ag-block-item{grid-template-columns:72px minmax(0,1fr)}.ag-block-item button{grid-column:1/-1}}
 </style>
 
@@ -4086,7 +4100,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v7.8 - 2026-09-05";
+var APP_VERSION = "v7.9 - 2026-09-07";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -6558,17 +6572,40 @@ function agendaEhBloqueioSintetico(row){
     String(row.paciente_nome || row.pac || "").toUpperCase() === "AGENDA BLOQUEADA - CORA";
 }
 
+// Rótulos legíveis dos escopos (equipamento e setor) — v7.9.
+var AB_EQUIP_ROTULO = {panoramico:"Panorâmico", tomografo:"Tomógrafo", scanner:"Escâner 3D", raiox_periapical:"Raio-X periapical", todos:"Clínica toda"};
+var AB_SETOR_ROTULO = {documentacao:"Documentação", escaneamento:"Escaneamento", tomografia:"Tomografia", panoramico:"Panorâmica", periapical:"Periapical"};
+var AB_EQUIP_OPCOES = ["panoramico","tomografo","scanner","raiox_periapical"];
+var AB_SETOR_OPCOES = ["documentacao","escaneamento","tomografia","panoramico","periapical"];
+
 function agendaMapBloqueio(row){
+  var equip = Array.isArray(row.equipamentos) ? row.equipamentos : [];
+  var cats = Array.isArray(row.categorias) ? row.categorias : [];
+  var geral = equip.indexOf("todos") !== -1 || cats.indexOf("todos") !== -1;
   return {
     id: row.id,
     data: String(row.data || "").substring(0,10),
+    data_fim: row.data_fim ? String(row.data_fim).substring(0,10) : "",
     inicio: String(row.hora_inicio || "07:00").substring(0,5),
     fim: String(row.hora_fim || "19:00").substring(0,5),
     periodo: row.periodo || "personalizado",
     motivo: row.motivo || "",
     ativo: row.ativo !== false,
-    criado_por_nome: row.criado_por_nome || ""
+    criado_por_nome: row.criado_por_nome || "",
+    equipamentos: equip,
+    categorias: cats,
+    escopo: geral ? "geral" : (cats.length ? "setor" : "equipamento")
   };
+}
+
+// Descrição legível do ALCANCE do bloqueio (clínica / aparelho / setor).
+function agendaBloqueioEscopoTexto(b){
+  if(!b) return "";
+  if(b.escopo === "geral") return "Clínica toda";
+  if(b.escopo === "setor"){
+    return "Setor: " + (b.categorias||[]).map(function(c){ return AB_SETOR_ROTULO[c]||c; }).join(", ");
+  }
+  return "Equipamento: " + (b.equipamentos||[]).map(function(e){ return AB_EQUIP_ROTULO[e]||e; }).join(", ");
 }
 
 async function limparAgendaBloqueiosExpirados(){
@@ -6589,7 +6626,7 @@ async function fetchAgendaBloqueios(){
   var hoje = agora.getFullYear()+"-"+String(agora.getMonth()+1).padStart(2,"0")+"-"+String(agora.getDate()).padStart(2,"0");
   try{
     var r = await supa.from("agenda_bloqueios").select("*")
-      .eq("ativo",true).gte("data",hoje)
+      .eq("ativo",true).or("data.gte."+hoje+",data_fim.gte."+hoje)
       .order("data",{ascending:true}).order("hora_inicio",{ascending:true});
     if(r.error){
       if(agendaBloqueioSchemaAusente(r.error)){
@@ -10309,7 +10346,10 @@ function m2t(m){return pad(Math.floor(m/60))+":"+pad(m%60);}
 
 function agendaBloqueiosDoDia(dataISO){
   return (AGENDA_BLOQUEIOS || []).filter(function(b){
-    return b && b.ativo !== false && b.data === dataISO;
+    if(!b || b.ativo === false || !b.data) return false;
+    // Intervalo de datas (v7.9): sem data_fim = dia único.
+    var fim = b.data_fim || b.data;
+    return b.data <= dataISO && dataISO <= fim;
   }).sort(function(a,b){ return t2m(a.inicio)-t2m(b.inicio); });
 }
 
@@ -10360,6 +10400,15 @@ function agendaBloqueioPeriodoMudar(){
   fim.disabled = !personalizado;
 }
 
+// v7.9 — alterna os campos conforme o TIPO de bloqueio escolhido.
+function agendaBloqueioTipoMudar(){
+  var tipo = (document.getElementById("abTipo") || {}).value || "geral";
+  var boxEquip = document.getElementById("abBoxEquip");
+  var boxSetor = document.getElementById("abBoxSetor");
+  if(boxEquip) boxEquip.style.display = (tipo === "equipamento") ? "" : "none";
+  if(boxSetor) boxSetor.style.display = (tipo === "setor") ? "" : "none";
+}
+
 function agendaBloqueioRenderLista(){
   var box = document.getElementById("abLista");
   if(!box) return;
@@ -10369,9 +10418,10 @@ function agendaBloqueioRenderLista(){
     return;
   }
   box.innerHTML = lista.map(function(b){
-    var detalhe = agendaPeriodoRotulo(b.periodo)+" · "+esc(b.inicio)+" as "+esc(b.fim);
+    var detalhe = agendaBloqueioEscopoTexto(b)+" · "+agendaPeriodoRotulo(b.periodo)+" · "+esc(b.inicio)+" as "+esc(b.fim);
     if(b.motivo) detalhe += " · "+esc(b.motivo);
-    return "<div class='ag-block-item'><div class='ag-block-date'>"+esc(agendaDataBR(b.data))+"</div>"+
+    var dataTxt = agendaDataBR(b.data) + (b.data_fim && b.data_fim !== b.data ? " a "+agendaDataBR(b.data_fim) : "");
+    return "<div class='ag-block-item'><div class='ag-block-date'>"+esc(dataTxt)+"</div>"+
       "<div class='ag-block-desc'><strong>"+esc(detalhe)+"</strong><span>Novos horarios indisponiveis para a CORA"+
       (b.criado_por_nome ? " · por "+esc(b.criado_por_nome) : "")+"</span></div>"+
       "<button class='btn btnr bsm' onclick='agendaBloqueioExcluir("+Number(b.id)+")'>Liberar</button></div>";
@@ -10389,13 +10439,23 @@ function abrirAgendaBloqueios(dataISO){
   if(indisponivel){
     b += "<div class='ag-block-help' style='border-color:rgba(239,68,68,.5);color:#fecaca'><strong>Configuracao pendente no Supabase.</strong><br>Execute primeiro o arquivo <code>supabase/005_agenda_bloqueios.sql</code>. O restante do AppCOR continua funcionando normalmente.</div>";
   }
-  b += "<div class='ag-block-help'><strong>Como funciona:</strong> o periodo fica ocupado para a CORA, sem alterar a configuracao dela. Pacientes que ja estavam marcados permanecem visiveis e nao sao cancelados.</div>";
+  b += "<div class='ag-block-help'><strong>Como funciona:</strong> o periodo fica ocupado para a CORA, sem alterar a configuracao dela. Pacientes que ja estavam marcados permanecem visiveis e nao sao cancelados.<br><strong>Clinica toda</strong> = feriado (para tudo). <strong>Equipamento</strong> = manutencao de um aparelho (para todos os exames que o usam). <strong>Setor</strong> = funcionario ausente (para so aquele tipo de exame; ex.: parar documentacao mantem a panoramica).</div>";
+  var chkEquip = AB_EQUIP_OPCOES.map(function(e){
+    return "<label class='ab-chk'><input type='checkbox' class='abEquip' value='"+e+"'> "+esc(AB_EQUIP_ROTULO[e])+"</label>";
+  }).join("");
+  var chkSetor = AB_SETOR_OPCOES.map(function(c){
+    return "<label class='ab-chk'><input type='checkbox' class='abCat' value='"+c+"'> "+esc(AB_SETOR_ROTULO[c])+"</label>";
+  }).join("");
   b += "<div class='ag-block-form'>"+
-    "<div class='field'><label>Data</label><input type='date' id='abData' value='"+esc(base)+"'></div>"+
+    "<div class='field'><label>Tipo de bloqueio</label><select id='abTipo' onchange='agendaBloqueioTipoMudar()'><option value='geral'>Clinica toda (feriado)</option><option value='equipamento'>Equipamento (manutencao)</option><option value='setor'>Setor / tipo de exame</option></select></div>"+
+    "<div class='field'><label>Data inicio</label><input type='date' id='abData' value='"+esc(base)+"'></div>"+
+    "<div class='field'><label>Data fim (opcional)</label><input type='date' id='abDataFim' value=''></div>"+
     "<div class='field'><label>Periodo</label><select id='abPeriodo' onchange='agendaBloqueioPeriodoMudar()'><option value='dia_inteiro'>Dia inteiro</option><option value='manha'>Manha</option><option value='tarde'>Tarde</option><option value='personalizado'>Horario personalizado</option></select></div>"+
     "<div class='ag-block-custom'><div class='field'><label>Inicio</label><input type='time' id='abInicio' value='07:00'></div><div class='field'><label>Fim</label><input type='time' id='abFim' value='19:00'></div></div>"+
     "</div>"+
-    "<div class='field' style='margin-bottom:15px'><label>Motivo (opcional)</label><input type='text' id='abMotivo' maxlength='120' placeholder='Ex.: feriado, manutencao, reuniao da equipe'></div>"+
+    "<div class='field' id='abBoxEquip' style='display:none;margin-bottom:12px'><label>Aparelhos parados</label><div class='ab-chk-row'>"+chkEquip+"</div></div>"+
+    "<div class='field' id='abBoxSetor' style='display:none;margin-bottom:12px'><label>Setores / tipos de exame parados</label><div class='ab-chk-row'>"+chkSetor+"</div></div>"+
+    "<div class='field' style='margin-bottom:15px'><label>Motivo (opcional)</label><input type='text' id='abMotivo' maxlength='120' placeholder='Ex.: feriado, manutencao, funcionaria de ferias'></div>"+
     "<div style='font-weight:800;font-size:.8rem;margin-bottom:8px'>Bloqueios futuros</div><div class='ag-block-list' id='abLista'></div>";
   openM("🚫 Modo feriado / bloquear agenda",b,[
     {lbl:"Fechar",cls:"btno",fn:closeM},
@@ -10403,6 +10463,7 @@ function abrirAgendaBloqueios(dataISO){
   ]);
   var mb = document.getElementById("MB"); if(mb) mb.classList.add("mb-wide");
   agendaBloqueioPeriodoMudar();
+  agendaBloqueioTipoMudar();
   agendaBloqueioRenderLista();
 }
 
@@ -10412,19 +10473,46 @@ async function agendaBloqueioAtualizarCache(){
   return r;
 }
 
+function _abSelecionados(cls){
+  return Array.prototype.slice.call(document.querySelectorAll("."+cls+":checked"))
+    .map(function(el){ return el.value; });
+}
+
 async function agendaBloqueioSalvar(){
   if(!podeGerenciarAgendaBloqueio()) return;
+  var tipo = (document.getElementById("abTipo") || {}).value || "geral";
   var data = (document.getElementById("abData") || {}).value || "";
+  var dataFim = (document.getElementById("abDataFim") || {}).value || "";
   var periodo = (document.getElementById("abPeriodo") || {}).value || "dia_inteiro";
   var inicio = (document.getElementById("abInicio") || {}).value || "";
   var fim = (document.getElementById("abFim") || {}).value || "";
   var motivo = ((document.getElementById("abMotivo") || {}).value || "").trim();
   if(!data || !inicio || !fim){ toast("⚠️","Informe data, inicio e fim."); return; }
   if(t2m(inicio) >= t2m(fim)){ toast("⚠️","O horario final precisa ser posterior ao inicial."); return; }
-  var sobreposto = agendaBloqueiosDoDia(data).find(function(b){ return t2m(inicio)<t2m(b.fim) && t2m(fim)>t2m(b.inicio); });
-  if(sobreposto){
-    toast("⚠️ Ja bloqueado",agendaDataBR(data)+" possui bloqueio das "+sobreposto.inicio+" as "+sobreposto.fim+".");
-    return;
+  if(dataFim && dataFim < data){ toast("⚠️","A data fim precisa ser igual ou posterior a data inicio."); return; }
+
+  // Monta o ESCOPO conforme o tipo (v7.9).
+  var equipamentos = [], categorias = [];
+  if(tipo === "geral"){
+    equipamentos = ["todos"];
+  }else if(tipo === "equipamento"){
+    equipamentos = _abSelecionados("abEquip");
+    if(!equipamentos.length){ toast("⚠️","Selecione ao menos um aparelho."); return; }
+  }else{ // setor
+    categorias = _abSelecionados("abCat");
+    if(!categorias.length){ toast("⚠️","Selecione ao menos um setor / tipo de exame."); return; }
+  }
+
+  // Trava de sobreposicao SO para bloqueio GERAL (feriado). Equipamento/setor
+  // podem coexistir no mesmo dia (dois setores parados, manutencao + setor, etc.).
+  if(tipo === "geral"){
+    var sobreposto = agendaBloqueiosDoDia(data).find(function(b){
+      return b.escopo === "geral" && t2m(inicio)<t2m(b.fim) && t2m(fim)>t2m(b.inicio);
+    });
+    if(sobreposto){
+      toast("⚠️ Ja bloqueado",agendaDataBR(data)+" ja tem bloqueio geral das "+sobreposto.inicio+" as "+sobreposto.fim+".");
+      return;
+    }
   }
   var existentes = (ags || []).filter(function(a){
     if(!a || (a.status_clinico || a.st) === "cancelado" || br2iso(a.dt) !== data) return false;
@@ -10433,14 +10521,21 @@ async function agendaBloqueioSalvar(){
   });
   if(existentes.length && !confirm("Ja existem "+existentes.length+" paciente(s) nesse periodo. Eles serao preservados; o bloqueio impedira apenas novos horarios. Deseja continuar?")) return;
   try{
-    var payload = {data:data,hora_inicio:inicio,hora_fim:fim,equipamentos:["todos"],periodo:periodo,motivo:motivo||"Modo feriado / agenda bloqueada",ativo:true,criado_por_nome:(CU&&CU.nome)||null};
+    var padrao = tipo === "geral" ? "Modo feriado / agenda bloqueada"
+      : (tipo === "equipamento" ? "Manutencao de equipamento" : "Setor indisponivel");
+    var payload = {data:data, data_fim:(dataFim || null), hora_inicio:inicio, hora_fim:fim,
+      equipamentos:equipamentos, categorias:categorias, periodo:periodo,
+      motivo:motivo||padrao, ativo:true, criado_por_nome:(CU&&CU.nome)||null};
     if(CU && CU.id) payload.criado_por = CU.id;
     var r = await supa.from("agenda_bloqueios").insert(payload).select().single();
     if(r.error) throw r.error;
     await agendaBloqueioAtualizarCache();
     closeM();
     if(typeof rndAg === "function") rndAg();
-    toast("🚫 Agenda bloqueada",agendaDataBR(data)+" · "+inicio+" as "+fim+". A CORA nao oferecera esses horarios.");
+    var alvo = tipo === "geral" ? "todos os exames"
+      : (tipo === "equipamento" ? equipamentos.map(function(e){return AB_EQUIP_ROTULO[e]||e;}).join(", ")
+                                : categorias.map(function(c){return AB_SETOR_ROTULO[c]||c;}).join(", "));
+    toast("🚫 Agenda bloqueada",agendaDataBR(data)+(dataFim?(" a "+agendaDataBR(dataFim)):"")+" · "+alvo+". A CORA nao oferecera esses horarios.");
   }catch(e){
     if(agendaBloqueioSchemaAusente(e)) AGENDA_BLOQUEIOS_DISPONIVEL=false;
     console.error("[COR] agendaBloqueioSalvar:",e);
