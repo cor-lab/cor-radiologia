@@ -237,6 +237,14 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-09-26 (v8.1): Virada p/ NFS-e Padrão Nacional ANTECIPADA para 28/09/2026
+              (NFSE_NACIONAL_DESDE). Produção nacional validada hoje: NFS-e nº 51173
+              autorizada (série 20 / DPS 2667). Config em secrets da Edge Function:
+              NFSEN_PRODUCAO_LIBERADA=true, NFSEN_COD_TRIB_NAC=040201,
+              NFSEN_COD_TRIB_MUN=3090485, NFSEN_PTOTTRIB_SN=4.00. ABRASF fica de
+              reserva até o desligamento da prefeitura (30/09): para voltar, basta
+              ajustar NFSE_NACIONAL_DESDE para uma data futura.
+
   2026-09-26 (v8.0): NFS-e PADRÃO NACIONAL. Nova função ambienteNfseEmissao():
               até 30/09 emite "producao" (ABRASF 2.04, inalterado); a partir de
               01/10/2026 (NFSE_NACIONAL_DESDE) emite "nacional_producao" (Focus
@@ -4113,7 +4121,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.0 - 2026-09-26";
+var APP_VERSION = "v8.1 - 2026-09-26";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -4130,7 +4138,7 @@ var CANCELAMENTO_APPCOR_ATIVO = false;
 // A trava real fica no servidor: a Edge Function só emite nacional_producao
 // com os secrets NFSEN_PRODUCAO_LIBERADA=true e NFSEN_PTOTTRIB_SN definidos.
 var NFSE_NACIONAL_ATIVO = false;
-var NFSE_NACIONAL_DESDE = "2026-10-01";
+var NFSE_NACIONAL_DESDE = "2026-09-28"; // v8.1: antecipado (produção validada 26/09, NFS-e 51173)
 function ambienteNfseEmissao(){
   if (NFSE_NACIONAL_ATIVO) return "nacional_producao";
   var hojeBRT = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -5739,7 +5747,7 @@ async function confirmarEmissaoNota() {
 
     const payload = {
       agendamento_id: agendamentoId,
-      ambiente: ambienteNfseEmissao(), // v8.0 — ABRASF até 30/09, Nacional desde 01/10
+      ambiente: ambienteNfseEmissao(), // v8.0/8.1 — ABRASF até 27/09, Nacional desde 28/09 (NFSE_NACIONAL_DESDE)
       forma_pagamento_final: formaPagamentoFinal,
       valor_servico: valorServico,
       paciente_cpf: cpfCnpj
@@ -6109,7 +6117,7 @@ async function marcarRealizadoEEmitir(agendamentoId){
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         agendamento_id: agendamentoId,
-        ambiente: ambienteNfseEmissao() // v8.0 — ABRASF até 30/09, Nacional desde 01/10
+        ambiente: ambienteNfseEmissao() // v8.0/8.1 — ABRASF até 27/09, Nacional desde 28/09 (NFSE_NACIONAL_DESDE)
       })
     });
 
