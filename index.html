@@ -93,6 +93,8 @@
       
   [✓] NFS-e: fila nfse_fila + emissão via Focus NFe (Edge Function v26)
       Marcadores: "nfse_fila", "emitir-nfse-focus"
+      v8.0: Padrão Nacional automático desde 01/10/2026 — marcadores
+      "ambienteNfseEmissao", "NFSE_NACIONAL_ATIVO", "NFSE_NACIONAL_DESDE"
       Série 20, 50 RPS, CNPJ 06948603000104
       
   [✓] Cashback / Pontos / Níveis (Bronze, Prata, Ouro, Diamante)
@@ -234,6 +236,17 @@
     feed-servidor (mesma arquitetura do TomografoCopy).
   
   ───────── HISTÓRICO ─────────
+
+  2026-09-26 (v8.0): NFS-e PADRÃO NACIONAL. Nova função ambienteNfseEmissao():
+              até 30/09 emite "producao" (ABRASF 2.04, inalterado); a partir de
+              01/10/2026 (NFSE_NACIONAL_DESDE) emite "nacional_producao" (Focus
+              /v2/nfsen, layout nacional via ISS.net Santa Maria). As 2 chamadas
+              de emissão (modal Emitir Nota e emissão ao realizar) passam o
+              ambiente. Retomada usa o ambiente/payload já gravados (sem mudança).
+              Servidor: emitir-nfse-focus v45, consultar v25, cancelar v6 — homologação
+              nacional AUTORIZADA (NFS-e nº 7). Produção nacional só emite com os
+              secrets NFSEN_PRODUCAO_LIBERADA=true + NFSEN_PTOTTRIB_SN (4.00).
+              Cancelamento segue DESATIVADO no app (E160 na Focus em investigação).
 
   2026-09-07 (v7.9): BLOQUEIO POR SETOR E POR INTERVALO DE DATAS. A tela de
               bloqueios ganhou "Tipo de bloqueio": Clinica toda (feriado),
@@ -4100,7 +4113,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v7.9 - 2026-09-07";
+var APP_VERSION = "v8.0 - 2026-09-26";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -4108,6 +4121,21 @@ var APP_VERSION = "v7.9 - 2026-09-07";
 // site da prefeitura para não dar confusão. Depois de migrado, basta voltar
 // esta constante para true e o botão + função voltam a funcionar normalmente.
 var CANCELAMENTO_APPCOR_ATIVO = false;
+
+// ⚙️ NFS-e PADRÃO NACIONAL (v8.0 — 2026-09-26)
+// Santa Maria desliga o ABRASF 2.04 em 01/10/2026. A partir dessa data as
+// emissões vão com ambiente "nacional_producao" (Focus /v2/nfsen, layout
+// nacional via ISS.net). Antes disso seguem "producao" (ABRASF), inalterado.
+// NFSE_NACIONAL_ATIVO=true força o Nacional antes da data (teste/antecipação).
+// A trava real fica no servidor: a Edge Function só emite nacional_producao
+// com os secrets NFSEN_PRODUCAO_LIBERADA=true e NFSEN_PTOTTRIB_SN definidos.
+var NFSE_NACIONAL_ATIVO = false;
+var NFSE_NACIONAL_DESDE = "2026-10-01";
+function ambienteNfseEmissao(){
+  if (NFSE_NACIONAL_ATIVO) return "nacional_producao";
+  var hojeBRT = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+  return hojeBRT >= NFSE_NACIONAL_DESDE ? "nacional_producao" : "producao";
+}
 
 // ══════════════════════════════════════════════════════
 // FOTONWEB COR — Acesso de paciente aos exames online
@@ -5711,6 +5739,7 @@ async function confirmarEmissaoNota() {
 
     const payload = {
       agendamento_id: agendamentoId,
+      ambiente: ambienteNfseEmissao(), // v8.0 — ABRASF até 30/09, Nacional desde 01/10
       forma_pagamento_final: formaPagamentoFinal,
       valor_servico: valorServico,
       paciente_cpf: cpfCnpj
@@ -6079,7 +6108,8 @@ async function marcarRealizadoEEmitir(agendamentoId){
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        agendamento_id: agendamentoId
+        agendamento_id: agendamentoId,
+        ambiente: ambienteNfseEmissao() // v8.0 — ABRASF até 30/09, Nacional desde 01/10
       })
     });
 
