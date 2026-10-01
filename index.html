@@ -237,6 +237,15 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-10-01 (v8.2): ESTOQUE DE DPS. O número da DPS (Padrão Nacional) passou a
+              ser controlado pelo servidor (tabela nfse_dps_pool + emitir v47), após
+              o lote da série 20 esgotar na 2750 (EM017). App: verificarEstoqueDps()
+              avisa admin/agenda quando restarem <= 15 números (ao restaurar sessão
+              e após cada nota autorizada); card "NFS-e — Números de DPS" em
+              Configurações (só admin) mostra o estoque e carrega lote novo pela
+              RPC nfse_dps_carregar_faixa. Marcadores: "verificarEstoqueDps",
+              "renderCardDps", "carregarLoteDps", "cfgDpsResumo", "DPS_ALERTA_MIN".
+
   2026-09-26 (v8.1): Virada p/ NFS-e Padrão Nacional ANTECIPADA para 28/09/2026
               (NFSE_NACIONAL_DESDE). Produção nacional validada hoje: NFS-e nº 51173
               autorizada (série 20 / DPS 2667). Config em secrets da Edge Function:
@@ -4121,7 +4130,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.1 - 2026-09-26";
+var APP_VERSION = "v8.2 - 2026-10-01";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -4143,6 +4152,58 @@ function ambienteNfseEmissao(){
   if (NFSE_NACIONAL_ATIVO) return "nacional_producao";
   var hojeBRT = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
   return hojeBRT >= NFSE_NACIONAL_DESDE ? "nacional_producao" : "producao";
+}
+
+// 🧾 v8.2 — ESTOQUE DE NÚMEROS DE DPS (nfse_dps_pool, controlado pelo servidor)
+// Aviso quando restarem DPS_ALERTA_MIN ou menos números livres. Carga de lote
+// novo pelo admin em Configurações (RPC nfse_dps_carregar_faixa, só admin).
+var DPS_SERIE = 20;
+var DPS_ALERTA_MIN = 15;
+async function obterResumoDps(){
+  try {
+    var r = await supa.rpc("nfse_dps_resumo", { p_serie: DPS_SERIE });
+    if (r.error) { console.warn("[DPS] resumo:", r.error.message); return null; }
+    return r.data || null;
+  } catch(e) { console.warn("[DPS] resumo erro:", e); return null; }
+}
+async function verificarEstoqueDps(){
+  if (!CU || (CU.role !== "admin" && CU.role !== "agenda")) return;
+  var res = await obterResumoDps();
+  if (!res) return;
+  var livres = Number(res.livres || 0);
+  if (livres <= DPS_ALERTA_MIN) {
+    toast("⚠️", livres === 0
+      ? "ACABARAM os números de DPS! Nenhuma nota será emitida até carregar novo lote (portal ISS.net → Configurações → NFS-e)."
+      : "Restam só " + livres + " números de DPS. Solicite novo lote de RPS no portal ISS.net e carregue em Configurações.");
+  }
+}
+async function renderCardDps(){
+  var el = document.getElementById("cfgDpsResumo");
+  if (!el) return;
+  var res = await obterResumoDps();
+  if (!res) { el.innerHTML = "<span style='color:var(--gr)'>Não foi possível ler o estoque.</span>"; return; }
+  var livres = Number(res.livres || 0);
+  var cor = livres <= DPS_ALERTA_MIN ? "#f87171" : "#4ade80";
+  el.innerHTML = "<strong style='color:" + cor + ";font-size:1.05rem'>" + livres + " livres</strong>"
+    + " &nbsp;·&nbsp; " + (res.usados || 0) + " usados"
+    + " &nbsp;·&nbsp; " + (res.reservados || 0) + " em uso"
+    + ((res.invalidos || 0) > 0 ? " &nbsp;·&nbsp; " + res.invalidos + " inválidos" : "")
+    + " &nbsp;·&nbsp; maior nº: " + (res.maior || "-")
+    + (livres <= DPS_ALERTA_MIN ? "<div style='margin-top:6px;color:#f87171'>⚠️ Estoque baixo — solicite novo lote no portal ISS.net.</div>" : "");
+}
+async function carregarLoteDps(){
+  if (!CU || CU.role !== "admin") { toast("🔒", "Somente administrador pode carregar lote."); return; }
+  var ini = parseInt((document.getElementById("cfgDpsIni") || {}).value, 10);
+  var fim = parseInt((document.getElementById("cfgDpsFim") || {}).value, 10);
+  if (!ini || !fim || fim < ini) { toast("⚠️", "Informe o número inicial e final da faixa liberada."); return; }
+  if (!confirm("Carregar os números " + ini + " a " + fim + " (" + (fim - ini + 1) + " números) na série " + DPS_SERIE + "?")) return;
+  var r = await supa.rpc("nfse_dps_carregar_faixa", { p_serie: DPS_SERIE, p_inicio: ini, p_fim: fim });
+  if (r.error) { toast("❌", "Erro ao carregar: " + r.error.message); return; }
+  var d = r.data || {};
+  toast("✅", (d.inseridos || 0) + " números carregados" + (d.ignorados ? " (" + d.ignorados + " já existiam)" : "") + ".");
+  var a = document.getElementById("cfgDpsIni"); if (a) a.value = "";
+  var b = document.getElementById("cfgDpsFim"); if (b) b.value = "";
+  renderCardDps();
 }
 
 // ══════════════════════════════════════════════════════
@@ -5944,6 +6005,8 @@ function iniciarPollingNfse(agId, nfseId, reference) {
         if(typeof rndAg==="function") rndAg();
         if(typeof renderAtendimento==="function") renderAtendimento();
         toast("🧾","Nota #"+(numNota||"?")+" autorizada!");
+        // v8.2 — aviso de estoque baixo de DPS (só alerta se <= DPS_ALERTA_MIN)
+        setTimeout(function(){ try { verificarEstoqueDps(); } catch(e){} }, 2500);
 
         // ⚡ v3.8.4 (2026-05-26) — Email automático da NFS-e
         // Dispara envio assim que a Focus confirma a emissão. A
@@ -8348,6 +8411,7 @@ async function restaurarSessao(){
     await loadAllData();
     navTo(CU.role === "dentista" ? "cashback" : CU.role === "agenda" ? "atendimento" : "dashboard");
     console.log("Sessao restaurada: " + CU.nome);
+    setTimeout(function(){ try { verificarEstoqueDps(); } catch(e){} }, 4000); // v8.2
 
     // Iniciar auto-refresh
     iniciarAutoRefresh();
@@ -15943,6 +16007,22 @@ function rcfg(){
   h+="</div>";
   h+="<div style='margin-top:13px;padding:10px 14px;background:rgba(45,212,191,.06);border:1px solid rgba(45,212,191,.15);border-radius:8px;font-size:.79rem;color:var(--tl)'>📌 <strong>Integracao Z-API/Evolution API:</strong> configure a URL e token para envio real. Os botoes 📲 abrem o WhatsApp com a mensagem preenchida.</div>";
   h+="</div>";
+
+  // 🧾 v8.2 — Numeração de DPS (NFS-e Padrão Nacional)
+  if (CU && CU.role === "admin") {
+    h+="<div class='card'>";
+    h+="<div class='ctitle'>🧾 NFS-e — Números de DPS (série "+DPS_SERIE+") <button class='btn btnt bsm' onclick='renderCardDps()'>↻ Atualizar</button></div>";
+    h+="<div id='cfgDpsResumo' style='font-size:.85rem;margin-bottom:12px'>Carregando...</div>";
+    h+="<div style='font-size:.78rem;color:var(--gr);margin-bottom:8px'>Quando a prefeitura liberar um novo lote de RPS, informe a faixa aqui. Números repetidos são ignorados.</div>";
+    h+="<div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap'>";
+    h+="<input id='cfgDpsIni' type='number' min='1' placeholder='Do nº' style='width:110px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;color:var(--wh)'>";
+    h+="<span style='color:var(--gr)'>até</span>";
+    h+="<input id='cfgDpsFim' type='number' min='1' placeholder='Até nº' style='width:110px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;color:var(--wh)'>";
+    h+="<button class='btn btng bsm' onclick='carregarLoteDps()'>Carregar lote</button>";
+    h+="</div>";
+    h+="</div>";
+    setTimeout(renderCardDps, 0);
+  }
 
   // Calibração da Requisição
   h+="<div class='card'>";
