@@ -21,7 +21,7 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "6.4 (20260828v)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "6.5 (20261019a)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
@@ -118,6 +118,8 @@
       + ".cc-main{position:relative;flex:1;display:flex;flex-direction:column;min-width:0}"
       + ".cc-head{padding:12px 16px;border-bottom:1px solid var(--bd,#e5e7eb);font-weight:600;font-size:.95rem;display:flex;align-items:center;gap:8px}"
       + ".cc-head small{font-weight:400;color:var(--gr,#94a3b8);font-size:.78rem}"
+      + ".cc-mais-antigas{align-self:center;margin:4px 0 10px;padding:6px 14px;border:1px solid #cbd5e1;border-radius:16px;background:#fff;color:#334155;font-size:12px;cursor:pointer}"
+      + ".cc-mais-antigas:hover{background:#e2e8f0}"
       + ".cc-msgs{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:2px;background:var(--bg,#f1f5f9)}"
       + ".cc-daysep{align-self:center;font-size:.72rem;color:var(--gr,#94a3b8);background:var(--card,#fff);border:1px solid var(--bd,#e5e7eb);padding:2px 10px;border-radius:20px;margin:10px 0 6px}"
       + ".cc-row{display:flex;gap:9px;margin-top:9px;max-width:78%}"
@@ -375,6 +377,54 @@
     _renderLista();
   }
 
+  var _PAGINA = 500, _temMaisAntigas = false, _maisAntiga = null, _carregandoAntigas = false;
+
+  function _botaoAntigas() {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "cc-mais-antigas"; b.id = "cc-mais-antigas";
+    b.textContent = "⬆ Carregar mensagens anteriores";
+    b.addEventListener("click", function () { _carregarAntigas(); });
+    return b;
+  }
+
+  // busca a página anterior e insere no topo, mantendo a posição de rolagem
+  async function _carregarAntigas() {
+    if (_carregandoAntigas || !_temMaisAntigas || !_maisAntiga || !_canalAtual) return false;
+    _carregandoAntigas = true;
+    var canalId = _canalAtual, btn = document.getElementById("cc-mais-antigas");
+    if (btn) { btn.disabled = true; btn.textContent = "Carregando…"; }
+    try {
+      var r = await supa.from("chat_mensagens").select("*").eq("canal_id", canalId)
+        .lt("criada_em", _maisAntiga).order("criada_em", { ascending: false }).limit(_PAGINA);
+      if (_canalAtual !== canalId || r.error) return false;
+      var lista = (r.data || []).slice().reverse();
+      _temMaisAntigas = lista.length >= _PAGINA;
+      if (lista.length) _maisAntiga = lista[0].criada_em;
+      var box = document.getElementById("cc-msgs"); if (!box) return false;
+      var altAntes = box.scrollHeight, topoAntes = box.scrollTop;
+      if (btn) btn.remove();
+      var frag = document.createDocumentFragment(), ultimoDia = "";
+      lista.forEach(function (m) {
+        if (box.querySelector(".cc-row[data-id='" + m.id + "']")) return;
+        var dia = _diaFmt(m.criada_em);
+        if (dia !== ultimoDia) { ultimoDia = dia; var s = document.createElement("div"); s.className = "cc-daysep"; s.textContent = dia; frag.appendChild(s); }
+        frag.appendChild(_linha(m));
+      });
+      // evita separador de dia duplicado na emenda
+      var primeiroSep = box.querySelector(".cc-daysep");
+      if (primeiroSep && primeiroSep.textContent === ultimoDia && box.firstElementChild === primeiroSep) primeiroSep.remove();
+      box.insertBefore(frag, box.firstChild);
+      if (_temMaisAntigas) box.insertBefore(_botaoAntigas(), box.firstChild);
+      box.scrollTop = topoAntes + (box.scrollHeight - altAntes);
+      return lista.length > 0;
+    } catch (e) { return false; }
+    finally {
+      _carregandoAntigas = false;
+      var b2 = document.getElementById("cc-mais-antigas");
+      if (b2) { b2.disabled = false; b2.textContent = "⬆ Carregar mensagens anteriores"; }
+    }
+  }
+
   async function _abrirCanal(canalId) {
     _canalAtual = canalId;
     try { localStorage.setItem("cc_ultimo_canal", canalId); } catch (e) {}  // lembra a última conversa
@@ -384,9 +434,14 @@
     _renderLista();
     var box = document.getElementById("cc-msgs");
     if (box) box.innerHTML = "<div class='cc-empty'>Carregando…</div>";
+    // FIX 6.5: carrega as MAIS RECENTES (antes pegava as 500 mais antigas e cortava as novas)
     var r = await supa.from("chat_mensagens").select("*").eq("canal_id", canalId)
-      .order("criada_em", { ascending: true }).limit(500);
-    _renderMensagens((!r.error && r.data) ? r.data : []);
+      .order("criada_em", { ascending: false }).limit(_PAGINA);
+    if (_canalAtual !== canalId) return;           // usuário trocou de conversa no meio
+    var lista = (!r.error && r.data) ? r.data.slice().reverse() : [];
+    _temMaisAntigas = lista.length >= _PAGINA;
+    _maisAntiga = lista.length ? lista[0].criada_em : null;
+    _renderMensagens(lista);
     await _marcarLido(canalId);
     _atualizarHead();
     _mostrarRodape(true);
@@ -1131,6 +1186,7 @@
       if (dia !== ultimoDia) { ultimoDia = dia; var s = document.createElement("div"); s.className = "cc-daysep"; s.textContent = dia; box.appendChild(s); }
       box.appendChild(_linha(m));
     });
+    if (_temMaisAntigas) box.insertBefore(_botaoAntigas(), box.firstChild);
     _scrollFim();
   }
   function _appendUma(m) {
@@ -1282,6 +1338,10 @@
     _painelPendAberto = false;
     await _abrirCanal(canalId);
     var row = document.querySelector(".cc-row[data-id='" + msgId + "']");
+    for (var t = 0; !row && t < 10 && _temMaisAntigas; t++) {   // mensagem antiga: busca páginas anteriores
+      if (!(await _carregarAntigas())) break;
+      row = document.querySelector(".cc-row[data-id='" + msgId + "']");
+    }
     if (row) {
       row.classList.add("cc-hit-atual");
       try { row.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) { row.scrollIntoView(); }
