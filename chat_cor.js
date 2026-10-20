@@ -21,13 +21,14 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "6.5 (20261019a)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "6.7 (20261020a)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
   var _canais = [];          // todos os canais visíveis (canal + dm)
   var _canalAtual = null;
   var _leituras = {};        // canalId -> ISO
+  var _leitOutros = {};      // canalId -> { membroId: ISO }  (até onde cada colega leu — marca ✓✓)
   var _naoLidas = {};        // canalId -> contador
   var _rtChannel = null;
   var _bootstrap = false;
@@ -205,6 +206,13 @@
       + ".cc-row.me .cc-av{display:none}"
       + ".cc-bub .cc-txt{font-size:.9rem;line-height:1.4;white-space:pre-wrap;word-break:break-word}"
       + ".cc-bub .cc-hr{font-size:.66rem;opacity:.6;margin-top:3px;text-align:right}"
+      + ".cc-row.me .cc-bub .cc-hr{opacity:1;color:rgba(255,255,255,.8)}"
+      + ".cc-row.me .cc-bub-sticker .cc-hr{color:#64748b}"
+      + ".cc-tick{display:inline-block;margin-left:5px;padding:0 4px 0 2px;border-radius:7px;font-weight:800;letter-spacing:-3px;line-height:1.35;cursor:pointer;color:rgba(255,255,255,.85)}"
+      + ".cc-bub-sticker .cc-tick{color:#94a3b8}"
+      + ".cc-tick.parcial{color:#fff}"
+      + ".cc-bub-sticker .cc-tick.parcial{color:#475569}"
+      + ".cc-tick.lida{color:#fff;background:#2563eb}"
       + ".cc-del{font-style:italic;opacity:.6;font-size:.82rem}"
       + ".cc-foot{border-top:1px solid var(--bd,#e5e7eb);padding:10px 12px;display:flex;gap:8px;align-items:flex-end;background:var(--card,#fff)}"
       + ".cc-foot textarea{flex:1;resize:none;border:1px solid var(--bd,#e5e7eb);border-radius:10px;padding:9px 12px;font:inherit;font-size:.9rem;max-height:120px;outline:none}"
@@ -241,7 +249,7 @@
       b.innerHTML = "💬 Chat<span id='chatNavBadge' class='rp-nav-badge' style='display:none'>0</span>";
       nav.appendChild(b);
       b.addEventListener("click", function () {
-        setTimeout(function () { if (_canalAtual) _marcarLido(_canalAtual); }, 60);
+        setTimeout(function () { if (_canalAtual) _marcarLido(_canalAtual); if (_grudarFim) _scrollFim(); }, 60);
       });
     }
     if (!document.getElementById("page-chat")) {
@@ -390,7 +398,7 @@
   // busca a página anterior e insere no topo, mantendo a posição de rolagem
   async function _carregarAntigas() {
     if (_carregandoAntigas || !_temMaisAntigas || !_maisAntiga || !_canalAtual) return false;
-    _carregandoAntigas = true;
+    _carregandoAntigas = true; _soltarFim();
     var canalId = _canalAtual, btn = document.getElementById("cc-mais-antigas");
     if (btn) { btn.disabled = true; btn.textContent = "Carregando…"; }
     try {
@@ -435,9 +443,14 @@
     var box = document.getElementById("cc-msgs");
     if (box) box.innerHTML = "<div class='cc-empty'>Carregando…</div>";
     // FIX 6.5: carrega as MAIS RECENTES (antes pegava as 500 mais antigas e cortava as novas)
-    var r = await supa.from("chat_mensagens").select("*").eq("canal_id", canalId)
+    var pr = supa.from("chat_mensagens").select("*").eq("canal_id", canalId)
       .order("criada_em", { ascending: false }).limit(_PAGINA);
-    if (_canalAtual !== canalId) return;           // usuário trocou de conversa no meio
+    var pl = supa.from("chat_leituras").select("membro_id,ultima_lida_em").eq("canal_id", canalId);
+    var r = await pr, rl = await pl;
+    if (_canalAtual !== canalId) return;
+    var mapa = {}, me0 = _me();
+    if (!rl.error && rl.data) rl.data.forEach(function (l) { if (!me0 || l.membro_id !== me0.id) mapa[l.membro_id] = l.ultima_lida_em; });
+    _leitOutros[canalId] = mapa;           // usuário trocou de conversa no meio
     var lista = (!r.error && r.data) ? r.data.slice().reverse() : [];
     _temMaisAntigas = lista.length >= _PAGINA;
     _maisAntiga = lista.length ? lista[0].criada_em : null;
@@ -462,7 +475,13 @@
     var agora = new Date().toISOString();
     _leituras[canalId] = agora; _naoLidas[canalId] = 0;
     _renderLista(); _recalcularBadgeMemoria();
-    try { await supa.from("chat_leituras").upsert({ canal_id: canalId, membro_id: me.id, ultima_lida_em: agora }, { onConflict: "canal_id,membro_id" }); } catch (e) {}
+    try {
+      var rr = await supa.rpc("chat_marcar_lido", { p_canal: canalId });   // hora do servidor (PC com relógio errado não atrapalha)
+      if (rr.error) throw rr.error;
+      if (rr.data) _leituras[canalId] = rr.data;
+    } catch (e) {
+      try { await supa.from("chat_leituras").upsert({ canal_id: canalId, membro_id: me.id, ultima_lida_em: agora }, { onConflict: "canal_id,membro_id" }); } catch (e2) {}
+    }
   }
 
   async function _recalcularBadge() {
@@ -654,7 +673,7 @@
   function _montarAnexo(m, bub) {
     if (_ehImagem(m.anexo_tipo)) {
       var img = document.createElement("img");
-      img.className = "cc-img"; img.alt = m.anexo_nome || "imagem";
+      img.className = "cc-img"; img.alt = m.anexo_nome || "imagem"; img.decoding = "async";
       img.title = m.anexo_nome || "";
       bub.appendChild(img);
       _urlAnexo(m.canal_id, m.anexo_path).then(function (url) {
@@ -804,6 +823,7 @@
     _rtChannel = supa.channel("chat_cor_rt")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_mensagens" }, function (p) { _onNova(p.new); })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chat_mensagens" }, function (p) { _onEditada(p.new); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_leituras" }, function (p) { _onLeitura(p.new); })
       .subscribe();
   }
   async function _onNova(m) {
@@ -830,6 +850,53 @@
       if (foraDeFoco) _ccNotify(m, foraDeFoco);
     }
   }
+  // ══ Marca de leitura (✓ enviada · ✓✓ cinza lida por alguns · ✓✓ azul lida por todos) ══
+  function _onLeitura(l) {
+    var me = _me(); if (!l || !l.canal_id || !me || l.membro_id === me.id) return;
+    var mapa = _leitOutros[l.canal_id] || (_leitOutros[l.canal_id] = {});
+    if (!mapa[l.membro_id] || l.ultima_lida_em > mapa[l.membro_id]) mapa[l.membro_id] = l.ultima_lida_em;
+    if (l.canal_id === _canalAtual) _atualizarTicks();
+  }
+  function _destinatarios(canalId) {
+    var me = _me(); if (!me) return [];
+    if (_ehDM(canalId)) {
+      for (var uid in _dmCanalDe) if (_dmCanalDe.hasOwnProperty(uid) && _dmCanalDe[uid] === canalId && uid !== me.id) return [uid];
+      return [];
+    }
+    return _usuariosParaDM().map(function (u) { return u.id; });   // canal aberto: toda a equipe
+  }
+  function _infoLeitura(canalId, criadaEm) {
+    var dest = _destinatarios(canalId), mapa = _leitOutros[canalId] || {}, t = new Date(criadaEm).getTime();
+    var leram = [], falta = [];
+    dest.forEach(function (id) {
+      var u = _usersById[id], nome = u ? u.nome : "Usuário";
+      var lido = mapa[id] && new Date(mapa[id]).getTime() >= t;
+      (lido ? leram : falta).push(nome);
+    });
+    return { leram: leram, falta: falta, total: dest.length };
+  }
+  function _pintarTick(el, canalId, criadaEm) {
+    var inf = _infoLeitura(canalId, criadaEm), dm = _ehDM(canalId);
+    var todos = inf.total > 0 && inf.falta.length === 0, alguns = inf.leram.length > 0;
+    el.className = "cc-tick" + (todos ? " lida" : (alguns ? " parcial" : ""));
+    el.textContent = (todos || alguns) ? "✓✓" : "✓";
+    var tip;
+    if (dm) tip = todos ? "Lida" : "Enviada (ainda não lida)";
+    else {
+      tip = "Lida por " + inf.leram.length + " de " + inf.total;
+      if (inf.leram.length) tip += "\n✓ " + inf.leram.join(", ");
+      if (inf.falta.length) tip += "\n… falta: " + inf.falta.join(", ");
+    }
+    el.title = tip;
+    el.setAttribute("data-tip", tip);
+  }
+  function _atualizarTicks() {
+    if (!_canalAtual) return;
+    Array.prototype.forEach.call(document.querySelectorAll("#cc-msgs .cc-row.me[data-ts] .cc-tick"), function (el) {
+      var row = el.closest(".cc-row"); if (row) _pintarTick(el, _canalAtual, row.getAttribute("data-ts"));
+    });
+  }
+
   function _onEditada(m) {
     if (!m || m.canal_id !== _canalAtual) return;
     var el = document.querySelector(".cc-row[data-id='" + m.id + "']"); if (!el) return;
@@ -841,7 +908,7 @@
       bub.innerHTML = "";
       if (nome) bub.appendChild(nome);
       var t = document.createElement("div"); t.className = "cc-txt cc-del"; t.textContent = "mensagem removida"; bub.appendChild(t);
-      if (hr) bub.appendChild(hr);
+      if (hr) { var tk = hr.querySelector(".cc-tick"); if (tk) tk.remove(); bub.appendChild(hr); }
     } else {
       var txt = bub.querySelector(".cc-txt"); if (txt) txt.textContent = m.conteudo;
     }
@@ -1163,6 +1230,7 @@
     var n = _busca.hits.length;
     _busca.idx = ((i % n) + n) % n;
     var el = _busca.hits[_busca.idx];
+    _soltarFim();
     el.classList.add("cc-hit-atual");
     try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) { el.scrollIntoView(); }
     _atualizarContadorBusca();
@@ -1201,7 +1269,7 @@
   }
   function _linha(m) {
     var me = _me(); var meu = me && m.autor_id === me.id;
-    var row = document.createElement("div"); row.className = "cc-row" + (meu ? " me" : ""); row.setAttribute("data-id", m.id);
+    var row = document.createElement("div"); row.className = "cc-row" + (meu ? " me" : ""); row.setAttribute("data-id", m.id); row.setAttribute("data-ts", m.criada_em || "");
     var av = document.createElement("div"); av.className = "cc-av";
     av.style.background = m.autor_bg || "#4ab848"; av.style.color = m.autor_cor || "#fff"; av.textContent = m.autor_ini || "?";
     var bub = document.createElement("div"); bub.className = "cc-bub";
@@ -1224,6 +1292,14 @@
       if (m.anexo_path) _montarAnexo(m, bub);
     }
     var hr = document.createElement("div"); hr.className = "cc-hr"; hr.textContent = _horaFmt(m.criada_em) + (m.editada_em ? " · editada" : "");
+    if (meu && !m.deletada) {
+      var tick = document.createElement("span"); _pintarTick(tick, m.canal_id, m.criada_em);
+      tick.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        if (typeof toast === "function") toast("👁️", (tick.getAttribute("data-tip") || "").replace(/\n/g, " · "));
+      });
+      hr.appendChild(tick);
+    }
     bub.appendChild(hr);
     if (!m.deletada) {
       var ctrls = document.createElement("div"); ctrls.className = "cc-ctrls";
@@ -1343,12 +1419,35 @@
       row = document.querySelector(".cc-row[data-id='" + msgId + "']");
     }
     if (row) {
+      _soltarFim();
       row.classList.add("cc-hit-atual");
       try { row.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) { row.scrollIntoView(); }
       setTimeout(function () { row.classList.remove("cc-hit-atual"); }, 2600);
     } else if (typeof toast === "function") { toast("ℹ️", "Mensagem antiga — role a conversa pra cima."); }
   }
-  function _scrollFim() { var box = document.getElementById("cc-msgs"); if (box) box.scrollTop = box.scrollHeight; }
+  function _scrollFim() { var box = document.getElementById("cc-msgs"); if (box) { _grudarFim = true; _ganchoRolagem(box); box.scrollTop = box.scrollHeight; } }
+
+  // ══ Manter no fim da conversa enquanto imagens/figurinhas carregam ══
+  // As imagens chegam depois (URL do R2 é buscada em seguida) e empurravam a tela pra cima.
+  // Enquanto o usuário não rolar pra cima, cada imagem que termina de carregar re-ancora no fim.
+  var _grudarFim = true;
+  function _soltarFim() { _grudarFim = false; }
+  function _ganchoRolagem(box) {
+    if (!box || box._ccGancho) return; box._ccGancho = true;
+    var reancorar = function () { if (_grudarFim) box.scrollTop = box.scrollHeight; };
+    box.addEventListener("load", reancorar, true);    // <img> carregou (load não borbulha -> captura)
+    box.addEventListener("error", reancorar, true);
+    // a tela do chat estava oculta (scrollHeight 0) e ficou visível -> desce pro fim
+    if (typeof ResizeObserver === "function") { try { new ResizeObserver(reancorar).observe(box); } catch (e) {} }
+    // gesto do usuário pra cima = para de grudar; voltou ao fim = gruda de novo
+    box.addEventListener("wheel", function (e) { if (e.deltaY < 0) _soltarFim(); }, { passive: true });
+    box.addEventListener("touchmove", _soltarFim, { passive: true });
+    box.addEventListener("keydown", function (e) { if (/^(PageUp|ArrowUp|Home)$/.test(e.key)) _soltarFim(); });
+    box.addEventListener("mousedown", function (e) { if (e.offsetX >= box.clientWidth) _soltarFim(); });   // barra de rolagem
+    box.addEventListener("scroll", function () {
+      if (box.scrollHeight - box.scrollTop - box.clientHeight < 30) _grudarFim = true;
+    }, { passive: true });
+  }
 
   // ══ Boot ══
   function _boot() {
