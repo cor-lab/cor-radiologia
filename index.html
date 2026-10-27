@@ -237,6 +237,20 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-10-27 (v8.6): NFS-e — PAGADOR ≠ PACIENTE e NOTAS PARA CNPJ.
+              (a) Cadastro do paciente ganhou "Paciente não é o pagador"
+              (pacientes.nf_pagador_terceiro): a nota NÃO sai automática ao
+              realizar; o modal Emitir NFS-e abre pedindo o pagador (CPF ou CNPJ,
+              nome, endereço), gravado em agendamentos.nf_tomador. O modal também
+              permite, em qualquer atendimento, emitir em nome de outro CPF/CNPJ
+              (paciente que pede nota na empresa; ISS retido opcional p/ CNPJ).
+              (b) Nova aba "🏢 Notas PJ" (admin/agenda, módulo nfse_pj.js): cadastro
+              de empresas tomadoras (nfse_tomadores_pj, cada uma com ISS retido sim/
+              não — Unimed retém, SYNS não) e emissão avulsa com valor/descrição
+              digitados (tipo:"pj" na emitir-nfse-focus v55; consultar v32).
+              Marcadores: "nf_pagador_terceiro", "nf_tomador", "nfPagBloco",
+              "nfPagColeta", "nfse_pj.js", "rNotasPJ", "page-notaspj".
+
   2026-10-01 (v8.2): ESTOQUE DE DPS. O número da DPS (Padrão Nacional) passou a
               ser controlado pelo servidor (tabela nfse_dps_pool + emitir v47), após
               o lote da série 20 esgotar na 2750 (EM017). App: verificarEstoqueDps()
@@ -4130,7 +4144,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.5 - 2026-10-20";
+var APP_VERSION = "v8.6 - 2026-10-27";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -5686,6 +5700,9 @@ function abrirModalEmitirNota(agendamentoId){
   document.getElementById("nfProtocolo").value = "";
   document.getElementById("nfChave").value = "";
 
+  // v8.6 — pagador ≠ paciente (nfse_pj.js): limpa e carrega flag/pagador salvo
+  if (typeof nfPagPreparar === "function") nfPagPreparar(ag);
+
   document.getElementById("mEmitirNota").classList.add("open");
 }
 
@@ -5734,18 +5751,34 @@ async function confirmarEmissaoNota() {
       return;
     }
 
-    if (!cpfCnpj) {
-      toast("Erro", "Informe o CPF do paciente antes de emitir a nota.");
+    // v8.6 — pagador ≠ paciente. Com pagador, o CPF do paciente é opcional.
+    var pagador = (typeof nfPagColeta === "function") ? nfPagColeta() : null;
+    if (pagador && pagador.erro) {
+      toast("Atenção", pagador.erro);
+      return;
+    }
+    if (!pagador && window._nfPagFlagTerceiro) {
+      toast("Atenção", "Este paciente não é o pagador. Marque “Emitir em nome de outro pagador” e informe CPF/CNPJ e nome.");
       return;
     }
 
-    if (cpfCnpj.length !== 11) {
-      toast("Erro", "A emissão nacional exige CPF válido do paciente. CNPJ não é aceito neste fluxo.");
-      return;
-    }
+    if (!pagador) {
+      if (!cpfCnpj) {
+        toast("Erro", "Informe o CPF do paciente antes de emitir a nota.");
+        return;
+      }
 
-    if (!validarCPF(cpfCnpj)) {
-      toast("Erro", "CPF do paciente inválido.");
+      if (cpfCnpj.length !== 11) {
+        toast("Erro", "Para nota em CNPJ, marque “Emitir em nome de outro pagador”.");
+        return;
+      }
+
+      if (!validarCPF(cpfCnpj)) {
+        toast("Erro", "CPF do paciente inválido.");
+        return;
+      }
+    } else if (cpfCnpj && !(cpfCnpj.length === 11 && validarCPF(cpfCnpj))) {
+      toast("Erro", "CPF do paciente inválido (deixe em branco se não tiver).");
       return;
     }
 
@@ -5778,16 +5811,20 @@ async function confirmarEmissaoNota() {
 
     const agendamentoId = ag.id;
 
+    var updAg = {
+      forma_pagamento_final: formaPagamentoFinal,
+      valor_bruto: calcPgFinal.valor_bruto,
+      desconto_percentual: calcPgFinal.desconto_percentual,
+      desconto_valor: calcPgFinal.desconto_valor,
+      valor_faturado: calcPgFinal.valor_faturado,
+      nf_tomador: pagador || null   // v8.6 — pagador da nota (null = o próprio paciente)
+    };
+    // v8.6 — com pagador, não apaga o CPF do paciente quando o campo está vazio
+    if (!pagador || cpfCnpj) updAg.paciente_cpf = cpfCnpj || null;
+
     const upd = await supa
       .from("agendamentos")
-      .update({
-        forma_pagamento_final: formaPagamentoFinal,
-        valor_bruto: calcPgFinal.valor_bruto,
-        desconto_percentual: calcPgFinal.desconto_percentual,
-        desconto_valor: calcPgFinal.desconto_valor,
-        valor_faturado: calcPgFinal.valor_faturado,
-        paciente_cpf: cpfCnpj || null
-      })
+      .update(updAg)
       .eq("id", agendamentoId);
 
     if (upd.error) {
@@ -5802,7 +5839,8 @@ async function confirmarEmissaoNota() {
     ag.desconto_valor = calcPgFinal.desconto_valor;
     ag.valor_faturado = calcPgFinal.valor_faturado;
     ag.vl = calcPgFinal.valor_faturado;
-    ag.paciente_cpf = cpfCnpj;
+    if (updAg.paciente_cpf !== undefined) ag.paciente_cpf = cpfCnpj;
+    ag.nf_tomador = pagador || null;
 
     const functionUrl = API_BASE + "/emitir-nfse-focus";
 
@@ -6195,6 +6233,15 @@ async function marcarRealizadoEEmitir(agendamentoId){
       if(typeof renderAgendamentos === "function") renderAgendamentos();
       toast("Aguardando", "Realizado salvo. Focus instável — nota reservada e acompanhada. Se não confirmar, use “Verificar/Retomar nota”.");
       if(data.reference) iniciarPollingNfse(agendamentoId, data.nfse_id || ag.nfse_id, data.reference);
+      return true;
+    }
+
+    // v8.6 — paciente marcado "não é o pagador": realizado salvo, nota NÃO sai
+    // automática; abre o modal para informar quem paga.
+    if(!resp.ok && data && data.motivo === "pagador_terceiro"){
+      if(typeof renderAgendamentos === "function") renderAgendamentos();
+      toast("🧾", "Realizado salvo. O paciente não é o pagador — informe quem paga para emitir a nota.");
+      if(typeof abrirModalEmitirNota === "function") abrirModalEmitirNota(agendamentoId);
       return true;
     }
 
@@ -7846,6 +7893,7 @@ async function dbResgatar(dentId,premId,pts){
   <button data-p="novo">➕ Novo</button>
   <button data-p="cashback">Pontos</button>
   <button data-p="dentistas">Dentistas</button>
+  <button data-p="notaspj">🏢 Notas PJ</button>
   <button data-p="whatsapp">💬 WhatsApp<span id="waNavBadge" class="rp-nav-badge" style="display:none">0</span></button>
   <button type="button" id="navAdminToggle" class="nav-admin-toggle" aria-haspopup="true" aria-expanded="false">⚙ Administração <span class="nav-admin-caret">▼</span></button>
 </nav>
@@ -8020,8 +8068,42 @@ async function dbResgatar(dentId,premId,pts){
     </div>
 
     <div class="field" style="margin-top:12px;">
-      <label>CPF/CNPJ do tomador</label>
-      <input id="nfCpfCnpj" type="text" placeholder="Opcional por enquanto" />
+      <label>CPF do paciente</label>
+      <input id="nfCpfCnpj" type="text" placeholder="CPF do paciente" />
+    </div>
+
+    <!-- v8.6 — pagador ≠ paciente (nf_tomador). Lógica em nfse_pj.js -->
+    <div id="nfPagAviso" style="display:none;margin-top:12px;padding:8px 10px;border:1px solid #e6a700;border-radius:8px;background:rgba(230,167,0,.08);font-size:.8rem;color:#e6a700">
+      ⚠️ Cadastro marcado: <b>o paciente não é o pagador</b>. Informe abaixo quem paga.
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.85rem;cursor:pointer">
+      <input id="nfPagOutro" type="checkbox" onchange="nfPagToggle()" style="width:auto" />
+      Emitir em nome de outro pagador (CPF ou CNPJ)
+    </label>
+    <div id="nfPagBloco" style="display:none;margin-top:8px;padding:10px 12px;border:1px solid rgba(255,255,255,.14);border-radius:8px">
+      <div class="fg2">
+        <div class="field"><label>CPF ou CNPJ do pagador</label><input id="nfPagDoc" type="text" placeholder="só números" onblur="nfPagDocBlur()" /></div>
+        <div class="field"><label>Nome / Razão social</label><input id="nfPagNome" type="text" /></div>
+      </div>
+      <div class="fg2" style="margin-top:8px">
+        <div class="field"><label>E-mail (opcional)</label><input id="nfPagEmail" type="email" /></div>
+        <div class="field"><label>CEP</label><input id="nfPagCep" type="text" placeholder="só números" onblur="nfPagCepBlur()" /></div>
+      </div>
+      <div class="fg2" style="margin-top:8px">
+        <div class="field"><label>Logradouro</label><input id="nfPagLog" type="text" /></div>
+        <div class="field"><label>Número</label><input id="nfPagNum" type="text" /></div>
+      </div>
+      <div class="fg2" style="margin-top:8px">
+        <div class="field"><label>Bairro</label><input id="nfPagBairro" type="text" /></div>
+        <div class="field"><label>Complemento</label><input id="nfPagCompl" type="text" /></div>
+      </div>
+      <div class="fg2" style="margin-top:8px">
+        <div class="field"><label>UF</label><input id="nfPagUf" type="text" maxlength="2" /></div>
+        <div class="field" id="nfPagIssBox" style="display:none"><label>ISS</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer"><input id="nfPagIssRet" type="checkbox" style="width:auto" /> Empresa retém o ISS</label>
+        </div>
+      </div>
+      <div style="font-size:.72rem;color:var(--gr);margin-top:6px">Sem endereço, a nota usa o endereço da clínica. A descrição da nota inclui o nome do paciente.</div>
     </div>
 
     <div class="fg2" style="margin-top:12px;">
@@ -8072,6 +8154,7 @@ async function dbResgatar(dentId,premId,pts){
 <div class="page" id="page-usuarios"><div class="pi" id="pgUs"></div></div>
 <div class="page" id="page-config"><div class="pi pg-scroll" id="pgCf"></div></div>
 <div class="page" id="page-reportes"><div class="pi pg-scroll" id="pgRp"></div></div>
+<div class="page" id="page-notaspj"><div class="pi pg-scroll" id="pgNpj"></div></div>
 <div class="page" id="page-whatsapp"><div class="pi pg-scroll" id="pgWa"></div></div>
 <div class="page" id="page-reversoes"><div class="pi pg-scroll" id="pgRev"></div></div>
 <script>
@@ -8079,8 +8162,8 @@ async function dbResgatar(dentId,premId,pts){
 var USERS = [];
 // Dados reais vêm do Supabase via loadAllData()
 var PERMS = {
-  admin:    {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,novo:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1,reportes:1,whatsapp:1,reversoes:1},
-  agenda:   {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,novo:1,convenios:0,cashback:0,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:1},
+  admin:    {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,novo:1,convenios:1,cashback:1,dentistas:1,usuarios:1,config:1,reportes:1,whatsapp:1,reversoes:1,notaspj:1},
+  agenda:   {dashboard:1,atendimento:1,historico:1,pacientes:1,agendar:1,novo:1,convenios:0,cashback:0,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:1,notaspj:1},
   cashback: {dashboard:1,atendimento:0,historico:0,pacientes:0,agendar:0,novo:0,convenios:0,cashback:1,dentistas:1,usuarios:0,config:0,reportes:0,whatsapp:0},
   dentista: {dashboard:0,atendimento:0,historico:0,pacientes:0,agendar:0,novo:0,convenios:0,cashback:1,dentistas:0,usuarios:0,config:0,reportes:0,whatsapp:0}
 };
@@ -8325,7 +8408,7 @@ function navTo(page) {
     dashboard: rdash, atendimento: ratendimento, historico: rhistorico, pacientes: rpacientes, agendar: ragendar, novo: rnovo,
     convenios: rconv, cashback: rcash, dentistas: rdent,
     usuarios: rusrs, config: rcfg, reportes: window.rReportes, whatsapp: window.rWhatsApp,
-    reversoes: rReversoes
+    reversoes: rReversoes, notaspj: window.rNotasPJ
   };
   if (map[page]) map[page]();
 }
@@ -15520,6 +15603,7 @@ async function pacTabAbrirFicha(id){
     h += _pf("CEP", esc(p.cep||""));
     h += _pf("Cadastrada em", p.created_at ? iso2br(String(p.created_at).substring(0,10)) : "");
     h += _pf("ID interno", String(p.id));
+    h += _pf("Nota fiscal", p.nf_pagador_terceiro ? "<span style='color:#e6a700'>⚠️ Paciente não é o pagador — nota pede o pagador</span>" : "No nome do paciente");
     h += "</div>";
     h += "<div style='margin-top:14px' class='ctitle'>Exames (" + pacTabSelExames.length + ")</div>";
     if(!pacTabSelExames.length){
@@ -15586,6 +15670,10 @@ function pacTabEditar(id){
   h += _pacTabInput("pacEdMun", "Cidade", p.municipio || "");
   h += _pacTabInput("pacEdUf", "UF", p.uf || "");
   h += "</div>";
+  // v8.6 — bloqueio da NFS-e automática (pagador é outra pessoa/empresa)
+  h += "<label style='display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.85rem;cursor:pointer'>" +
+       "<input id='pacEdNfTerc' type='checkbox' style='width:auto'" + (p.nf_pagador_terceiro ? " checked" : "") + ">" +
+       "Paciente não é o pagador (bloqueia a nota automática; pede CPF/CNPJ de quem paga ao emitir)</label>";
   h += "<div id='pacEdAviso'></div>";
   h += "<div style='display:flex;gap:8px;margin-top:14px'>";
   h += "<button class='btn btng' style='padding:8px 18px' onclick='pacTabSalvar(" + p.id + ")'>Salvar</button>";
@@ -15610,7 +15698,8 @@ function _pacTabColeta(){
     complemento: g("pacEdCompl") || null,
     bairro: g("pacEdBairro") || null,
     municipio: g("pacEdMun") || null,
-    uf: g("pacEdUf").toUpperCase() || null
+    uf: g("pacEdUf").toUpperCase() || null,
+    nf_pagador_terceiro: !!(document.getElementById("pacEdNfTerc") || {}).checked
   };
 }
 
@@ -17324,6 +17413,7 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
 <script src="reportes.js"></script>
 <script src="whatsapp_cor.js"></script>
 <script src="protocolo.js"></script>
+<script src="nfse_pj.js?v=20261027a"></script>
 <!-- Chat interno da equipe (módulos externos — ver CHAT_COR_INSTALACAO.md).
      chat_sw.js NÃO entra aqui: o chat_push.js registra o service worker sozinho
      (chat_sw.js só precisa ficar na RAIZ do site, junto deste index.html). -->
