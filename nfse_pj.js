@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   nfse_pj.js — APP COR v8.9 (2026-10-27)
+   nfse_pj.js — APP COR v8.10 (2026-10-27)
    ─────────────────────────────────────────────────────────────────────
    1) PAGADOR ≠ PACIENTE (modal "Emitir NFS-e" do index.html)
       • pacientes.nf_pagador_terceiro = true → a nota não sai automática ao
@@ -82,7 +82,7 @@ async function _npjViaCep(cep){
 // ═══════════════════════════════════════════════════════════════════════
 window._nfPagFlagTerceiro = false;
 
-var NFPAG_CAMPOS = ["nfPagDoc","nfPagNome","nfPagEmail","nfPagCep","nfPagLog","nfPagNum","nfPagBairro","nfPagCompl","nfPagMun","nfPagUf"];
+var NFPAG_CAMPOS = ["nfPagDoc","nfPagNome","nfPagEmail","nfPagCep","nfPagLog","nfPagNum","nfPagBairro","nfPagCompl","nfPagMun","nfPagUf","nfPagIm"];
 
 function nfPagToggle(){
   var on = !!(_npjEl("nfPagOutro") || {}).checked;
@@ -92,8 +92,9 @@ function nfPagToggle(){
 }
 
 function nfPagAtualizarIss(){
-  var box = _npjEl("nfPagIssBox");
-  if (box) box.style.display = _npjDig(_npjVal("nfPagDoc")).length === 14 ? "" : "none";
+  var pj = _npjDig(_npjVal("nfPagDoc")).length === 14;
+  var box = _npjEl("nfPagIssBox"); if (box) box.style.display = pj ? "" : "none";
+  var im = _npjEl("nfPagImBox"); if (im) im.style.display = pj ? "" : "none";   // v8.10
 }
 
 // Chamado por abrirModalEmitirNota(ag): limpa o bloco, depois carrega do banco
@@ -125,6 +126,7 @@ async function nfPagPreparar(ag){
       _npjSet("nfPagCep", t.cep); _npjSet("nfPagLog", t.logradouro); _npjSet("nfPagNum", t.numero);
       _npjSet("nfPagBairro", t.bairro); _npjSet("nfPagCompl", t.complemento); _npjSet("nfPagUf", t.uf);
       _npjSet("nfPagMun", t.municipio);
+      _npjSet("nfPagIm", t.inscricao_municipal);
       if (iss) iss.checked = t.iss_retido === true;
       if (chk) chk.checked = true;
     } else if (flag && chk) {
@@ -172,7 +174,11 @@ function nfPagColeta(){
     municipio: _npjVal("nfPagMun"),
     uf: _npjVal("nfPagUf").toUpperCase()
   };
-  if (doc.length === 14) { o.cnpj = doc; o.iss_retido = !!(_npjEl("nfPagIssRet") || {}).checked; }
+  if (doc.length === 14) {
+    o.cnpj = doc; o.iss_retido = !!(_npjEl("nfPagIssRet") || {}).checked;
+    o.inscricao_municipal = _npjDig(_npjVal("nfPagIm"));
+    if (o.iss_retido && !o.inscricao_municipal) return { erro: "ISS retido exige a inscrição municipal da empresa pagadora (exigência da prefeitura)." };
+  }
   else o.cpf = doc;
   return o;
 }
@@ -191,6 +197,7 @@ function _nfPagPreencher(o, issRet){
     _npjSet("nfPagBairro", o.bairro); _npjSet("nfPagCompl", o.complemento); _npjSet("nfPagUf", o.uf);
     _npjSet("nfPagMun", o.municipio);
   }
+  if (!_npjVal("nfPagIm") && o.inscricao_municipal) _npjSet("nfPagIm", o.inscricao_municipal);
   var iss = _npjEl("nfPagIssRet");
   if (iss && issRet !== undefined) iss.checked = !!issRet;
 }
@@ -214,7 +221,8 @@ async function nfPagDocBlur(){
       var e = r.data;
       if (e) {
         _nfPagPreencher({ nome: e.razao_social, email: e.email, cep: e.cep, logradouro: e.logradouro,
-          numero: e.numero, bairro: e.bairro, complemento: e.complemento, municipio: e.municipio, uf: e.uf }, e.iss_retido);
+          numero: e.numero, bairro: e.bairro, complemento: e.complemento, municipio: e.municipio, uf: e.uf,
+          inscricao_municipal: e.inscricao_municipal }, e.iss_retido);
         toast("🏢", "Empresa encontrada no cadastro: " + e.razao_social);
         return;
       }
@@ -639,7 +647,7 @@ function npjEditar(id){
   h += _npjInput("npjFCnpj", "CNPJ", e.cnpj || "", _npjEditId ? "disabled" : "placeholder='só números'");
   h += _npjInput("npjFRazao", "Razão social", e.razao_social);
   h += _npjInput("npjFFant", "Nome fantasia (opcional)", e.nome_fantasia);
-  h += _npjInput("npjFIm", "Inscrição municipal (opcional)", e.inscricao_municipal);
+  h += _npjInput("npjFIm", "Inscrição municipal (obrigatória se retém ISS)", e.inscricao_municipal);
   h += _npjInput("npjFEmail", "E-mail p/ envio da nota", e.email, "type='email'");
   h += _npjInput("npjFTel", "Telefone", e.telefone);
   h += _npjInput("npjFCep", "CEP", e.cep, "placeholder='00000-000' oninput='npjCepInput(this)'");
@@ -686,6 +694,7 @@ async function npjSalvar(){
   if (!_npjEditId && !validarCNPJ(cnpj)) { toast("⚠️", "CNPJ inválido."); return; }
   if (dados.razao_social.length < 3) { toast("⚠️", "Informe a razão social."); return; }
   if (!dados.cep || dados.cep.length !== 8 || !dados.logradouro) { toast("⚠️", "CEP (8 dígitos) e logradouro são obrigatórios para a nota."); return; }
+  if (dados.iss_retido && !dados.inscricao_municipal) { toast("⚠️", "Empresa que retém o ISS precisa da inscrição municipal (exigência da prefeitura)."); return; }
   try {
     var r;
     if (_npjEditId) {
