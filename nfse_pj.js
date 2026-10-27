@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   nfse_pj.js — APP COR v8.8 (2026-10-27)
+   nfse_pj.js — APP COR v8.9 (2026-10-27)
    ─────────────────────────────────────────────────────────────────────
    1) PAGADOR ≠ PACIENTE (modal "Emitir NFS-e" do index.html)
       • pacientes.nf_pagador_terceiro = true → a nota não sai automática ao
@@ -305,6 +305,7 @@ function _npjEmpresa(id){
 function _npjRender(){
   var pg = _npjEl("pgNpj");
   if (!pg) return;
+  _npjEstilo();
   var ativas = _npjEmpresas.filter(function(e){ return e.ativo; });
   var h = "";
   h += "<div style='margin-bottom:16px'><h2 style='font-family:Playfair Display,serif;font-size:1.22rem'>🏢 Notas fiscais para empresas (CNPJ)</h2>";
@@ -316,12 +317,15 @@ function _npjRender(){
     h += "<div style='font-size:.85rem;color:var(--gr)'>Cadastre uma empresa abaixo para começar.</div>";
   } else {
     h += "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px 14px'>";
-    h += "<div><label style='color:var(--gr);font-size:.72rem;display:block;margin-bottom:2px'>Empresa</label><select id='npjEmp' onchange='npjEmpChange()' style='" + _NPJ_IN + "'>";
-    h += "<option value=''>— selecione —</option>";
-    ativas.forEach(function(e){
-      h += "<option value='" + e.id + "'>" + _npjEsc(e.nome_fantasia || e.razao_social) + " — " + formatarCNPJ(e.cnpj) + "</option>";
-    });
-    h += "</select></div>";
+    // v8.9 — busca de empresa (nome, fantasia ou CNPJ) no lugar do <select>,
+    // que ficava com letra branca em fundo branco na lista do navegador.
+    h += "<div style='position:relative'><label style='color:var(--gr);font-size:.72rem;display:block;margin-bottom:2px'>Empresa</label>";
+    h += "<input type='hidden' id='npjEmp' value=''>";
+    h += "<input id='npjEmpBusca' autocomplete='off' placeholder='🔍 Buscar por nome ou CNPJ' style='" + _NPJ_IN + ";padding-right:30px' " +
+         "onfocus='npjEmpFiltrar()' oninput='npjEmpDigitou()' onkeydown='npjEmpTecla(event)' onblur='setTimeout(npjEmpFechar,180)'>";
+    h += "<span id='npjEmpLimpar' title='Limpar' onclick='npjEmpLimpar()' style='display:none;position:absolute;right:9px;top:23px;cursor:pointer;color:var(--gr);font-size:.9rem'>✕</span>";
+    h += "<div id='npjEmpLista' class='npj-lista' style='display:none'></div>";
+    h += "</div>";
     h += _npjInput("npjValor", "Valor bruto da nota (R$)", "", "inputmode='decimal' placeholder='0,00' oninput='npjResumo()'");
     h += "<div><label style='color:var(--gr);font-size:.72rem;display:block;margin-bottom:2px'>Competência (data do serviço)</label><input id='npjComp' type='date' value='" + _npjHojeBRT() + "' max='" + _npjHojeBRT() + "' style='" + _NPJ_IN + "'></div>";
     h += "</div>";
@@ -385,6 +389,92 @@ function _npjRender(){
   h += "</div>";
   pg.innerHTML = h;
   npjResumo();
+}
+
+// ── v8.9 — combobox de empresas ──────────────────────────────────────────
+var _npjEmpSel = -1;   // item destacado pelo teclado
+function _npjEstilo(){
+  if (_npjEl("npj-style")) return;
+  var st = document.createElement("style"); st.id = "npj-style";
+  st.textContent =
+    ".npj-lista{position:absolute;left:0;right:0;top:100%;margin-top:4px;z-index:50;max-height:260px;overflow-y:auto;" +
+    "background:#13203b;border:1px solid rgba(255,255,255,.18);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.45)}" +
+    ".npj-item{padding:8px 11px;cursor:pointer;color:#fff;font-size:.85rem;border-bottom:1px solid rgba(255,255,255,.06)}" +
+    ".npj-item:last-child{border-bottom:none}" +
+    ".npj-item small{display:block;color:#9fb0cc;font-size:.72rem;margin-top:1px}" +
+    ".npj-item:hover,.npj-item.sel{background:#1f6f63}" +
+    ".npj-vazio{padding:9px 11px;color:#9fb0cc;font-size:.82rem}" +
+    "#pgNpj select option{background:#13203b;color:#fff}";
+  document.head.appendChild(st);
+}
+function _npjNorm(t){
+  return String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function _npjEmpFiltradas(){
+  var termo = _npjNorm(_npjVal("npjEmpBusca"));
+  var dig = _npjDig(termo);
+  return _npjEmpresas.filter(function(e){
+    if (!e.ativo) return false;
+    if (!termo) return true;
+    var alvo = _npjNorm((e.razao_social || "") + " " + (e.nome_fantasia || ""));
+    var ok = termo.split(/\s+/).every(function(w){ return !w || alvo.indexOf(w) >= 0; });
+    if (!ok && dig.length >= 3) ok = String(e.cnpj || "").indexOf(dig) >= 0;
+    return ok;
+  });
+}
+function npjEmpFiltrar(){
+  _npjEstilo();
+  var box = _npjEl("npjEmpLista");
+  if (!box) return;
+  var lst = _npjEmpFiltradas();
+  if (_npjEmpSel >= lst.length) _npjEmpSel = lst.length - 1;
+  var h = "";
+  if (!lst.length) {
+    h = "<div class='npj-vazio'>Nenhuma empresa encontrada. Cadastre em “Empresas tomadoras”.</div>";
+  } else {
+    lst.forEach(function(e, i){
+      h += "<div class='npj-item" + (i === _npjEmpSel ? " sel" : "") + "' onmousedown='npjEmpEscolher(" + e.id + ")'>" +
+           _npjEsc(e.nome_fantasia || e.razao_social) +
+           "<small>" + formatarCNPJ(e.cnpj) + (e.nome_fantasia ? " · " + _npjEsc(e.razao_social) : "") +
+           (e.iss_retido ? " · ISS retido" : "") + "</small></div>";
+    });
+  }
+  box.innerHTML = h;
+  box.style.display = "";
+}
+function npjEmpDigitou(){
+  _npjSet("npjEmp", "");          // digitou de novo → desfaz a escolha anterior
+  _npjEmpSel = 0;
+  var x = _npjEl("npjEmpLimpar"); if (x) x.style.display = _npjVal("npjEmpBusca") ? "" : "none";
+  npjEmpFiltrar();
+  npjResumo();
+}
+function npjEmpTecla(ev){
+  var lst = _npjEmpFiltradas();
+  if (ev.key === "ArrowDown") { _npjEmpSel = Math.min(lst.length - 1, _npjEmpSel + 1); npjEmpFiltrar(); ev.preventDefault(); }
+  else if (ev.key === "ArrowUp") { _npjEmpSel = Math.max(0, _npjEmpSel - 1); npjEmpFiltrar(); ev.preventDefault(); }
+  else if (ev.key === "Enter") { if (lst.length) npjEmpEscolher(lst[Math.max(0, _npjEmpSel)].id); ev.preventDefault(); }
+  else if (ev.key === "Escape") { npjEmpFechar(); }
+}
+function npjEmpEscolher(id){
+  var e = _npjEmpresa(id);
+  if (!e) return;
+  _npjSet("npjEmp", e.id);
+  _npjSet("npjEmpBusca", (e.nome_fantasia || e.razao_social) + " — " + formatarCNPJ(e.cnpj));
+  var x = _npjEl("npjEmpLimpar"); if (x) x.style.display = "";
+  npjEmpFechar();
+  npjEmpChange();
+}
+function npjEmpFechar(){
+  var box = _npjEl("npjEmpLista"); if (box) box.style.display = "none";
+  // texto digitado sem escolher → limpa para não parecer selecionado
+  if (!_npjVal("npjEmp") && _npjVal("npjEmpBusca") && !_npjEmpFiltradas().length) _npjSet("npjEmpBusca", "");
+}
+function npjEmpLimpar(){
+  _npjSet("npjEmp", ""); _npjSet("npjEmpBusca", "");
+  var x = _npjEl("npjEmpLimpar"); if (x) x.style.display = "none";
+  npjResumo();
+  var i = _npjEl("npjEmpBusca"); if (i) i.focus();
 }
 
 function npjEmpChange(){
