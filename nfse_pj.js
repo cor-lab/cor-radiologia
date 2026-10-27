@@ -553,3 +553,38 @@ async function npjSalvar(){
     toast("⚠️", "Falha ao salvar: " + (e.message || e));
   }
 }
+
+// ── v8.7 — checkbox no formulário do ATENDIMENTO (eNfTerc) ────────────────
+// Lê/grava pacientes.nf_pagador_terceiro direto, sem depender do "Salvar".
+async function nfPagFlagEditCarregar(pacId){
+  var cb = _npjEl("eNfTerc");
+  if (!cb) return;
+  if (!pacId) {
+    cb.disabled = true;
+    var bx = _npjEl("eNfTercBox"); if (bx) bx.title = "Atendimento sem ficha de paciente vinculada";
+    return;
+  }
+  try {
+    var r = await supa.from("pacientes").select("nf_pagador_terceiro").eq("id", pacId).maybeSingle();
+    cb = _npjEl("eNfTerc");
+    if (!cb) return;
+    cb.checked = !!(r.data && r.data.nf_pagador_terceiro);
+    cb.disabled = false;
+  } catch (e) { console.warn("nfPagFlagEditCarregar:", e); }
+}
+
+async function nfPagFlagEditSalvar(pacId, cb){
+  if (!pacId || !cb) return;
+  var novo = !!cb.checked;
+  cb.disabled = true;
+  try {
+    var r = await supa.from("pacientes").update({ nf_pagador_terceiro: novo }).eq("id", pacId).select("id");
+    if (r.error || !r.data || !r.data.length) throw new Error((r.error && r.error.message) || "sem permissão");
+    toast("🧾", novo ? "Marcado: paciente não é o pagador — a nota vai pedir quem paga." : "Desmarcado: nota volta a sair no nome do paciente.");
+  } catch (e) {
+    cb.checked = !novo;
+    toast("⚠️", "Não foi possível salvar: " + (e.message || e));
+  } finally {
+    cb.disabled = false;
+  }
+}

@@ -237,6 +237,12 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-10-27 (v8.7): aba Pacientes — busca por nome agora filtra por CADA palavra
+              (AND) e avisa quando bate no limite de 60. Ex.: "matheus betin".
+              Checkbox "Paciente não é o pagador" também no formulário
+              do atendimento (eNfTerc), gravando direto em pacientes.nf_pagador_terceiro.
+              Marcadores: "eNfTerc", "nfPagFlagEditSalvar", "nfPagFlagEditCarregar".
+
   2026-10-27 (v8.6): NFS-e — PAGADOR ≠ PACIENTE e NOTAS PARA CNPJ.
               (a) Cadastro do paciente ganhou "Paciente não é o pagador"
               (pacientes.nf_pagador_terceiro): a nota NÃO sai automática ao
@@ -4144,7 +4150,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.6 - 2026-10-27";
+var APP_VERSION = "v8.7 - 2026-10-27";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -11741,6 +11747,14 @@ function openEditAg(id) {
   b += "<div class=\"field\"><label>Municipio</label><input type=\"text\" id=\"eMunicipio\" value=\"" + esc(a.paciente_municipio || "") + "\" placeholder=\"Cidade\"></div>";
   b += "</div>";
 
+  // v8.7 — "Paciente não é o pagador" também no atendimento (grava direto no
+  // cadastro do paciente ao clicar; lógica em nfse_pj.js → nfPagFlagEdit*).
+  var _pIdNf = a.pId || a.paciente_id || null;
+  b += "<label id='eNfTercBox' style='display:flex;align-items:center;gap:8px;font-size:.85rem;cursor:pointer;padding:8px 10px;border:1px solid rgba(255,255,255,.1);border-radius:10px'>" +
+       "<input type='checkbox' id='eNfTerc' style='width:auto' disabled onchange='nfPagFlagEditSalvar(" + (_pIdNf ? Number(_pIdNf) : "null") + ", this)'>" +
+       "<span>🧾 Paciente não é o pagador <span style='color:var(--gr);font-size:.75rem'>(nota pede CPF/CNPJ de quem paga)</span></span></label>";
+  setTimeout(function(){ if (typeof nfPagFlagEditCarregar === "function") nfPagFlagEditCarregar(_pIdNf); }, 60);
+
   b += "<div class='field'><label>Exames</label>";
   b += "<input type='text' id='eExSearch' placeholder='Buscar exame...' oninput=\"filtrarExames(this,'eExames')\" style='margin-bottom:6px'>";
   b += "<div id='eExWrap' style='max-height:200px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.02);padding-right:6px'></div>";
@@ -15542,13 +15556,19 @@ async function pacTabBuscar(){
       urls.push(sel + "&cpf=ilike.*" + digitos + "*" + lim);
       urls.push(sel + "&telefone=ilike.*" + digitos + "*" + lim);
     } else {
-      urls.push(sel + "&nome=ilike.*" + encodeURIComponent(termo.toUpperCase()) + "*" + lim);
+      // v8.7 — cada palavra vira um filtro (AND): "matheus betin" acha MATHEUS
+      // CONTI BETIN. Antes era um único ilike com limite 60 em ordem alfabética:
+      // só "MATHEUS" tem 600+ fichas e o paciente ficava fora dos 60 primeiros.
+      var palavras = termo.toUpperCase().split(/\s+/).filter(function(w){ return w.length > 0; });
+      var filtros = palavras.map(function(w){ return "&nome=ilike.*" + encodeURIComponent(w) + "*"; }).join("");
+      urls.push(sel + filtros + lim);
     }
     var rs = await Promise.all(urls.map(function(u){return supaFetch(u).then(function(r){return r.json()}).catch(function(){return []})}));
     var seen = {}; pacTabResultados = [];
     rs.forEach(function(lst){(lst||[]).forEach(function(p){if(p && !seen[p.id]){seen[p.id]=true;pacTabResultados.push(p)}})});
     if(!pacTabResultados.length){box.innerHTML = "<div style='padding:10px;color:var(--or)'>Nenhum paciente encontrado.</div>";return}
-    var h = "<div style='margin-bottom:8px;font-size:.8rem;color:var(--gr)'>" + pacTabResultados.length + " paciente(s)</div>";
+    var h = "<div style='margin-bottom:8px;font-size:.8rem;color:var(--gr)'>" + pacTabResultados.length + " paciente(s)" +
+      (pacTabResultados.length >= 60 ? " — <span style='color:#e6a700'>mostrando só os 60 primeiros; digite também o sobrenome</span>" : "") + "</div>";
     pacTabResultados.forEach(function(p){
       h += "<div style='display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;cursor:pointer" + (p.ativo ? "" : ";opacity:.55") + "' onclick='pacTabAbrirFicha(" + p.id + ")'>";
       h += "<div style='flex:1'><strong>" + esc(p.nome||"?") + "</strong>";
@@ -17413,7 +17433,7 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
 <script src="reportes.js"></script>
 <script src="whatsapp_cor.js"></script>
 <script src="protocolo.js"></script>
-<script src="nfse_pj.js?v=20261027a"></script>
+<script src="nfse_pj.js?v=20261027b"></script>
 <!-- Chat interno da equipe (módulos externos — ver CHAT_COR_INSTALACAO.md).
      chat_sw.js NÃO entra aqui: o chat_push.js registra o service worker sozinho
      (chat_sw.js só precisa ficar na RAIZ do site, junto deste index.html). -->
