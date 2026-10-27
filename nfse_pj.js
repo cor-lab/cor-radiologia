@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   nfse_pj.js — APP COR v8.6 (2026-10-27)
+   nfse_pj.js — APP COR v8.8 (2026-10-27)
    ─────────────────────────────────────────────────────────────────────
    1) PAGADOR ≠ PACIENTE (modal "Emitir NFS-e" do index.html)
       • pacientes.nf_pagador_terceiro = true → a nota não sai automática ao
@@ -82,7 +82,7 @@ async function _npjViaCep(cep){
 // ═══════════════════════════════════════════════════════════════════════
 window._nfPagFlagTerceiro = false;
 
-var NFPAG_CAMPOS = ["nfPagDoc","nfPagNome","nfPagEmail","nfPagCep","nfPagLog","nfPagNum","nfPagBairro","nfPagCompl","nfPagUf"];
+var NFPAG_CAMPOS = ["nfPagDoc","nfPagNome","nfPagEmail","nfPagCep","nfPagLog","nfPagNum","nfPagBairro","nfPagCompl","nfPagMun","nfPagUf"];
 
 function nfPagToggle(){
   var on = !!(_npjEl("nfPagOutro") || {}).checked;
@@ -124,10 +124,24 @@ async function nfPagPreparar(ag){
       _npjSet("nfPagNome", t.nome); _npjSet("nfPagEmail", t.email);
       _npjSet("nfPagCep", t.cep); _npjSet("nfPagLog", t.logradouro); _npjSet("nfPagNum", t.numero);
       _npjSet("nfPagBairro", t.bairro); _npjSet("nfPagCompl", t.complemento); _npjSet("nfPagUf", t.uf);
+      _npjSet("nfPagMun", t.municipio);
       if (iss) iss.checked = t.iss_retido === true;
       if (chk) chk.checked = true;
     } else if (flag && chk) {
       chk.checked = true;
+      // v8.8 — sugere o pagador usado na última nota deste mesmo paciente
+      try {
+        var rUlt = await supa.from("agendamentos").select("nf_tomador")
+          .eq("paciente_id", pacId).neq("id", ag.id).not("nf_tomador", "is", null)
+          .order("id", { ascending: false }).limit(1);
+        var u = rUlt.data && rUlt.data[0] && rUlt.data[0].nf_tomador;
+        if (u && typeof u === "object" && _npjDig(u.cnpj || u.cpf) &&
+            AG_EMISSAO_ATUAL && AG_EMISSAO_ATUAL.id === ag.id) {
+          _npjSet("nfPagDoc", _npjDig(u.cnpj || u.cpf));
+          _nfPagPreencher(u, u.iss_retido === true);
+          toast("🧾", "Pagador da última nota deste paciente: " + (u.nome || "") + " — confira antes de emitir.");
+        }
+      } catch (e2) { console.warn("nfPagPreparar/ultimo:", e2); }
     }
     nfPagToggle();
   } catch (e) {
@@ -155,6 +169,7 @@ function nfPagColeta(){
     numero: _npjVal("nfPagNum"),
     bairro: _npjVal("nfPagBairro"),
     complemento: _npjVal("nfPagCompl"),
+    municipio: _npjVal("nfPagMun"),
     uf: _npjVal("nfPagUf").toUpperCase()
   };
   if (doc.length === 14) { o.cnpj = doc; o.iss_retido = !!(_npjEl("nfPagIssRet") || {}).checked; }
@@ -162,32 +177,84 @@ function nfPagColeta(){
   return o;
 }
 
-// CNPJ digitado: se a empresa já está no cadastro de Notas PJ, preenche tudo.
+// v8.8 — preenche o pagador a partir do que o sistema já conhece:
+//   CPF  → 1º pagador usado antes em outra nota (agendamentos.nf_tomador)
+//          2º ficha de paciente com esse CPF (pai/mãe que também é paciente)
+//   CNPJ → 1º cadastro de empresas (Notas PJ)  2º pagador usado antes
+// Só preenche campos VAZIOS — nunca sobrescreve o que foi digitado.
+function _nfPagPreencher(o, issRet){
+  if (!o) return;
+  if (!_npjVal("nfPagNome")) _npjSet("nfPagNome", o.nome);
+  if (!_npjVal("nfPagEmail")) _npjSet("nfPagEmail", o.email);
+  if (!_npjVal("nfPagCep") && !_npjVal("nfPagLog")) {
+    _npjSet("nfPagCep", o.cep); _npjSet("nfPagLog", o.logradouro); _npjSet("nfPagNum", o.numero);
+    _npjSet("nfPagBairro", o.bairro); _npjSet("nfPagCompl", o.complemento); _npjSet("nfPagUf", o.uf);
+    _npjSet("nfPagMun", o.municipio);
+  }
+  var iss = _npjEl("nfPagIssRet");
+  if (iss && issRet !== undefined) iss.checked = !!issRet;
+}
+
+async function _nfPagUltimoTomador(campo, doc){
+  try {
+    var r = await supa.from("agendamentos").select("nf_tomador")
+      .eq("nf_tomador->>" + campo, doc).order("id", { ascending: false }).limit(1);
+    var t = r.data && r.data[0] && r.data[0].nf_tomador;
+    return (t && typeof t === "object") ? t : null;
+  } catch (e) { return null; }
+}
+
 async function nfPagDocBlur(){
   nfPagAtualizarIss();
   var doc = _npjDig(_npjVal("nfPagDoc"));
-  if (doc.length !== 14) return;
+  if (doc.length !== 11 && doc.length !== 14) return;
   try {
-    var r = await supa.from("nfse_tomadores_pj").select("*").eq("cnpj", doc).maybeSingle();
-    var e = r.data;
-    if (!e) return;
-    if (!_npjVal("nfPagNome")) _npjSet("nfPagNome", e.razao_social);
-    if (!_npjVal("nfPagEmail")) _npjSet("nfPagEmail", e.email);
-    if (!_npjVal("nfPagCep")) {
-      _npjSet("nfPagCep", e.cep); _npjSet("nfPagLog", e.logradouro); _npjSet("nfPagNum", e.numero);
-      _npjSet("nfPagBairro", e.bairro); _npjSet("nfPagCompl", e.complemento); _npjSet("nfPagUf", e.uf);
+    if (doc.length === 14) {
+      var r = await supa.from("nfse_tomadores_pj").select("*").eq("cnpj", doc).maybeSingle();
+      var e = r.data;
+      if (e) {
+        _nfPagPreencher({ nome: e.razao_social, email: e.email, cep: e.cep, logradouro: e.logradouro,
+          numero: e.numero, bairro: e.bairro, complemento: e.complemento, municipio: e.municipio, uf: e.uf }, e.iss_retido);
+        toast("🏢", "Empresa encontrada no cadastro: " + e.razao_social);
+        return;
+      }
+      var tj = await _nfPagUltimoTomador("cnpj", doc);
+      if (tj) { _nfPagPreencher(tj, tj.iss_retido === true); toast("🧾", "Dados da última nota para este CNPJ: " + (tj.nome || "")); }
+      return;
     }
-    var iss = _npjEl("nfPagIssRet"); if (iss) iss.checked = !!e.iss_retido;
-    toast("🏢", "Empresa encontrada no cadastro: " + e.razao_social);
+    // CPF
+    if (typeof validarCPF === "function" && !validarCPF(doc)) { toast("⚠️", "CPF do pagador inválido."); return; }
+    var t = await _nfPagUltimoTomador("cpf", doc);
+    if (t) { _nfPagPreencher(t); toast("🧾", "Dados da última nota para este CPF: " + (t.nome || "")); return; }
+    var rp = await supa.from("pacientes")
+      .select("nome,email,cep,logradouro,numero,complemento,bairro,municipio,uf")
+      .eq("cpf", doc).eq("ativo", true).limit(1);
+    var p = rp.data && rp.data[0];
+    if (p) { _nfPagPreencher(p); toast("👤", "Dados puxados da ficha de paciente: " + p.nome); return; }
+    toast("ℹ️", "CPF não encontrado no sistema — preencha nome e endereço.");
   } catch (err) { console.warn("nfPagDocBlur:", err); }
 }
 
-async function nfPagCepBlur(){
-  if (_npjVal("nfPagLog")) return;
-  var d = await _npjViaCep(_npjVal("nfPagCep"));
-  if (!d) return;
-  _npjSet("nfPagLog", d.logradouro); _npjSet("nfPagBairro", d.bairro); _npjSet("nfPagUf", d.uf);
+// v8.8 — CEP igual ao cadastro do atendimento (onCepInputAuto): máscara e, com
+// 8 dígitos, preenche rua/bairro/município/UF e leva o cursor para o Número.
+function _npjCepAuto(el, ids){
+  if (!el) return;
+  if (typeof maskCEP === "function") maskCEP(el);
+  var cep = _npjDig(el.value);
+  if (cep.length !== 8) return;
+  var buscar = (typeof buscarCepAuto === "function") ? buscarCepAuto(cep) :
+    _npjViaCep(cep).then(function(d){ return d ? { logradouro: d.logradouro, bairro: d.bairro, municipio: d.localidade, uf: d.uf } : null; });
+  buscar.then(function(d){
+    if (!d) { toast("CEP", "CEP não encontrado"); return; }
+    _npjSet(ids.log, d.logradouro); _npjSet(ids.bairro, d.bairro);
+    _npjSet(ids.mun, d.municipio); _npjSet(ids.uf, d.uf);
+    var n = _npjEl(ids.num); if (n && !n.value) n.focus();
+  });
 }
+function nfPagCepInput(el){
+  _npjCepAuto(el, { log: "nfPagLog", bairro: "nfPagBairro", mun: "nfPagMun", uf: "nfPagUf", num: "nfPagNum" });
+}
+function nfPagCepBlur(){ nfPagCepInput(_npjEl("nfPagCep")); }   // compatibilidade
 
 // ═══════════════════════════════════════════════════════════════════════
 // 2) ABA NOTAS PJ
@@ -485,7 +552,7 @@ function npjEditar(id){
   h += _npjInput("npjFIm", "Inscrição municipal (opcional)", e.inscricao_municipal);
   h += _npjInput("npjFEmail", "E-mail p/ envio da nota", e.email, "type='email'");
   h += _npjInput("npjFTel", "Telefone", e.telefone);
-  h += _npjInput("npjFCep", "CEP", e.cep, "onblur='npjCepBlur()'");
+  h += _npjInput("npjFCep", "CEP", e.cep, "placeholder='00000-000' oninput='npjCepInput(this)'");
   h += _npjInput("npjFLog", "Logradouro", e.logradouro);
   h += _npjInput("npjFNum", "Número", e.numero);
   h += _npjInput("npjFCompl", "Complemento", e.complemento);
@@ -503,12 +570,8 @@ function npjEditar(id){
   box.innerHTML = h;
 }
 
-async function npjCepBlur(){
-  if (_npjVal("npjFLog")) return;
-  var d = await _npjViaCep(_npjVal("npjFCep"));
-  if (!d) { toast("⚠️", "CEP não encontrado."); return; }
-  _npjSet("npjFLog", d.logradouro); _npjSet("npjFBairro", d.bairro);
-  _npjSet("npjFMun", d.localidade); _npjSet("npjFUf", d.uf);
+function npjCepInput(el){
+  _npjCepAuto(el, { log: "npjFLog", bairro: "npjFBairro", mun: "npjFMun", uf: "npjFUf", num: "npjFNum" });
 }
 
 async function npjSalvar(){

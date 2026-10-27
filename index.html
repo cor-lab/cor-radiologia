@@ -237,6 +237,15 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-10-27 (v8.8): Emitir NFS-e com outro pagador PUXA OS DADOS sozinho ao sair
+              do campo CPF/CNPJ: 1º pagador já usado em nota anterior
+              (agendamentos.nf_tomador), 2º ficha de paciente com o CPF, 3º (CNPJ)
+              cadastro de Notas PJ. Paciente marcado já abre com o pagador da
+              última nota dele. Só preenche campos vazios. Marcador: "_nfPagPreencher".
+              CEP do pagador e da empresa (Notas PJ) funciona como no cadastro:
+              máscara e, ao completar 8 dígitos, preenche rua, bairro, município e
+              UF (ViaCEP, buscarCepAuto) e pula para o Número. "nfPagCepInput".
+
   2026-10-27 (v8.7): aba Pacientes — busca por nome agora filtra por CADA palavra
               (AND) e avisa quando bate no limite de 60. Ex.: "matheus betin".
               Checkbox "Paciente não é o pagador" também no formulário
@@ -4150,7 +4159,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.7 - 2026-10-27";
+var APP_VERSION = "v8.8 - 2026-10-27";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -8088,12 +8097,12 @@ async function dbResgatar(dentId,premId,pts){
     </label>
     <div id="nfPagBloco" style="display:none;margin-top:8px;padding:10px 12px;border:1px solid rgba(255,255,255,.14);border-radius:8px">
       <div class="fg2">
-        <div class="field"><label>CPF ou CNPJ do pagador</label><input id="nfPagDoc" type="text" placeholder="só números" onblur="nfPagDocBlur()" /></div>
+        <div class="field"><label>CPF ou CNPJ do pagador</label><input id="nfPagDoc" type="text" placeholder="digite e saia do campo — puxa os dados" onblur="nfPagDocBlur()" /></div>
         <div class="field"><label>Nome / Razão social</label><input id="nfPagNome" type="text" /></div>
       </div>
       <div class="fg2" style="margin-top:8px">
         <div class="field"><label>E-mail (opcional)</label><input id="nfPagEmail" type="email" /></div>
-        <div class="field"><label>CEP</label><input id="nfPagCep" type="text" placeholder="só números" onblur="nfPagCepBlur()" /></div>
+        <div class="field"><label>CEP</label><input id="nfPagCep" type="text" placeholder="00000-000" oninput="nfPagCepInput(this)" /></div>
       </div>
       <div class="fg2" style="margin-top:8px">
         <div class="field"><label>Logradouro</label><input id="nfPagLog" type="text" /></div>
@@ -8102,6 +8111,9 @@ async function dbResgatar(dentId,premId,pts){
       <div class="fg2" style="margin-top:8px">
         <div class="field"><label>Bairro</label><input id="nfPagBairro" type="text" /></div>
         <div class="field"><label>Complemento</label><input id="nfPagCompl" type="text" /></div>
+      </div>
+      <div class="fg2" style="margin-top:8px">
+        <div class="field"><label>Município</label><input id="nfPagMun" type="text" /></div>
       </div>
       <div class="fg2" style="margin-top:8px">
         <div class="field"><label>UF</label><input id="nfPagUf" type="text" maxlength="2" /></div>
@@ -17433,7 +17445,7 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
 <script src="reportes.js"></script>
 <script src="whatsapp_cor.js"></script>
 <script src="protocolo.js"></script>
-<script src="nfse_pj.js?v=20261027b"></script>
+<script src="nfse_pj.js?v=20261027c"></script>
 <!-- Chat interno da equipe (módulos externos — ver CHAT_COR_INSTALACAO.md).
      chat_sw.js NÃO entra aqui: o chat_push.js registra o service worker sozinho
      (chat_sw.js só precisa ficar na RAIZ do site, junto deste index.html). -->
