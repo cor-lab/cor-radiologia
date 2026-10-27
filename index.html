@@ -237,6 +237,11 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-10-27 (v8.11): Notas PJ — e-mail automático para a empresa ao autorizar e
+              botão "📧 Enviar/Reenviar" na lista (usa enviarNFSePorEmail; a Edge
+              enviar-email-cor v0.16 manda ao e-mail do cadastro da empresa).
+              Marcador: "npjEnviarEmail".
+
   2026-10-27 (v8.10): Inscrição municipal do tomador PJ vai na nota (emitir v56,
               campo inscricao_municipal_tomador). A prefeitura recusava com
               EM030/EM035/EM057 (CNPJ com várias IMs / retenção sem IM). Modal do
@@ -4169,7 +4174,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.10 - 2026-10-27";
+var APP_VERSION = "v8.11 - 2026-10-27";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -17459,7 +17464,7 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
 <script src="reportes.js"></script>
 <script src="whatsapp_cor.js"></script>
 <script src="protocolo.js"></script>
-<script src="nfse_pj.js?v=20261027e"></script>
+<script src="nfse_pj.js?v=20261027f"></script>
 <!-- Chat interno da equipe (módulos externos — ver CHAT_COR_INSTALACAO.md).
      chat_sw.js NÃO entra aqui: o chat_push.js registra o service worker sozinho
      (chat_sw.js só precisa ficar na RAIZ do site, junto deste index.html). -->

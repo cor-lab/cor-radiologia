@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   nfse_pj.js — APP COR v8.10 (2026-10-27)
+   nfse_pj.js — APP COR v8.11 (2026-10-27)
    ─────────────────────────────────────────────────────────────────────
    1) PAGADOR ≠ PACIENTE (modal "Emitir NFS-e" do index.html)
       • pacientes.nf_pagador_terceiro = true → a nota não sai automática ao
@@ -269,6 +269,7 @@ function nfPagCepBlur(){ nfPagCepInput(_npjEl("nfPagCep")); }   // compatibilida
 // ═══════════════════════════════════════════════════════════════════════
 var _npjEmpresas = [];
 var _npjNotas = [];
+var _npjEmails = {};   // v8.11 — nfse_id → último envio
 var _npjEditId = null;      // null = nova empresa; 0 = formulário fechado
 var _npjEmitindo = false;
 var _npjPollings = {};
@@ -299,6 +300,14 @@ async function _npjCarregar(){
       .order("created_at", { ascending: false }).limit(60);
     if (r2.error) throw new Error(r2.error.message);
     _npjNotas = r2.data || [];
+    // v8.11 — último envio de e-mail de cada nota (badge na lista)
+    _npjEmails = {};
+    var ids = _npjNotas.map(function(n){ return n.id; });
+    if (ids.length) {
+      var r3 = await supa.from("nfse_envios_email").select("nfse_id,status,destinatario,created_at")
+        .in("nfse_id", ids).order("created_at", { ascending: true });
+      (r3.data || []).forEach(function(e){ _npjEmails[e.nfse_id] = e; });
+    }
   } catch (e) {
     console.error("_npjCarregar:", e);
     toast("⚠️", "Falha ao carregar Notas PJ: " + (e.message || e));
@@ -368,6 +377,12 @@ function _npjRender(){
       if (pdf) h += "<a class='btn btno' style='padding:4px 10px;font-size:.75rem;text-decoration:none' href='" + _npjEsc(pdf) + "' target='_blank' rel='noopener'>PDF</a> ";
       if (st === "emitindo") h += "<button class='btn btno' style='padding:4px 10px;font-size:.75rem' onclick=\"npjVerificar('" + n.id + "')\">Verificar/Retomar</button>";
       if (st === "rejeitada") h += "<button class='btn btno' style='padding:4px 10px;font-size:.75rem' onclick=\"npjVerErro('" + n.id + "')\">Ver erro</button>";
+      if (st === "emitida") {
+        var em = _npjEmails[n.id];
+        var tit = em ? (em.status === "enviado" ? "Enviado para " + em.destinatario : "Falhou: " + em.status) : "Ainda não enviado";
+        h += "<button class='btn btno' title='" + _npjEsc(tit) + "' style='padding:4px 10px;font-size:.75rem' onclick=\"npjEnviarEmail('" + n.id + "')\">" +
+             (em && em.status === "enviado" ? "📧 ✓ Reenviar" : "📧 Enviar") + "</button>";
+      }
       h += "</td></tr>";
     });
     h += "</tbody></table></div>";
@@ -580,7 +595,11 @@ function _npjPolling(nfseId, reference){
       var st = d.status_mapeado;
       if (r.ok && (st === "emitida" || st === "rejeitada" || st === "cancelada")) {
         clearInterval(id); delete _npjPollings[reference];
-        if (st === "emitida") toast("✅", "NFS-e da empresa autorizada" + (d.focus && d.focus.numero ? " — nº " + d.focus.numero : "") + ".");
+        if (st === "emitida") {
+          toast("✅", "NFS-e da empresa autorizada" + (d.focus && d.focus.numero ? " — nº " + d.focus.numero : "") + ".");
+          // v8.11 — e-mail automático para a empresa (mesmo fluxo das notas de paciente)
+          setTimeout(function(){ npjEnviarEmail(d.nfse_id || nfseId, "automatico"); }, 1500);
+        }
         else if (st === "rejeitada") toast("⚠️", "A prefeitura rejeitou a nota. Veja o erro na lista.");
         await _npjCarregar(); _npjRender();
       } else if (tent >= 20 || (!r.ok && r.status !== 503)) {
@@ -621,6 +640,22 @@ async function npjVerificar(nfseId){
   } catch (e) {
     toast("Erro", "Falha: " + (e.message || e));
   }
+}
+
+// v8.11 — envia a NFS-e por e-mail ao e-mail cadastrado da empresa (enviar-email-cor
+// v0.16 resolve o destinatário pelo nfse_tomadores_pj). Reaproveita o helper
+// enviarNFSePorEmail do index.html (JWT do usuário + idempotência).
+async function npjEnviarEmail(nfseId, modo){
+  if (!nfseId) return;
+  modo = modo || "manual";
+  if (typeof enviarNFSePorEmail !== "function") { toast("⚠️", "Envio de e-mail indisponível nesta versão do app."); return; }
+  var r = await enviarNFSePorEmail(nfseId, modo);
+  if (r && r.ok && r.destinatario) toast("📧", "NFS-e enviada por e-mail para " + r.destinatario);
+  else if (r && r.ja_enviado) toast("📧", "Esta nota já tinha sido enviada por e-mail.");
+  else if (r && r.motivo === "sem_email") toast("⚠️", "Empresa sem e-mail no cadastro — edite a empresa e informe o e-mail.");
+  else if (r && r.motivo === "sem_pdf") toast("⏳", "PDF da nota ainda não disponível — tente em instantes.");
+  else if (r && !r.em_andamento) toast("⚠️", "Falha ao enviar e-mail: " + ((r && r.error) || "erro desconhecido"));
+  await _npjCarregar(); _npjRender();
 }
 
 function npjVerErro(nfseId){
