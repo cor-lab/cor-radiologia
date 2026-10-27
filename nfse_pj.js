@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   nfse_pj.js — APP COR v8.11 (2026-10-27)
+   nfse_pj.js — APP COR v8.12 (2026-10-27)
    ─────────────────────────────────────────────────────────────────────
    1) PAGADOR ≠ PACIENTE (modal "Emitir NFS-e" do index.html)
       • pacientes.nf_pagador_terceiro = true → a nota não sai automática ao
@@ -353,6 +353,27 @@ function _npjRender(){
   }
   h += "</div>";
 
+  // ── Empresas (v8.12: logo abaixo da emissão) ──
+  h += "<div class='card'><div style='display:flex;justify-content:space-between;align-items:center'><div class='ctitle' style='margin:0'>Empresas tomadoras</div>";
+  h += "<button class='btn btng' style='padding:5px 12px;font-size:.78rem' onclick='npjEditar(null)'>+ Nova empresa</button></div>";
+  h += "<div id='npjForm'></div>";
+  if (!_npjEmpresas.length) {
+    h += "<div style='font-size:.82rem;color:var(--gr);margin-top:8px'>Nenhuma empresa cadastrada.</div>";
+  } else {
+    h += "<div class='tw' style='margin-top:8px'><table><thead><tr><th>Empresa</th><th>CNPJ</th><th>ISS</th><th>Cidade</th><th>Situação</th><th></th></tr></thead><tbody>";
+    _npjEmpresas.forEach(function(e){
+      h += "<tr" + (e.ativo ? "" : " style='opacity:.55'") + ">";
+      h += "<td><strong>" + _npjEsc(e.nome_fantasia || e.razao_social) + "</strong>" + (e.nome_fantasia ? "<div style='font-size:.7rem;color:var(--gr)'>" + _npjEsc(e.razao_social) + "</div>" : "") + "</td>";
+      h += "<td>" + formatarCNPJ(e.cnpj) + "</td>";
+      h += "<td>" + (e.iss_retido ? "<span style='color:#e6a700'>Retido pela empresa</span>" : "Sem retenção") + "</td>";
+      h += "<td>" + _npjEsc([e.municipio, e.uf].filter(Boolean).join("/")) + "</td>";
+      h += "<td>" + (e.ativo ? "Ativa" : "Inativa") + "</td>";
+      h += "<td><button class='btn btno' style='padding:4px 10px;font-size:.75rem' onclick='npjEditar(" + e.id + ")'>✏️ Editar</button></td>";
+      h += "</tr>";
+    });
+    h += "</tbody></table></div>";
+  }
+  h += "</div>";
   // ── Notas emitidas ──
   h += "<div class='card'><div style='display:flex;justify-content:space-between;align-items:center'><div class='ctitle' style='margin:0'>Notas para empresas</div>";
   h += "<button class='btn btno' style='padding:5px 12px;font-size:.78rem' onclick='rNotasPJ()'>↻ Atualizar</button></div>";
@@ -389,27 +410,6 @@ function _npjRender(){
   }
   h += "</div>";
 
-  // ── Empresas ──
-  h += "<div class='card'><div style='display:flex;justify-content:space-between;align-items:center'><div class='ctitle' style='margin:0'>Empresas tomadoras</div>";
-  h += "<button class='btn btng' style='padding:5px 12px;font-size:.78rem' onclick='npjEditar(null)'>+ Nova empresa</button></div>";
-  h += "<div id='npjForm'></div>";
-  if (!_npjEmpresas.length) {
-    h += "<div style='font-size:.82rem;color:var(--gr);margin-top:8px'>Nenhuma empresa cadastrada.</div>";
-  } else {
-    h += "<div class='tw' style='margin-top:8px'><table><thead><tr><th>Empresa</th><th>CNPJ</th><th>ISS</th><th>Cidade</th><th>Situação</th><th></th></tr></thead><tbody>";
-    _npjEmpresas.forEach(function(e){
-      h += "<tr" + (e.ativo ? "" : " style='opacity:.55'") + ">";
-      h += "<td><strong>" + _npjEsc(e.nome_fantasia || e.razao_social) + "</strong>" + (e.nome_fantasia ? "<div style='font-size:.7rem;color:var(--gr)'>" + _npjEsc(e.razao_social) + "</div>" : "") + "</td>";
-      h += "<td>" + formatarCNPJ(e.cnpj) + "</td>";
-      h += "<td>" + (e.iss_retido ? "<span style='color:#e6a700'>Retido pela empresa</span>" : "Sem retenção") + "</td>";
-      h += "<td>" + _npjEsc([e.municipio, e.uf].filter(Boolean).join("/")) + "</td>";
-      h += "<td>" + (e.ativo ? "Ativa" : "Inativa") + "</td>";
-      h += "<td><button class='btn btno' style='padding:4px 10px;font-size:.75rem' onclick='npjEditar(" + e.id + ")'>✏️ Editar</button></td>";
-      h += "</tr>";
-    });
-    h += "</tbody></table></div>";
-  }
-  h += "</div>";
   pg.innerHTML = h;
   npjResumo();
 }
