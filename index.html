@@ -237,6 +237,10 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-10-29 (v8.13): PRAZO DE ENTREGA reduzido — calcPrevisaoEntrega():
+              Documentação 3 dias úteis (antes 5), demais exames 2 dias úteis
+              (antes 3). CORA atualizada à parte (servidor Oracle /opt/wa_cor).
+
   2026-10-27 (v8.12): Notas PJ — ordem da página: Emitir nota → Empresas
               tomadoras (cadastro) → Notas para empresas (lista).
 
@@ -4177,7 +4181,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.12 - 2026-10-27";
+var APP_VERSION = "v8.13 - 2026-10-29";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -16349,7 +16353,7 @@ function calcPrevisaoEntrega(itens){
     var nm = ex.n.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     return nm.indexOf("documentacao") >= 0 || nm.indexOf("doc ") === 0 || nm.indexOf("doc.") === 0;
   });
-  return calcDiasUteis(new Date(), temDoc ? 5 : 3);
+  return calcDiasUteis(new Date(), temDoc ? 3 : 2); // v8.13: doc 3 dias úteis, demais 2 (antes 5/3)
 }
 function updAgSum(){
   var el = document.getElementById("agSumDiv");
