@@ -237,6 +237,23 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-01 (v8.15): Cancelamento de NFS-e com JUSTIFICATIVAS PRONTAS — modal com
+              motivos pré-definidos (clique) + "Outro motivo" (texto livre). Cada
+              motivo leva o código oficial do evento de cancelamento do ADN
+              (cMotivo e101101: 1=Erro na emissão, 2=Serviço não prestado, 9=Outros),
+              enviado como codigo_cancelamento à cancelar-nfse-focus.
+              Marcadores: "NFSE_MOTIVOS_CANCEL", "_escolherJustificativaCancel".
+
+  2026-11-01 (v8.14): CANCELAMENTO DE NFS-e REATIVADO para notas do Ambiente Nacional
+              (ADN). Desde 01/11 a Focus roteia ao ADN (Res. CGSN 191/2026), que
+              aceita cancelamento — testado em produção (nota nº 1, série 1).
+              Botão "🛑 Cancelar nota" volta a aparecer em toda nota emitida;
+              cancelarNotaManual() consulta nfse_emitidas e só cancela pelo App se
+              ambiente = nacional_producao e emitida a partir de 01/11/2026
+              (_nfsePodeCancelarNoApp). Notas anteriores (ISS.net) continuam com a
+              orientação de cancelar no site da prefeitura.
+              Marcador: "CANCELAMENTO_ADN_DESDE".
+
   2026-10-29 (v8.13): PRAZO DE ENTREGA reduzido — calcPrevisaoEntrega():
               Documentação 3 dias úteis (antes 5), demais exames 2 dias úteis
               (antes 3). CORA atualizada à parte (servidor Oracle /opt/wa_cor).
@@ -4181,7 +4198,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.13 - 2026-10-29";
+var APP_VERSION = "v8.15 - 2026-11-01";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -4189,6 +4206,62 @@ var APP_VERSION = "v8.13 - 2026-10-29";
 // site da prefeitura para não dar confusão. Depois de migrado, basta voltar
 // esta constante para true e o botão + função voltam a funcionar normalmente.
 var CANCELAMENTO_APPCOR_ATIVO = false;
+// ✅ v8.14 (2026-11-01) — Ambiente Nacional (ADN) aceita cancelamento. Notas
+// nacional_producao emitidas a partir desta data (BRT) cancelam pelo App mesmo
+// com CANCELAMENTO_APPCOR_ATIVO=false. Notas anteriores foram ao ISS.net.
+var CANCELAMENTO_ADN_DESDE = "2026-11-01T03:00:00Z";
+// v8.15 — justificativas prontas p/ cancelamento (código = cMotivo do evento ADN e101101).
+var NFSE_MOTIVOS_CANCEL = [
+  { cod: "1", txt: "Erro nos dados do tomador (nome, CPF ou endereco)" },
+  { cod: "1", txt: "Valor da nota emitido incorretamente" },
+  { cod: "1", txt: "Nota emitida para o tomador errado (pagador diferente do paciente)" },
+  { cod: "1", txt: "Descricao dos exames emitida incorretamente" },
+  { cod: "1", txt: "Nota emitida em duplicidade para o mesmo atendimento" },
+  { cod: "2", txt: "Exame nao realizado - atendimento cancelado" },
+];
+function _escolherJustificativaCancel(ag){
+  return new Promise(function(resolve){
+    var html = '<div style="font-size:13px;opacity:.85;margin-bottom:10px">Paciente: <b>' +
+      String(ag.pac || "").replace(/[<>&]/g, "") + '</b> &nbsp;·&nbsp; Nota nº <b>' +
+      String(ag.numero_nfse || "-").replace(/[<>&]/g, "") + '</b></div>';
+    NFSE_MOTIVOS_CANCEL.forEach(function(m, i){
+      html += '<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 6px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06)">' +
+        '<input type="radio" name="nfMotCanc" value="' + i + '" style="margin-top:3px">' +
+        '<span>' + m.txt + '</span></label>';
+    });
+    html += '<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 6px;cursor:pointer">' +
+      '<input type="radio" name="nfMotCanc" value="outro" style="margin-top:3px"><span>Outro motivo (escrever)</span></label>' +
+      '<textarea id="nfMotCancOutro" rows="2" maxlength="255" placeholder="Descreva o motivo (mínimo 15 caracteres)" ' +
+      'style="width:100%;box-sizing:border-box;margin-top:4px;display:none"></textarea>';
+    openM("🛑 Motivo do cancelamento", html, [
+      { lbl: "Voltar", cls: "btno", fn: function(){ closeM(); resolve(null); } },
+      { lbl: "Continuar", cls: "btnr", fn: function(){
+          var sel = document.querySelector('input[name="nfMotCanc"]:checked');
+          if(!sel){ toast("⚠️", "Escolha um motivo."); return; }
+          if(sel.value === "outro"){
+            var t = String((document.getElementById("nfMotCancOutro") || {}).value || "").trim();
+            if(t.length < 15){ toast("⚠️", "Descreva o motivo (mínimo 15 caracteres)."); return; }
+            closeM(); resolve({ codigo: "9", texto: t.slice(0, 255) }); return;
+          }
+          var m = NFSE_MOTIVOS_CANCEL[Number(sel.value)];
+          closeM(); resolve({ codigo: m.cod, texto: m.txt });
+      } },
+    ]);
+    var radios = document.querySelectorAll('input[name="nfMotCanc"]');
+    for(var i = 0; i < radios.length; i++){
+      radios[i].onchange = function(){
+        var ta = document.getElementById("nfMotCancOutro");
+        if(ta){ ta.style.display = (this.value === "outro") ? "block" : "none"; if(this.value === "outro") ta.focus(); }
+      };
+    }
+  });
+}
+function _nfsePodeCancelarNoApp(nf){
+  if(CANCELAMENTO_APPCOR_ATIVO) return true;
+  if(!nf || nf.ambiente !== "nacional_producao") return false;
+  var quando = new Date(nf.data_emissao || nf.created_at || 0).getTime();
+  return Number.isFinite(quando) && quando >= new Date(CANCELAMENTO_ADN_DESDE).getTime();
+}
 
 // ⚙️ NFS-e PADRÃO NACIONAL (v8.0 — 2026-09-26)
 // Santa Maria desliga o ABRASF 2.04 em 01/10/2026. A partir dessa data as
@@ -6317,28 +6390,33 @@ async function marcarRealizadoEEmitir(agendamentoId){
 
 async function cancelarNotaManual(agendamentoId){
   try{
-    // v4.2 — cancelamento pelo APPCOR desativado durante a migração p/ Sistema Nacional.
-    if(!CANCELAMENTO_APPCOR_ATIVO){
-      toast("Cancelamento manual",
-            "Durante a migração da prefeitura para o Sistema Nacional, o cancelamento de notas é feito manualmente no site da prefeitura. Cancele por lá e depois me avise para ajustar o status aqui.");
-      return;
-    }
     var ag = (ags || []).find(function(x){ return x.id === agendamentoId; });
     if(!ag || !ag.nfse_id){
       toast("Atenção", "Esse agendamento não possui NFS-e vinculada.");
+      return;
+    }
+    // v8.14 — só notas do Ambiente Nacional (a partir de 01/11/2026) cancelam pelo App.
+    var rNf = await supa.from("nfse_emitidas").select("ambiente,data_emissao,created_at").eq("id", ag.nfse_id).single();
+    if(rNf.error || !rNf.data){
+      toast("Erro", "Não foi possível carregar a NFS-e para cancelar.");
+      return;
+    }
+    if(!_nfsePodeCancelarNoApp(rNf.data)){
+      toast("Cancelamento manual",
+            "Esta nota foi emitida antes de 01/11/2026 pelo sistema da prefeitura (ISS.net). Cancele no site da prefeitura e depois me avise para ajustar o status aqui.");
       return;
     }
     // ⚡ v3.95 — CANCELAMENTO REAL NA FOCUS. Antes só mudava o status local
     // (a nota continuava válida na prefeitura!). Agora chama a Edge Function
     // cancelar-nfse-focus, que envia o cancelamento à Focus/prefeitura, e só
     // então atualiza o local + estorna o cashback (tudo no servidor).
-    var just = prompt("Justificativa do cancelamento (vai para a prefeitura — mínimo 15 caracteres):",
-                      "Cancelamento a pedido do cliente — emissao indevida");
-    if(just === null) return;
-    just = String(just).trim();
+    // v8.15 — justificativa escolhida por clique (ou texto livre em "Outro motivo").
+    var esc = await _escolherJustificativaCancel(ag);
+    if(!esc) return;
+    var just = String(esc.texto).trim();
     if(just.length < 15){ toast("⚠️", "Justificativa muito curta (mínimo 15 caracteres)."); return; }
     if(just.length > 255){ toast("⚠️", "Justificativa muito longa (máximo 255 caracteres)."); return; }
-    if(!confirm("Cancelar a NFS-e na FOCUS/PREFEITURA?\n\nPaciente: " + (ag.pac || "") +
+    if(!confirm("Cancelar a NFS-e no SISTEMA NACIONAL (via Focus)?\n\nPaciente: " + (ag.pac || "") +
                 "\nNota nº: " + (ag.numero_nfse || "-") +
                 "\nJustificativa: " + just +
                 "\n\nIsso cancela a nota de verdade (não se desfaz).")) return;
@@ -6347,7 +6425,7 @@ async function cancelarNotaManual(agendamentoId){
     var r = await supaFetch(API_BASE + "/cancelar-nfse-focus", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agendamento_id: agendamentoId, justificativa: just })
+      body: JSON.stringify({ agendamento_id: agendamentoId, justificativa: just, codigo_cancelamento: esc.codigo })
     });
     var d = await r.json().catch(function(){ return {}; });
     if(!r.ok || !d.ok){
@@ -11384,9 +11462,9 @@ function agEV(ev, id) {
   }
 
   if((a.status_fiscal || "")=="emitida"){
-    // v4.2 — botão de cancelar só aparece com a chave CANCELAMENTO_APPCOR_ATIVO.
-    // Imprimir/WhatsApp/Email continuam sempre disponíveis.
-    if(CANCELAMENTO_APPCOR_ATIVO){
+    // v8.14 — botão sempre visível em nota emitida; cancelarNotaManual() decide
+    // (ADN desde 01/11 cancela pelo App; ISS.net orienta cancelar na prefeitura).
+    {
     (function(ag){
       btns.push({
         lbl:"🛑 Cancelar nota",
