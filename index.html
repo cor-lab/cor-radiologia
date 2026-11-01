@@ -237,6 +237,14 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-01 (v8.19): REEMISSÃO APÓS CANCELAMENTO — atendimento com nota cancelada
+              pode emitir nova nota (emitir-nfse-focus v60 confere que a nota vinculada
+              está cancelada/substituída). confirmarEmissaoNota não bloqueia mais
+              "cancelada". Cashback: creditarCashbackSeElegivel usa SALDO LÍQUIDO
+              (créditos − estornos de NFS-e) — credita de novo após cancelar+reemitir,
+              sem duplicar na substituição (cancelar-nfse-focus v7 estorna pelo saldo).
+              Marcador: "_cashbackSaldoNfse".
+
   2026-11-01 (v8.18): SUBSTITUIÇÃO DE NFS-e (Ambiente Nacional). Botão "🔁 Substituir nota"
               ao lado de "🛑 Cancelar nota" (que continua). Fluxo: editar o atendimento
               (exames/valor/pagador) → Substituir → escolher motivo (lista ou texto,
@@ -4220,7 +4228,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.18 - 2026-11-01";
+var APP_VERSION = "v8.19 - 2026-11-01";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -5907,7 +5915,7 @@ async function confirmarEmissaoNota() {
       toast("Atenção", "A substituição exige nota emitida (status atual: " + (ag.status_fiscal || "-") + ").");
       return;
     }
-    if (!_subst && ["emitida", "emitindo", "cancelada"].includes(String(ag.status_fiscal || ""))) {
+    if (!_subst && ["emitida", "emitindo"].includes(String(ag.status_fiscal || ""))) {   // v8.19: cancelada pode reemitir
       toast("Atenção", "Agendamento com status fiscal inválido: " + ag.status_fiscal);
       return;
     }
@@ -7819,13 +7827,19 @@ async function creditarCashbackSeElegivel(agendamentoId){
     if(row.status_fiscal !== "emitida") return false;
     if(!row.nfse_id) return false;
 
-    var jaLancado = await supa.from("cashback_lancamentos")
-      .select("id")
+    // v8.19 — saldo líquido (créditos − estornos de NFS-e): após cancelar e reemitir,
+    // o crédito anterior já foi estornado e a nova nota credita de novo.
+    var _cashbackSaldoNfse = await supa.from("cashback_lancamentos")
+      .select("tipo, pontos, nfse_id")
       .eq("agendamento_id", agendamentoId)
-      .eq("tipo", "credito")
-      .limit(1);
-
-    if(jaLancado.data && jaLancado.data.length) return true;
+      .in("tipo", ["credito", "estorno"]);
+    if(_cashbackSaldoNfse.error){ console.error("cashback saldo:", _cashbackSaldoNfse.error); return false; }
+    var _saldoCb = 0;
+    (_cashbackSaldoNfse.data || []).forEach(function(l){
+      if(l.tipo === "credito") _saldoCb += Number(l.pontos || 0);
+      else if(l.nfse_id) _saldoCb -= Number(l.pontos || 0);
+    });
+    if(_saldoCb > 0) return true;
 
     var pontos = Number(row.cashback_pts || 0);
     if(pontos <= 0) return false;
