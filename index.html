@@ -237,6 +237,15 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-01 (v8.16): EMITIR NOTA — CPF do paciente: (a) campo nfCpfCnpj com
+              autocomplete desligado (o navegador sugeria CPFs de OUTROS pacientes);
+              (b) se o agendamento não tem CPF, preenche com pacientes.cpf ou, na
+              falta, com o último CPF usado em atendimentos do mesmo paciente_id
+              (_nfPreencherCpfPaciente); (c) ao emitir, grava o CPF no cadastro do
+              paciente quando ele está vazio (best-effort; índice único impede
+              gravar CPF já usado por outro cadastro).
+              Marcador: "_nfPreencherCpfPaciente".
+
   2026-11-01 (v8.15): Cancelamento de NFS-e com JUSTIFICATIVAS PRONTAS — modal com
               motivos pré-definidos (clique) + "Outro motivo" (texto livre). Cada
               motivo leva o código oficial do evento de cancelamento do ADN
@@ -4198,7 +4207,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.15 - 2026-11-01";
+var APP_VERSION = "v8.16 - 2026-11-01";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -5806,6 +5815,7 @@ function abrirModalEmitirNota(agendamentoId){
   var _dpNota = Number(ag.desconto_pontos || 0);
   document.getElementById("nfValorServico").value = Math.max(0, Number(calcPgFinal.valor_faturado || 0) - _dpNota).toFixed(2);
   document.getElementById("nfCpfCnpj").value = ag.paciente_cpf || "";
+  if (!ag.paciente_cpf) _nfPreencherCpfPaciente(ag);   // v8.16
   document.getElementById("nfNumero").value = "";
   document.getElementById("nfProtocolo").value = "";
   document.getElementById("nfChave").value = "";
@@ -5814,6 +5824,27 @@ function abrirModalEmitirNota(agendamentoId){
   if (typeof nfPagPreparar === "function") nfPagPreparar(ag);
 
   document.getElementById("mEmitirNota").classList.add("open");
+}
+
+// v8.16 — busca o CPF do paciente quando o agendamento veio sem: cadastro
+// (pacientes.cpf) → último atendimento do MESMO paciente_id com CPF.
+async function _nfPreencherCpfPaciente(ag){
+  try{
+    if(!ag || !ag.paciente_id) return;
+    var cpf = "";
+    var rP = await supa.from("pacientes").select("cpf").eq("id", ag.paciente_id).maybeSingle();
+    if(rP.data && rP.data.cpf) cpf = String(rP.data.cpf);
+    if(!cpf){
+      var rA = await supa.from("agendamentos").select("paciente_cpf")
+        .eq("paciente_id", ag.paciente_id).not("paciente_cpf", "is", null).neq("paciente_cpf", "")
+        .order("created_at", { ascending: false }).limit(1);
+      if(rA.data && rA.data.length) cpf = String(rA.data[0].paciente_cpf);
+    }
+    cpf = normalizarCpfCnpj(cpf);
+    var el = document.getElementById("nfCpfCnpj");
+    // só preenche se o modal ainda é deste agendamento e o campo segue vazio
+    if(cpf && el && !el.value && AG_EMISSAO_ATUAL && AG_EMISSAO_ATUAL.id === ag.id) el.value = cpf;
+  }catch(e){ console.warn("_nfPreencherCpfPaciente:", e); }
 }
 
 function fecharModalEmitirNota(){
@@ -5950,6 +5981,14 @@ async function confirmarEmissaoNota() {
     ag.valor_faturado = calcPgFinal.valor_faturado;
     ag.vl = calcPgFinal.valor_faturado;
     if (updAg.paciente_cpf !== undefined) ag.paciente_cpf = cpfCnpj;
+    // v8.16 — grava o CPF no cadastro do paciente se lá estiver vazio (best-effort).
+    if (cpfCnpj && cpfCnpj.length === 11 && ag.paciente_id) {
+      try {
+        var rCad = await supa.from("pacientes").update({ cpf: cpfCnpj })
+          .eq("id", ag.paciente_id).or("cpf.is.null,cpf.eq.");
+        if (rCad.error) console.warn("CPF não gravado no cadastro:", rCad.error.message);
+      } catch (e) { console.warn("CPF cadastro:", e); }
+    }
     ag.nf_tomador = pagador || null;
 
     const functionUrl = API_BASE + "/emitir-nfse-focus";
@@ -8184,7 +8223,7 @@ async function dbResgatar(dentId,premId,pts){
 
     <div class="field" style="margin-top:12px;">
       <label>CPF do paciente</label>
-      <input id="nfCpfCnpj" type="text" placeholder="CPF do paciente" />
+      <input id="nfCpfCnpj" type="text" placeholder="CPF do paciente" autocomplete="off" name="nfCpfCnpj_nofill" inputmode="numeric" />
     </div>
 
     <!-- v8.6 — pagador ≠ paciente (nf_tomador). Lógica em nfse_pj.js -->
