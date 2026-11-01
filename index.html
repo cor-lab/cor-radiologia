@@ -237,6 +237,16 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-01 (v8.18): SUBSTITUIÇÃO DE NFS-e (Ambiente Nacional). Botão "🔁 Substituir nota"
+              ao lado de "🛑 Cancelar nota" (que continua). Fluxo: editar o atendimento
+              (exames/valor/pagador) → Substituir → escolher motivo (lista ou texto,
+              código 99) → modal de emissão em modo substituição → emitir-nfse-focus
+              v59 (substituir:true). A nota original só é baixada ("substituida")
+              quando a nova é AUTORIZADA (consultar-nfse-focus v33); se a substituta
+              for rejeitada, a original segue válida. Polling próprio:
+              iniciarPollingSubstituicao. Cashback NÃO é recalculado na substituição.
+              Marcadores: "NF_SUBST", "substituirNotaManual", "NFSE_MOTIVOS_SUBST".
+
   2026-11-01 (v8.17): fix v8.16 — o objeto local do agendamento guarda o paciente em
               `pId` (não `paciente_id`); a busca/gravação do CPF usa pId || paciente_id.
 
@@ -4210,7 +4220,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.17 - 2026-11-01";
+var APP_VERSION = "v8.18 - 2026-11-01";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -5853,6 +5863,7 @@ async function _nfPreencherCpfPaciente(ag){
 
 function fecharModalEmitirNota(){
   AG_EMISSAO_ATUAL = null;
+  _nfSubstModo(null);   // v8.18
   document.getElementById("mEmitirNota").classList.remove("open");
 }
 
@@ -5891,7 +5902,12 @@ async function confirmarEmissaoNota() {
     // Reemissão comum fica bloqueada em emitida/emitindo/cancelada. Uma nota
     // pendente só é retomada pelo fluxo explícito que consulta primeiro e depois
     // reutiliza reference/payload persistidos.
-    if (["emitida", "emitindo", "cancelada"].includes(String(ag.status_fiscal || ""))) {
+    var _subst = NF_SUBST;   // v8.18 — modo substituição (nota emitida → nova nota)
+    if (_subst && String(ag.status_fiscal || "") !== "emitida") {
+      toast("Atenção", "A substituição exige nota emitida (status atual: " + (ag.status_fiscal || "-") + ").");
+      return;
+    }
+    if (!_subst && ["emitida", "emitindo", "cancelada"].includes(String(ag.status_fiscal || ""))) {
       toast("Atenção", "Agendamento com status fiscal inválido: " + ag.status_fiscal);
       return;
     }
@@ -6005,6 +6021,11 @@ async function confirmarEmissaoNota() {
       valor_servico: valorServico,
       paciente_cpf: cpfCnpj
     };
+    if (_subst) {   // v8.18
+      payload.substituir = true;
+      payload.motivo_codigo = _subst.codigo;
+      payload.motivo_texto = _subst.texto;
+    }
 
     // v3.81 (segurança fiscal): supaFetch envia o JWT do usuário LOGADO
     // (role=authenticated) e o apikey do projeto — não mais a chave anon
@@ -6017,6 +6038,20 @@ async function confirmarEmissaoNota() {
     });
 
     const data = await resp.json().catch(function(){ return {}; });
+
+    // v8.18 — SUBSTITUIÇÃO: o atendimento continua "emitida" com a nota original
+    // até a nova ser autorizada; acompanhamento por polling próprio.
+    if (_subst) {
+      if (!resp.ok && !data.pendente) {
+        console.error("emitir-nfse-focus (substituição):", data);
+        toast("Erro", (data && (data.error || data.message)) || "Falha ao enviar a substituição.");
+        return;
+      }
+      if (typeof fecharModalEmitirNota === "function") fecharModalEmitirNota();
+      toast("⏳", "Substituição enviada. A nota original continua válida até a nova ser autorizada.");
+      if (data.reference) iniciarPollingSubstituicao(agendamentoId, data.nfse_id, data.reference);
+      return;
+    }
 
     // v3.84 (#2): estado PENDENTE (Focus instável — transporte/429/5xx). A nota
     // já foi RESERVADA no servidor; em vez de tratar como erro, inicia o polling
@@ -6430,6 +6465,129 @@ async function marcarRealizadoEEmitir(agendamentoId){
     toast("Erro", e?.message || "Falha ao marcar realizado e emitir.");
     return false;
   }
+}
+
+// ⚡ v8.18 — SUBSTITUIÇÃO DE NFS-e (Ambiente Nacional)
+var NF_SUBST = null;   // { codigo, texto } quando o modal de emissão está em modo substituição
+var NFSE_MOTIVOS_SUBST = [
+  "Correcao dos exames/servicos descritos na nota",
+  "Correcao do valor da nota",
+  "Correcao dos dados do tomador (nome, CPF ou endereco)",
+  "Inclusao do pagador como tomador da nota",
+];
+function _nfSubstModo(m){
+  NF_SUBST = m || null;
+  var t = document.getElementById("nfModalTitulo");
+  var b = document.getElementById("nfBtnConfirmar");
+  if(t) t.textContent = NF_SUBST ? "Substituir NFS-e" : "Emitir NFS-e";
+  if(b) b.textContent = NF_SUBST ? "Confirmar substituição" : "Confirmar emissão";
+}
+function _escolherMotivoSubst(ag){
+  return new Promise(function(resolve){
+    var html = '<div style="font-size:13px;opacity:.85;margin-bottom:6px">Paciente: <b>' +
+      String(ag.pac || "").replace(/[<>&]/g, "") + '</b> &nbsp;·&nbsp; Nota nº <b>' +
+      String(ag.numero_nfse || "-").replace(/[<>&]/g, "") + '</b></div>' +
+      '<div style="font-size:12px;opacity:.75;margin-bottom:10px">Antes de continuar, edite o atendimento (exames, valor ou pagador) se precisar. ' +
+      'A nota nova sai com os dados ATUAIS do atendimento e substitui a anterior quando for autorizada.</div>';
+    NFSE_MOTIVOS_SUBST.forEach(function(txt, i){
+      html += '<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 6px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06)">' +
+        '<input type="radio" name="nfMotSubst" value="' + i + '" style="margin-top:3px"><span>' + txt + '</span></label>';
+    });
+    html += '<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 6px;cursor:pointer">' +
+      '<input type="radio" name="nfMotSubst" value="outro" style="margin-top:3px"><span>Outro motivo (escrever)</span></label>' +
+      '<textarea id="nfMotSubstOutro" rows="2" maxlength="255" placeholder="Descreva o motivo (mínimo 15 caracteres)" ' +
+      'style="width:100%;box-sizing:border-box;margin-top:4px;display:none"></textarea>';
+    openM("🔁 Motivo da substituição", html, [
+      { lbl: "Voltar", cls: "btno", fn: function(){ closeM(); resolve(null); } },
+      { lbl: "Continuar", cls: "btng", fn: function(){
+          var sel = document.querySelector('input[name="nfMotSubst"]:checked');
+          if(!sel){ toast("⚠️", "Escolha um motivo."); return; }
+          var txt;
+          if(sel.value === "outro"){
+            txt = String((document.getElementById("nfMotSubstOutro") || {}).value || "").trim();
+            if(txt.length < 15){ toast("⚠️", "Descreva o motivo (mínimo 15 caracteres)."); return; }
+          } else txt = NFSE_MOTIVOS_SUBST[Number(sel.value)];
+          closeM(); resolve({ codigo: "99", texto: txt.slice(0, 255) });
+      } },
+    ]);
+    var radios = document.querySelectorAll('input[name="nfMotSubst"]');
+    for(var i = 0; i < radios.length; i++){
+      radios[i].onchange = function(){
+        var ta = document.getElementById("nfMotSubstOutro");
+        if(ta){ ta.style.display = (this.value === "outro") ? "block" : "none"; if(this.value === "outro") ta.focus(); }
+      };
+    }
+  });
+}
+async function substituirNotaManual(agendamentoId){
+  try{
+    var ag = (ags || []).find(function(x){ return x.id === agendamentoId; });
+    if(!ag || !ag.nfse_id){ toast("Atenção", "Esse agendamento não possui NFS-e vinculada."); return; }
+    if(typeof recarregarAgFresh === "function"){ try{ await recarregarAgFresh(agendamentoId); }catch(e){} }
+    ag = (ags || []).find(function(x){ return x.id === agendamentoId; }) || ag;
+    var rNf = await supa.from("nfse_emitidas").select("ambiente,data_emissao,created_at,status_fiscal").eq("id", ag.nfse_id).single();
+    if(rNf.error || !rNf.data){ toast("Erro", "Não foi possível carregar a NFS-e."); return; }
+    if(rNf.data.status_fiscal !== "emitida"){ toast("Atenção", "Só é possível substituir uma nota emitida."); return; }
+    var nf = rNf.data;
+    var desde = new Date(CANCELAMENTO_ADN_DESDE).getTime();
+    var quando = new Date(nf.data_emissao || nf.created_at || 0).getTime();
+    if(nf.ambiente !== "nacional_producao" || !(quando >= desde)){
+      toast("Substituição indisponível", "Esta nota foi emitida antes de 01/11/2026 pelo sistema da prefeitura (ISS.net). Use o site da prefeitura.");
+      return;
+    }
+    var mot = await _escolherMotivoSubst(ag);
+    if(!mot) return;
+    abrirModalEmitirNota(ag.id);
+    _nfSubstModo(mot);
+  }catch(e){
+    console.error("substituirNotaManual:", e);
+    toast("Erro", "Falha ao iniciar substituição: " + (e.message || String(e)));
+  }
+}
+function iniciarPollingSubstituicao(agId, nfseIdNova, reference){
+  var chave = "subst_" + agId;
+  if(_nfsePollings[chave]) clearInterval(_nfsePollings[chave]);
+  var tentativas = 0, consultando = false, intervalId = null;
+  function parar(){ if(intervalId) clearInterval(intervalId); if(_nfsePollings[chave] === intervalId) delete _nfsePollings[chave]; }
+  async function atualizarTela(){
+    if(typeof recarregarAgFresh === "function"){ try{ await recarregarAgFresh(agId); }catch(e){} }
+    if(typeof rndAg === "function") rndAg();
+    if(typeof renderAtendimento === "function") renderAtendimento();
+  }
+  var executar = async function(){
+    if(_nfsePollings[chave] !== intervalId || consultando) return;
+    consultando = true; tentativas++;
+    try{
+      if(tentativas > 20){
+        parar();
+        toast("Atenção", "A substituição ainda não foi confirmada. A nota original continua válida até a nova ser autorizada.");
+        return;
+      }
+      var r = await supaFetch(API_BASE + "/consultar-nfse-focus", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reference: reference })
+      });
+      if(r.status === 401 || r.status === 403){ parar(); toast("Sessão", "Sessão expirada — confira a substituição depois."); return; }
+      if(!r.ok) return;
+      var d = await r.json().catch(function(){ return {}; });
+      if(d.status_mapeado === "emitida"){
+        parar();
+        await atualizarTela();
+        var num = (d.focus && (d.focus.numero || d.focus.numero_nfse)) || "?";
+        toast("🧾", "Nota substituída! Nova nota nº " + num + " autorizada.");
+        try{ enviarNFSePorEmail(nfseIdNova, "automatico").catch(function(){}); }catch(e){}
+      } else if(d.status_mapeado === "rejeitada"){
+        parar();
+        await atualizarTela();
+        var erros = (d.focus && Array.isArray(d.focus.erros)) ? d.focus.erros.map(function(e){ return (e.codigo ? "[" + e.codigo + "] " : "") + (e.mensagem || ""); }).join(" | ") : "";
+        toast("Substituição rejeitada", (erros || "A prefeitura/ADN recusou a nota substituta.") + " A nota original continua válida.");
+      }
+    }catch(e){ console.log("Polling substituição erro:", e); }
+    finally{ consultando = false; }
+  };
+  intervalId = setInterval(executar, 10000);
+  _nfsePollings[chave] = intervalId;
+  executar();
 }
 
 async function cancelarNotaManual(agendamentoId){
@@ -8192,7 +8350,7 @@ async function dbResgatar(dentId,premId,pts){
 <div class="mo" id="mEmitirNota">
   <div class="mb">
     <div class="mh">
-      <div class="mt">Emitir NFS-e</div>
+      <div class="mt" id="nfModalTitulo">Emitir NFS-e</div>
       <button class="mx" onclick="fecharModalEmitirNota()">×</button>
     </div>
 
@@ -8291,7 +8449,7 @@ async function dbResgatar(dentId,premId,pts){
 
     <div class="mf">
       <button class="btn btno" onclick="fecharModalEmitirNota()">Cancelar</button>
-      <button class="btn btng" onclick="confirmarEmissaoNota()">Confirmar emissão</button>
+      <button class="btn btng" id="nfBtnConfirmar" onclick="confirmarEmissaoNota()">Confirmar emissão</button>
     </div>
   </div>
 </div>
@@ -11516,6 +11674,15 @@ function agEV(ev, id) {
         fn:function(){
           closeM();
           cancelarNotaManual(ag.id);
+        }
+      });
+      // v8.18 — substituição (ADN): corrige a nota sem cancelar antes.
+      btns.push({
+        lbl:"🔁 Substituir nota",
+        cls:"btno",
+        fn:function(){
+          closeM();
+          substituirNotaManual(ag.id);
         }
       });
     })(a);
