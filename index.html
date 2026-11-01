@@ -237,6 +237,19 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-01 (v8.21): CANCELAR NFS-e SÓ PARA ADMIN — botão "🛑 Cancelar nota" aparece só
+              com CU.role === "admin"; cancelarNotaManual() recusa outros papéis.
+              Servidor: cancelar-nfse-focus v8 exige papel admin (agenda → 403).
+
+  2026-11-01 (v8.20): Botão "🔁 Substituir nota" DESATIVADO (NFSE_SUBSTITUICAO_ATIVA=false):
+              para ME/EPP o Sistema Nacional não deixa mudar valor nem tomador na
+              substituição, então o fluxo padrão é CANCELAR + EMITIR NOVA (v8.19).
+              Código da substituição mantido (dormente) e com motivos/aviso ajustados.
+  Substituição — regra do Sistema Nacional p/ ME/EPP (E0063): VALOR,
+              CPF/CNPJ do tomador e competência NÃO podem mudar. Motivos ajustados
+              (descrição, endereço/contato, nome) e aviso no modal: mudou valor ou
+              tomador → cancelar e emitir nova nota. emitir-nfse-focus v61 também barra.
+
   2026-11-01 (v8.19): REEMISSÃO APÓS CANCELAMENTO — atendimento com nota cancelada
               pode emitir nova nota (emitir-nfse-focus v60 confere que a nota vinculada
               está cancelada/substituída). confirmarEmissaoNota não bloqueia mais
@@ -4228,7 +4241,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.19 - 2026-11-01";
+var APP_VERSION = "v8.21 - 2026-11-01";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -6477,11 +6490,12 @@ async function marcarRealizadoEEmitir(agendamentoId){
 
 // ⚡ v8.18 — SUBSTITUIÇÃO DE NFS-e (Ambiente Nacional)
 var NF_SUBST = null;   // { codigo, texto } quando o modal de emissão está em modo substituição
+var NFSE_SUBSTITUICAO_ATIVA = false;   // v8.20 — botão oculto; fluxo padrão = cancelar + emitir nova
+// v8.20 — ME/EPP: substituição NÃO pode mudar valor, CPF/CNPJ do tomador nem competência (E0063).
 var NFSE_MOTIVOS_SUBST = [
-  "Correcao dos exames/servicos descritos na nota",
-  "Correcao do valor da nota",
-  "Correcao dos dados do tomador (nome, CPF ou endereco)",
-  "Inclusao do pagador como tomador da nota",
+  "Correcao da descricao dos exames/servicos na nota",
+  "Correcao do endereco ou contato do tomador",
+  "Correcao do nome do tomador",
 ];
 function _nfSubstModo(m){
   NF_SUBST = m || null;
@@ -6495,8 +6509,9 @@ function _escolherMotivoSubst(ag){
     var html = '<div style="font-size:13px;opacity:.85;margin-bottom:6px">Paciente: <b>' +
       String(ag.pac || "").replace(/[<>&]/g, "") + '</b> &nbsp;·&nbsp; Nota nº <b>' +
       String(ag.numero_nfse || "-").replace(/[<>&]/g, "") + '</b></div>' +
-      '<div style="font-size:12px;opacity:.75;margin-bottom:10px">Antes de continuar, edite o atendimento (exames, valor ou pagador) se precisar. ' +
-      'A nota nova sai com os dados ATUAIS do atendimento e substitui a anterior quando for autorizada.</div>';
+      '<div style="font-size:12px;opacity:.75;margin-bottom:6px">A nota nova sai com os dados ATUAIS do atendimento e substitui a anterior quando for autorizada.</div>' +
+      '<div style="font-size:12px;margin-bottom:10px;padding:8px;border-radius:8px;background:rgba(255,180,0,.12)">⚠️ Pelo Sistema Nacional, a substituição <b>não pode mudar o VALOR nem o CPF/CNPJ do tomador</b>. ' +
+      'Se os exames/valor ou o pagador mudaram, use <b>🛑 Cancelar nota</b> e depois emita uma nova.</div>';
     NFSE_MOTIVOS_SUBST.forEach(function(txt, i){
       html += '<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 6px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06)">' +
         '<input type="radio" name="nfMotSubst" value="' + i + '" style="margin-top:3px"><span>' + txt + '</span></label>';
@@ -6600,6 +6615,8 @@ function iniciarPollingSubstituicao(agId, nfseIdNova, reference){
 
 async function cancelarNotaManual(agendamentoId){
   try{
+    // v8.21 — cancelamento de NFS-e restrito ao administrador.
+    if(!CU || CU.role !== "admin"){ toast("🔒", "Somente administrador pode cancelar nota fiscal."); return; }
     var ag = (ags || []).find(function(x){ return x.id === agendamentoId; });
     if(!ag || !ag.nfse_id){
       toast("Atenção", "Esse agendamento não possui NFS-e vinculada.");
@@ -11682,7 +11699,7 @@ function agEV(ev, id) {
     // (ADN desde 01/11 cancela pelo App; ISS.net orienta cancelar na prefeitura).
     {
     (function(ag){
-      btns.push({
+      if (CU && CU.role === "admin") btns.push({   // v8.21 — só admin cancela NFS-e
         lbl:"🛑 Cancelar nota",
         cls:"btnr",
         fn:function(){
@@ -11690,8 +11707,8 @@ function agEV(ev, id) {
           cancelarNotaManual(ag.id);
         }
       });
-      // v8.18 — substituição (ADN): corrige a nota sem cancelar antes.
-      btns.push({
+      // v8.18 — substituição (ADN): corrige a nota sem cancelar antes. v8.20: oculto por padrão.
+      if (NFSE_SUBSTITUICAO_ATIVA) btns.push({
         lbl:"🔁 Substituir nota",
         cls:"btno",
         fn:function(){
