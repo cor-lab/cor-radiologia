@@ -237,6 +237,12 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-05 (v8.22): PONTOS VOLTAM A PAGAR CONVÊNIO. _somaParticularAg() e a RPC
+              aplicar_desconto_pontos aceitam itens de convênio pelo preço OFICIAL do
+              convênio (ex.: Panorâmica SUS = R$ 40). Particular segue pelo preço de
+              tabela cheio (trava v3.71 só nos particulares). Fora: UNIMED/SYNS (fora
+              do faturamento) e Sedex/Tele Entrega. Mensagens do modal atualizadas.
+
   2026-11-01 (v8.21): CANCELAR NFS-e SÓ PARA ADMIN — botão "🛑 Cancelar nota" aparece só
               com CU.role === "admin"; cancelarNotaManual() recusa outros papéis.
               Servidor: cancelar-nfse-focus v8 exige papel admin (agenda → 403).
@@ -4241,7 +4247,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.21 - 2026-11-01";
+var APP_VERSION = "v8.22 - 2026-11-05";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -11328,6 +11334,8 @@ function dpFiltrarDent(){
   dpAtualizaSaldo();
 }
 // v3.54 — PONTOS SÓ PAGAM VALORES PARTICULARES (Particular/Tabela).
+// v8.22 — REVISTO: pontos pagam particular (preço de tabela) E convênio (preço do
+// convênio). Ficam fora só UNIMED/SYNS (fora do faturamento) e Sedex/Tele Entrega.
 // v3.55 — e SEMPRE pelo preço OFICIAL da tabela (fex(id).p = exames_tipos.
 // preco_particular). Edições manuais de valor no atendimento são ignoradas
 // na base do desconto — e a RPC revalida no banco na hora de debitar.
@@ -11340,11 +11348,19 @@ function _somaParticularAg(a){
   var s = 0, sEd = 0, difere = false;
   itens.forEach(function(it){
     var foraFat = (typeof itemEhConvenioForaDoFaturamento === "function") ? itemEhConvenioForaDoFaturamento(it) : false;
-    var particular = (typeof itemTemDesconto === "function") ? itemTemDesconto(it) : !it.convenio_id;
-    if(!foraFat && particular){
+    var terceir = (typeof isItemTerceirizado === "function") ? isItemTerceirizado(it) : false;
+    // v8.22 — convênio volta a valer (pelo preço do CONVÊNIO). Fora: UNIMED/SYNS e Sedex/Tele Entrega.
+    if(!foraFat && !terceir){
       var ex = fex(it.exame_id);
       var editado = Number(it.preco || 0);
-      var oficial = Number((ex && ex.p) || 0);
+      var particular = (typeof itemTemDesconto === "function") ? itemTemDesconto(it) : !it.convenio_id;
+      var oficial;
+      if(particular){
+        oficial = Number((ex && ex.p) || 0);
+      } else {
+        var cvP = it.convenio_id ? fconv(String(it.convenio_id)) : null;
+        oficial = (cvP && cvP.pr && cvP.pr[it.exame_id] != null) ? Number(cvP.pr[it.exame_id]) : editado;
+      }
       if(!(oficial > 0)) oficial = editado;   // exame fora do catálogo: usa o do item
       s += oficial;
       sEd += editado;
@@ -11394,7 +11410,7 @@ function abrirModalDescontoPontos(id){
   var fmtR = function(v){ return "R$ " + Number(v).toFixed(2).replace(".", ","); };
 
   if(total <= 0.009){
-    toast("🪙 Bloqueado", "Desconto de pontos vale SÓ para exames com valor PARTICULAR (Particular/Tabela). Este atendimento só tem itens de convênio.");
+    toast("🪙 Bloqueado", "Desconto de pontos não vale para este atendimento: só tem itens UNIMED/SYNS ou de entrega.");
     // v3.56 — se o atendimento ficou sem nenhum método, reabre com aviso vermelho
     if(!String((a.metodo_pagamento || "")).trim()){ window._mpgAlertaId = id; }
     agEV(id);
@@ -11404,9 +11420,9 @@ function abrirModalDescontoPontos(id){
 
   var b = "<div style='display:flex;flex-direction:column;gap:12px;font-size:.9rem'>";
   b += "<div style='padding:10px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:10px'>";
-  b += "Valor <b>particular OFICIAL</b> (tabela, sem desconto): <b>" + fmtR(total) + "</b>";
-  if(basePart.difere) b += "<div style='font-size:.76rem;color:#f59e0b;margin-top:4px'>⚠️ O atendimento tem valor editado (R$ " + basePart.editado.toFixed(2).replace(".", ",") + "), mas o desconto de pontos usa o preço OFICIAL da tabela.</div>";
-  if(brutoTot > basePart.editado + 0.009) b += "<div style='font-size:.76rem;color:#f59e0b;margin-top:4px'>⚠️ Itens de convênio ficam FORA do desconto de pontos.</div>";
+  b += "Valor <b>OFICIAL</b> que pode ser pago com pontos (particular pela tabela, convênio pelo preço do convênio): <b>" + fmtR(total) + "</b>";
+  if(basePart.difere) b += "<div style='font-size:.76rem;color:#f59e0b;margin-top:4px'>⚠️ O atendimento tem valor editado (R$ " + basePart.editado.toFixed(2).replace(".", ",") + "), mas o desconto de pontos usa o preço OFICIAL (tabela/convênio).</div>";
+  if(brutoTot > basePart.editado + 0.009) b += "<div style='font-size:.76rem;color:#f59e0b;margin-top:4px'>⚠️ Itens UNIMED/SYNS e de entrega ficam FORA do desconto de pontos.</div>";
   b += "</div>";
   b += "<div class='field'><label>Debitar pontos de</label>";
   b += "<input id='dpDentBusca' placeholder='Buscar dentista...' oninput='dpFiltrarDent()' style='margin-bottom:6px'>";
@@ -11417,7 +11433,7 @@ function abrirModalDescontoPontos(id){
   b += "<label style='display:flex;align-items:center;gap:8px;cursor:pointer'><input type='radio' name='dpModo' value='parcial' onchange=\"document.getElementById('dpValorWrap').style.display='block';document.getElementById('dpValor').focus()\"> Desconto <b>PARCIAL</b></label>";
   b += "<div id='dpValorWrap' style='display:none'><div class='field'><label>Valor do desconto (R$)</label><input id='dpValor' type='number' min='0.01' step='0.01' max='" + total.toFixed(2) + "' placeholder='0,00' oninput='dpAtualizaRestante()'></div><div id='dpRestInfo' style='font-size:.8rem;color:var(--gr);margin-top:4px'></div></div>";
   b += "</div>";
-  b += "<div style='font-size:.76rem;color:var(--gr)'>1 ponto = R$ 1,00, sobre o preço particular CHEIO (sem desconto à vista). No desconto parcial, o saldo restante é pago em dinheiro e aí sim valem os descontos/parcelamentos normais. Desmarcar \"🪙 Pontos\" estorna.</div>";
+  b += "<div style='font-size:.76rem;color:var(--gr)'>1 ponto = R$ 1,00. Particular: preço de tabela CHEIO (sem desconto à vista). Convênio: preço do convênio (ex.: Panorâmica SUS = R$ 40). No desconto parcial, o saldo restante é pago em dinheiro e aí sim valem os descontos/parcelamentos normais. Desmarcar \"🪙 Pontos\" estorna.</div>";
   b += "</div>";
 
   openM("🪙 Desconto de Pontos", b, [
@@ -12547,7 +12563,7 @@ async function confAg(isAtendimento) {
     if (metodosNovoAt.indexOf("pontos") !== -1) {
       var _basePts = _somaParticularAg({ exames: itens });
       if (_basePts.oficial <= 0.009) {
-        toast("🪙 Bloqueado", "Desconto de pontos vale SÓ para exames com valor PARTICULAR (Particular/Tabela). Desmarque 🪙 Pontos ou ajuste o convênio dos exames.");
+        toast("🪙 Bloqueado", "Desconto de pontos não vale para itens UNIMED/SYNS ou de entrega. Desmarque 🪙 Pontos ou ajuste o convênio dos exames.");
         var _rowMpg2 = document.getElementById("pMetodoPgRow");
         if (_rowMpg2) {
           _rowMpg2.style.outline = "2px solid #ef4444";
