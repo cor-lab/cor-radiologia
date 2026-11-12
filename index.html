@@ -237,6 +237,11 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-12 (v8.23): ABA RELACIONAMENTO (admin) — módulo externo relacionamento_cor.js: evolução
+              dos encaminhamentos por dentista (atendimentos realizados), oportunidades e ficha
+              individual. Dados só pelas funções rel_* do Supabase (recusam não-admin).
+              Nada muda no index.html além do APP_VERSION, deste histórico e de 1 linha de script.
+
   2026-11-05 (v8.22): PONTOS VOLTAM A PAGAR CONVÊNIO. _somaParticularAg() e a RPC
               aplicar_desconto_pontos aceitam itens de convênio pelo preço OFICIAL do
               convênio (ex.: Panorâmica SUS = R$ 40). Particular segue pelo preço de
@@ -4247,7 +4252,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.22 - 2026-11-05";
+var APP_VERSION = "v8.23 - 2026-11-12";
 
 // ⚠️ CANCELAMENTO DE NFS-e PELO APPCOR — TEMPORARIAMENTE DESATIVADO (v4.2)
 // Motivo: migração da prefeitura (issnetonline) para o SISTEMA NACIONAL nos
@@ -17813,6 +17818,8 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
      (chat_sw.js só precisa ficar na RAIZ do site, junto deste index.html). -->
 <script src="chat_cor.js?v=20261020a"></script>
 <script src="chat_push.js?v=20260827o"></script>
+<!-- Relacionamento com dentistas (admin) — módulo externo; funções rel_* no Supabase. -->
+<script src="relacionamento_cor.js?v=20261112a"></script>
 <script>
 /* ═══ MONITOR DE CONEXÃO (v4.0) ═══
    Roda no navegador da recepção. A cada 20s testa o contato com o Supabase.
