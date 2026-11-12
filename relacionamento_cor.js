@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    relacionamento_cor.js — appCOR · Módulo RELACIONAMENTO · Etapa 1
-   v20261112a
+   v20261112b — botão WhatsApp Web na ficha (mensagem pronta, envio manual)
 
    Aba exclusiva de ADMINISTRADORES: evolução dos encaminhamentos (volume de
    ATENDIMENTOS REALIZADOS), lista de oportunidades, ficha individual do
@@ -11,7 +11,8 @@
    • NÃO lê o array local de agendamentos (2.000 mais recentes). Todos os
      números vêm das funções rel_* no Supabase, que recusam quem não é admin.
    • Erro/timeout NUNCA vira zero: a tela mostra o erro e nenhum número.
-   • Não envia mensagens. Contatos/WhatsApp entram na Etapa 2.
+   • Não envia mensagens sozinho: o botão WhatsApp só ABRE o WhatsApp Web com o
+     texto preenchido; quem envia é a pessoa. Registro de contatos = Etapa 2.
    • Desligar: configuracoes.rel_ativo = false (esconde a aba).
    ═══════════════════════════════════════════════════════════════════════ */
 (function () {
@@ -663,6 +664,52 @@
     carregar().then(function () { if (reabrir) abrirFicha(id); });
   }
 
+  /* ── WhatsApp Web (abre com o texto pronto; o envio é manual) ────── */
+  function telWhats(tel) {         /* só aceita DDD+número ou 55+DDD+número; não completa por chute */
+    var t = String(tel || "").replace(/\D/g, "");
+    if (t.length === 10 || t.length === 11) t = "55" + t;
+    if ((t.length !== 12 && t.length !== 13) || t.slice(0, 2) !== "55") return "";
+    return t;
+  }
+  function primeiroNome(nome) {
+    var p = String(nome || "").trim().split(/\s+/)[0] || "";
+    return p ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : "";
+  }
+  function msgPadrao(C) {
+    var eu = primeiroNome(typeof CU !== "undefined" && CU ? CU.nome : "");
+    return "Olá, Dr(a). " + primeiroNome(C.nome) + "! Aqui é " + (eu || "a equipe") +
+      ", da COR - Centro Odontológico de Radiologia. Estamos ouvindo nossos parceiros para entender " +
+      "como podemos melhorar sua rotina de exames. Podemos conversar por aqui?";
+  }
+  function dlgWhats() {
+    var F = S.ficha;
+    if (!F) return;
+    var C = F.cadastro, t = telWhats(C.telefone);
+    if (!t) { avisar("⚠️", "Telefone do cadastro inválido para WhatsApp"); return; }
+    var avisos = "";
+    if (F.tel_compartilhado_com && F.tel_compartilhado_com.length)
+      avisos += "<div class='rel-aviso'>⚠️ Este telefone também está em outro(s) cadastro(s): " +
+        F.tel_compartilhado_com.map(function (o) { return h(o.nome); }).join(", ") + ". Confirme com quem vai falar.</div>";
+    if (F.exclusao && F.exclusao.ativo)
+      avisos += "<div class='rel-aviso'>Este cadastro está fora do foco comercial.</div>";
+    openM("Mensagem pelo WhatsApp Web",
+      avisos +
+      "<p style='color:var(--gr);font-size:.82rem;margin-bottom:10px'>Para <b style='color:var(--wh)'>" + h(C.nome) + "</b> · +" + t.slice(0, 2) + " " + t.slice(2, 4) + " " + t.slice(4) +
+      "<br>Confira e ajuste o texto. Ao continuar, o WhatsApp Web abre com a mensagem preenchida — <b>o envio é feito por você lá</b>.</p>" +
+      "<div class='field'><label>Mensagem</label><textarea id='relWaMsg' style='min-height:150px' maxlength='1000'>" + h(msgPadrao(C)) + "</textarea></div>" +
+      "<p style='color:#fdba74;font-size:.76rem;margin-top:10px'>Confirme que o WhatsApp Web deste navegador está no número da clínica (55 99166-8228). " +
+      "Telefone de cadastro não garante que o número é do dentista nem que ele aceita ser contatado.</p>",
+      [{ lbl: "Cancelar", cls: "btno", fn: closeM },
+       { lbl: "Abrir WhatsApp Web", cls: "btng", fn: function () {
+          var msg = (document.getElementById("relWaMsg").value || "").trim();
+          if (!msg) { avisar("⚠️", "Escreva a mensagem"); return; }
+          var w = window.open("https://web.whatsapp.com/send?phone=" + t + "&text=" + encodeURIComponent(msg), "cor_whatsapp_web");
+          if (!w) { avisar("⚠️", "O navegador bloqueou a nova aba. Libere pop-ups para o App COR."); return; }
+          closeM();
+          avisar("💬", "WhatsApp Web aberto — confira e envie por lá");
+       } }]);
+  }
+
   /* ── ficha individual ────────────────────────────────────────────── */
   function soma(arr, a, b) { var t = 0, i; for (i = a; i < b; i++) t += arr[i].n; return t; }
   function renderFicha(el) {
@@ -685,7 +732,8 @@
          (C.cro ? " · CRO " + h(C.cro) : " · sem CRO no cadastro") + (C.especialidade ? " · " + h(C.especialidade) : "") + (C.cidade ? " · " + h(C.cidade) : "") +
          "<br>Telefone: " + (C.telefone ? h(C.telefone) + " <span class='rel-mini'>(cadastro; não confirma WhatsApp nem autorização de contato)</span>" : "<span style='color:#fdba74'>não cadastrado</span>") +
          (C.email ? "<br>E-mail: " + h(C.email) : "") + "</div></div>" +
-         "<div>" + (foraFoco
+         "<div style='display:flex;flex-wrap:wrap;gap:8px'>" +
+         (telWhats(C.telefone) ? "<button class='btn btng bsm' data-rel='whats'>💬 WhatsApp Web</button>" : "") + (foraFoco
             ? "<button class='btn btng bsm' data-rel='reincluir' data-id='" + C.id + "' data-nome='" + h(C.nome) + "'>Reincluir no foco</button>"
             : "<button class='btn btnp bsm' data-rel='excluir' data-id='" + C.id + "' data-nome='" + h(C.nome) + "'>Excluir do foco comercial</button>") + "</div></div>";
 
@@ -736,6 +784,7 @@
     else if (a === "ficha") { ev.stopPropagation(); abrirFicha(id); }
     else if (a === "voltar") fecharFicha();
     else if (a === "meses") { S.fichaMeses = parseInt(v, 10); render(); }
+    else if (a === "whats") { ev.stopPropagation(); dlgWhats(); }
     else if (a === "excluir") { ev.stopPropagation(); dlgExcluir(id, t.getAttribute("data-nome")); }
     else if (a === "reincluir") { ev.stopPropagation(); dlgReincluir(id, t.getAttribute("data-nome")); }
   }
