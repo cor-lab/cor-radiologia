@@ -1,6 +1,8 @@
 /* ═══════════════════════════════════════════════════════════════════════
    relacionamento_cor.js — appCOR · Módulo RELACIONAMENTO · Etapa 1
-   v20261112e — ficha: registrar contato/recusa, histórico, recusa bloqueia o WhatsApp;
+   v20261112f — pendências (retornos vencidos, reclamações em aberto), situação de contato
+                na lista de oportunidades e aba Resultados;
+                ficha: registrar contato/recusa, histórico, recusa bloqueia o WhatsApp;
                 WhatsApp Web com 5 variações de texto e contador diário (avisa, não bloqueia)
 
    Aba exclusiva de ADMINISTRADORES: evolução dos encaminhamentos (volume de
@@ -34,7 +36,10 @@
     painel: null,
     lista: null,
     exclusoes: null,
-    filtro: { classe: "atencao", busca: "", base10: true, tel: "" },
+    pend: null, pendErro: null,
+    contatos: null,
+    result: null, resultErro: null,
+    filtro: { classe: "atencao", busca: "", base10: true, tel: "", contato: "" },
     ordem: { col: "perda", dir: -1 },
     pag: 0,
     fichaId: null,
@@ -345,6 +350,7 @@
       S.painel = v[0]; S.lista = v[1]; S.exclusoes = v[2];
       S.carregando = false;
       render();
+      return carregarExtras();
     }).catch(function (e) {
       /* falha NUNCA vira zero: limpa tudo e mostra o erro */
       S.painel = null; S.lista = null; S.exclusoes = null;
@@ -352,6 +358,29 @@
       S.erro = (e && e.message) || "erro desconhecido";
       render();
     });
+  }
+  /* pendências e situação de contato: se falharem, o painel continua de pé e a aba mostra o erro */
+  function carregarExtras() {
+    var a = rpc("rel_pendencias").then(function (d) { S.pend = d; S.pendErro = null; },
+      function (e) { S.pend = null; S.pendErro = (e && e.message) || "erro desconhecido"; });
+    var b = rpc("rel_contatos_resumo").then(function (d) {
+      var m = {}, i; for (i = 0; i < d.length; i++) m[d[i].id] = d[i]; S.contatos = m;
+    }, function () { S.contatos = null; });
+    S.result = null; S.resultErro = null;
+    return Promise.all([a, b]).then(function () {
+      if (!S.fichaId) render();
+      if (S.sub === "result") carregarResultados();
+    });
+  }
+  function carregarResultados() {
+    return rpc("rel_resultados").then(function (d) { S.result = d; S.resultErro = null; if (S.sub === "result" && !S.fichaId) render(); },
+      function (e) { S.result = null; S.resultErro = (e && e.message) || "erro desconhecido"; if (S.sub === "result" && !S.fichaId) render(); });
+  }
+  function nVencidas() {
+    var n = 0, i;
+    if (!S.pend) return 0;
+    for (i = 0; i < S.pend.itens.length; i++) if (S.pend.itens[i].vencido) n++;
+    return n;
   }
   function abrirFicha(id) {
     var pg = document.getElementById("page-" + PAG);
@@ -430,12 +459,17 @@
     s += "<div class='rel-tabs'>" +
          "<button data-rel='sub' data-v='geral' class='" + (S.sub === "geral" ? "on" : "") + "'>Visão geral</button>" +
          "<button data-rel='sub' data-v='lista' class='" + (S.sub === "lista" ? "on" : "") + "'>Oportunidades</button>" +
+         "<button data-rel='sub' data-v='pend' class='" + (S.sub === "pend" ? "on" : "") + "'>Pendências" + (S.pend ? " (" + S.pend.itens.length + ")" : "") +
+           (nVencidas() ? " <span class='badge br' style='padding:1px 7px;font-size:.66rem'>" + nVencidas() + " vencida" + (nVencidas() > 1 ? "s" : "") + "</span>" : "") + "</button>" +
+         "<button data-rel='sub' data-v='result' class='" + (S.sub === "result" ? "on" : "") + "'>Resultados</button>" +
          "<button data-rel='sub' data-v='exclusoes' class='" + (S.sub === "exclusoes" ? "on" : "") + "'>Fora do foco (" + nExc + ")</button></div>";
     s += "<div id='relCorpo'></div>";
     el.innerHTML = s;
 
     if (S.sub === "geral") renderGeral();
     else if (S.sub === "lista") renderLista();
+    else if (S.sub === "pend") renderPendencias();
+    else if (S.sub === "result") renderResultados();
     else renderExclusoes();
   }
 
@@ -450,7 +484,16 @@
     var perAtu = dataBR(P.atual_ini) + " a " + dataBR(diaAnterior(P.atual_fim));
     var perAnt = dataBR(P.anterior_ini) + " a " + dataBR(diaAnterior(P.anterior_fim));
     var nQueda = contar("queda_acentuada"), nZero = contar("sem_encaminhamentos"), nVolt = contar("retomou_mes");
-    var s = "<div class='rel-kpis'>";
+    var s = "";
+    if (S.pend && S.pend.itens.length) {
+      var nv = nVencidas(), nr = 0, ip;
+      for (ip = 0; ip < S.pend.itens.length; ip++) if (S.pend.itens[ip].tipo === "reclamacao") nr++;
+      s += "<div class='" + (nv ? "rel-erro" : "rel-aviso") + "' style='margin-bottom:14px;cursor:pointer' data-rel='sub' data-v='pend'>" +
+           (nv ? "⏰ <b>" + nv + " retorno" + (nv > 1 ? "s" : "") + " vencido" + (nv > 1 ? "s" : "") + "</b> · " : "") +
+           num(S.pend.itens.length) + " pendência" + (S.pend.itens.length > 1 ? "s" : "") + " em aberto" +
+           (nr ? " · " + nr + " reclamaç" + (nr > 1 ? "ões" : "ão") + " sem conclusão" : "") + " — clique para ver</div>";
+    }
+    s += "<div class='rel-kpis'>";
     s += "<div class='rel-kpi'><div class='l'>Atendimentos realizados · 12 meses</div><div class='v'>" + num(T.atual12) + "</div>" +
          "<div class='s'>" + perAtu + "<br>12 meses anteriores: " + num(T.anterior12) + " · " + sinal(T.atual12 - T.anterior12) + " (" + pct(T.atual12, T.anterior12) + ")</div></div>";
     s += "<div class='rel-kpi'><div class='l'>Solicitantes distintos · 12 meses</div><div class='v'>" + num(T.solic_atual12) + "</div>" +
@@ -544,6 +587,14 @@
       if (f.tel === "com" && !x.tem_tel) return false;
       if (f.tel === "sem" && x.tem_tel) return false;
       if (f.tel === "comp" && !x.tel_compart) return false;
+      if (f.contato) {
+        var ct = S.contatos ? S.contatos[x.id] : null;
+        if (f.contato === "nunca" && ct) return false;
+        if (f.contato === "abordado" && !(ct && ct.abordagens > 0)) return false;
+        if (f.contato === "semreg" && !(ct && ct.abordagens > 0 && ct.retornos === 0)) return false;
+        if (f.contato === "pend" && !(ct && ct.pendentes > 0)) return false;
+        if (f.contato === "recusa" && !(ct && ct.recusa)) return false;
+      }
       if (b && String(x.nome || "").toUpperCase().indexOf(b) < 0 && String(x.id) !== b) return false;
       return true;
     });
@@ -572,10 +623,27 @@
     s += "<option value=''" + (f.classe === "" ? " selected" : "") + ">Todas as situações</option></select>" +
       "<select id='relTel'><option value=''>Telefone: todos</option><option value='com'" + (f.tel === "com" ? " selected" : "") + ">Com telefone</option>" +
       "<option value='sem'" + (f.tel === "sem" ? " selected" : "") + ">Sem telefone</option><option value='comp'" + (f.tel === "comp" ? " selected" : "") + ">Telefone compartilhado</option></select>" +
+      "<select id='relContato'><option value=''>Contato: todos</option>" +
+      "<option value='nunca'" + (f.contato === "nunca" ? " selected" : "") + ">Nunca contatado</option>" +
+      "<option value='abordado'" + (f.contato === "abordado" ? " selected" : "") + ">Mensagem já aberta</option>" +
+      "<option value='semreg'" + (f.contato === "semreg" ? " selected" : "") + ">Mensagem aberta, sem retorno registrado</option>" +
+      "<option value='pend'" + (f.contato === "pend" ? " selected" : "") + ">Com pendência</option>" +
+      "<option value='recusa'" + (f.contato === "recusa" ? " selected" : "") + ">Não quer receber mensagens</option></select>" +
       "<label title='Esconde reduções de quem tinha menos de " + S.painel.limiares.base_pequena + " atendimentos no período anterior'><input type='checkbox' id='relBase'" + (f.base10 ? " checked" : "") + "> Ocultar base pequena (&lt; " + S.painel.limiares.base_pequena + ")</label>" +
       "</div><div id='relTbl'></div>";
     c.innerHTML = s;
     desenharTabela();
+  }
+  function celContato(id) {
+    var c = S.contatos ? S.contatos[id] : null;
+    if (!c) return "<span class='rel-mini'>" + (S.contatos ? "nunca contatado" : "—") + "</span>";
+    var s = "";
+    if (c.recusa) s += "<span class='rel-tag' style='color:#fca5a5'>não quer mensagens</span>";
+    else if (c.retornos > 0 && TIPOS[c.ultimo_tipo]) s += "<span class='rel-tag'>" + TIPOS[c.ultimo_tipo].rot.toLowerCase() + "</span>";
+    else if (c.abordagens > 0) s += "<span class='rel-tag'>mensagem aberta</span>";
+    if (c.pendentes > 0) s += "<span class='rel-tag' style='color:#fdba74'>" + c.pendentes + " pendência" + (c.pendentes > 1 ? "s" : "") + "</span>";
+    var quando = c.ultimo_retorno && (!c.ultima_abordagem || c.ultimo_retorno > c.ultima_abordagem) ? c.ultimo_retorno : c.ultima_abordagem;
+    return s + "<div class='rel-mini'>" + dataHoraBR(quando) + "</div>";
   }
   function desenharTabela() {
     var w = document.getElementById("relTbl");
@@ -596,7 +664,7 @@
             " · Atual: " + dataBR(P.atual_ini) + " a " + dataBR(diaAnterior(P.atual_fim)) + " · 3 meses: últimos 3 meses completos × mesmos meses do ano anterior</div>";
     s += "<div class='tw'><table class='rel-tbl'><tr>" + th("nome", "Solicitante") + th("ant12", "Anterior", "r") + th("atu12", "Atual", "r") +
          th("perda", "Perda", "r") + th("var", "Variação", "r") + th("atu3", "3 meses", "r") + th("parcial", "Mês atual", "r") +
-         th("ultimo", "Último envio") + "<th class='nos'>Situação</th><th class='nos'>Cadastro</th></tr>";
+         th("ultimo", "Último envio") + "<th class='nos'>Situação</th><th class='nos'>Contato</th><th class='nos'>Cadastro</th></tr>";
     for (i = 0; i < pg.length; i++) {
       var x = pg[i], perda = x.ant12 - x.atu12, cl = CLASSES[x.classe] || { rot: x.classe, css: "bgr" };
       var tags = "";
@@ -613,7 +681,7 @@
            "<td class='r' title='Últimos 3 meses completos × mesmos meses do ano anterior'>" + num(x.ant3) + " → " + num(x.atu3) + "</td>" +
            "<td class='r'>" + (x.parcial ? num(x.parcial) : "—") + "</td>" +
            "<td>" + dataBR(x.ultimo) + "</td>" +
-           "<td><span class='badge " + cl.css + "'>" + cl.rot + "</span></td><td>" + (tags || "<span class='rel-mini'>—</span>") + "</td></tr>";
+           "<td><span class='badge " + cl.css + "'>" + cl.rot + "</span></td><td>" + celContato(x.id) + "</td><td>" + (tags || "<span class='rel-mini'>—</span>") + "</td></tr>";
     }
     s += "</table></div>";
     if (pags > 1)
@@ -763,7 +831,7 @@
                 w.location.href = "https://web.whatsapp.com/send?phone=" + t + "&text=" + encodeURIComponent(msg);
                 closeM();
                 avisar("💬", "WhatsApp Web aberto — confira e envie por lá (" + r.hoje + " de " + r.limite + " hoje)");
-                carregarHist(C.id);
+                carregarHist(C.id); carregarExtras();
                 return;
               }
               desistir();
@@ -816,6 +884,9 @@
         if (d.relato) s += "<div style='font-size:.84rem;margin-top:5px;white-space:pre-wrap;word-break:break-word'><span class='rel-mini'>Relato do dentista:</span> " + h(d.relato) + "</div>";
         if (d.nota) s += "<div style='font-size:.82rem;color:#c5d1e3;margin-top:4px;white-space:pre-wrap;word-break:break-word'><span class='rel-mini'>Nota interna:</span> " + h(d.nota) + "</div>";
         if (d.retornar_em) s += "<div class='rel-mini' style='margin-top:4px;color:#fdba74'>Retornar em " + dataBR(d.retornar_em) + "</div>";
+        if (d.resolvido_em) s += "<div style='font-size:.82rem;margin-top:5px;color:#86efac;white-space:pre-wrap;word-break:break-word'>✔ Concluído em " + dataHoraBR(d.resolvido_em) + (d.resolvido_por ? " por " + h(d.resolvido_por) : "") + ": " + h(d.resolucao || "") + "</div>";
+        else if (d.pendente) s += "<div style='margin-top:6px'><button class='btn btng bsm' data-rel='concluir' data-id='" + d.id + "' data-nome='" + h(S.ficha.cadastro.nome) + "'>✔ Concluir</button> " +
+             "<button class='btn btno bsm' data-rel='adiar' data-id='" + d.id + "' data-nome='" + h(S.ficha.cadastro.nome) + "' data-v='" + h(d.retornar_em || "") + "'>Mudar data</button></div>";
         if (d.anulado_em) s += "<div class='rel-mini' style='margin-top:4px'>Recusa revertida em " + dataHoraBR(d.anulado_em) + (d.anulado_por ? " por " + h(d.anulado_por) : "") + ": " + h(d.anulado_motivo || "") + "</div>";
       }
       s += "</div>";
@@ -852,7 +923,7 @@
             p_retornar_em: document.getElementById("relRtData").value || null
           }).then(function () {
             closeM(); avisar("✅", tipo === "recusou" ? "Recusa registrada — WhatsApp desativado para este cadastro" : "Contato registrado");
-            carregarHist(C.id);
+            carregarHist(C.id); carregarExtras();
           }).catch(function (e) { salvando = false; avisar("❌", "Não foi possível salvar: " + e.message); });
        } }]);
     var sel = document.getElementById("relRtTipo");
@@ -874,9 +945,118 @@
           var mot = (document.getElementById("relRvMot").value || "").trim();
           if (mot.length < 3) { avisar("⚠️", "Informe a justificativa"); return; }
           rpc("rel_recusa_reverter", { p_dentista_id: C.id, p_motivo: mot }).then(function () {
-            closeM(); avisar("✅", "Recusa revertida"); carregarHist(C.id);
+            closeM(); avisar("✅", "Recusa revertida"); carregarHist(C.id); carregarExtras();
           }).catch(function (e) { avisar("❌", "Não foi possível salvar: " + e.message); });
        } }]);
+  }
+
+  /* ── pendências (retornos com data e reclamações em aberto) ───────── */
+  function renderPendencias() {
+    var c = document.getElementById("relCorpo");
+    if (!c) return;
+    if (S.pendErro) { c.innerHTML = "<div class='rel-erro'><b>Não foi possível carregar as pendências.</b><br>" + h(S.pendErro) + "</div>"; return; }
+    if (!S.pend) { c.innerHTML = "<div class='rel-vazio'>Carregando pendências…</div>"; return; }
+    var f = S.pendFiltro || "", todos = S.pend.itens, i;
+    var arr = todos.filter(function (x) {
+      if (f === "venc") return x.vencido;
+      if (f === "recl") return x.tipo === "reclamacao";
+      if (f === "fut") return x.retornar_em && !x.vencido;
+      return true;
+    });
+    var s = "<div class='rel-filtros'><select id='relPendFiltro'>" +
+      "<option value=''>Todas (" + todos.length + ")</option>" +
+      "<option value='venc'" + (f === "venc" ? " selected" : "") + ">Vencidas (" + nVencidas() + ")</option>" +
+      "<option value='fut'" + (f === "fut" ? " selected" : "") + ">Com data futura</option>" +
+      "<option value='recl'" + (f === "recl" ? " selected" : "") + ">Reclamações em aberto</option></select>" +
+      "<span class='rel-mini'>Pendência = retorno com data marcada ou reclamação, ainda sem conclusão. Registrar um novo contato não conclui as antigas.</span></div>";
+    if (!arr.length) { c.innerHTML = s + "<div class='rel-vazio'>" + (todos.length ? "Nenhuma pendência neste filtro." : "Nenhuma pendência em aberto. 🎉") + "</div>"; return; }
+    s += "<div class='tw'><table class='rel-tbl'><tr><th class='nos'>Solicitante</th><th class='nos'>Tipo</th><th class='nos'>Prazo</th><th class='nos'>O que o dentista disse</th><th class='nos'>Registrado</th><th class='nos'></th></tr>";
+    for (i = 0; i < arr.length; i++) {
+      var x = arr[i], tp = TIPOS[x.tipo] || { rot: x.tipo, css: "bgr" }, prazo;
+      if (!x.retornar_em) prazo = "<span class='rel-mini'>sem data</span>";
+      else if (x.dias > 0) prazo = "<span class='badge br'>Vencido há " + x.dias + " dia" + (x.dias > 1 ? "s" : "") + "</span><div class='rel-mini'>" + dataBR(x.retornar_em) + "</div>";
+      else if (x.dias === 0) prazo = "<span class='badge bo'>Hoje</span>";
+      else prazo = dataBR(x.retornar_em) + "<div class='rel-mini'>em " + (-x.dias) + " dia" + (x.dias < -1 ? "s" : "") + "</div>";
+      s += "<tr class='lin' data-rel='ficha' data-id='" + x.dentista_id + "'>" +
+           "<td><div class='rel-nome' title='" + h(x.nome) + "'>" + h(x.nome) + "</div><div class='rel-mini'>#" + x.dentista_id + "</div></td>" +
+           "<td><span class='badge " + tp.css + "'>" + tp.rot + "</span></td><td>" + prazo + "</td>" +
+           "<td style='max-width:340px;white-space:normal;word-break:break-word'>" + (x.relato ? h(x.relato) : "<span class='rel-mini'>—</span>") +
+           (x.nota ? "<div class='rel-mini'>Nota interna: " + h(x.nota) + "</div>" : "") + "</td>" +
+           "<td>" + h(x.por || "—") + "<div class='rel-mini'>" + dataHoraBR(x.em) + "</div></td>" +
+           "<td style='white-space:nowrap'><button class='btn btng bsm' data-rel='concluir' data-id='" + x.id + "' data-nome='" + h(x.nome) + "'>✔ Concluir</button> " +
+           "<button class='btn btno bsm' data-rel='adiar' data-id='" + x.id + "' data-nome='" + h(x.nome) + "' data-v='" + h(x.retornar_em || "") + "'>Mudar data</button></td></tr>";
+    }
+    c.innerHTML = s + "</table></div>";
+  }
+  function aposPendencia() {
+    carregarExtras();
+    if (S.fichaId) carregarHist(S.fichaId);
+  }
+  function dlgConcluir(id, nome) {
+    openM("Concluir pendência",
+      "<p style='color:var(--gr);font-size:.86rem;margin-bottom:12px'><b style='color:var(--wh)'>" + h(nome) + "</b></p>" +
+      "<div class='field'><label>O que foi feito / como ficou resolvido (obrigatório)</label><textarea id='relCcTxt' maxlength='2000'></textarea></div>",
+      [{ lbl: "Cancelar", cls: "btno", fn: closeM },
+       { lbl: "Concluir", cls: "btng", fn: function () {
+          var tx = (document.getElementById("relCcTxt").value || "").trim();
+          if (tx.length < 3) { avisar("⚠️", "Descreva o que foi feito"); return; }
+          rpc("rel_retorno_concluir", { p_id: id, p_resolucao: tx }).then(function () {
+            closeM(); avisar("✅", "Pendência concluída"); aposPendencia();
+          }).catch(function (e) { avisar("❌", "Não foi possível salvar: " + e.message); });
+       } }]);
+  }
+  function dlgAdiar(id, nome, atual) {
+    openM("Mudar data de retorno",
+      "<p style='color:var(--gr);font-size:.86rem;margin-bottom:12px'><b style='color:var(--wh)'>" + h(nome) + "</b>" + (atual ? " · data atual: " + dataBR(atual) : " · sem data") + "</p>" +
+      "<div class='field'><label>Nova data</label><input type='date' id='relAdData' value='" + h(atual || "") + "'></div>",
+      [{ lbl: "Cancelar", cls: "btno", fn: closeM },
+       { lbl: "Salvar", cls: "btng", fn: function () {
+          var dt = document.getElementById("relAdData").value;
+          if (!dt) { avisar("⚠️", "Informe a nova data"); return; }
+          rpc("rel_retorno_adiar", { p_id: id, p_data: dt }).then(function () {
+            closeM(); avisar("✅", "Data de retorno alterada"); aposPendencia();
+          }).catch(function (e) { avisar("❌", "Não foi possível salvar: " + e.message); });
+       } }]);
+  }
+
+  /* ── resultados ──────────────────────────────────────────────────── */
+  function renderResultados() {
+    var c = document.getElementById("relCorpo");
+    if (!c) return;
+    if (S.resultErro) { c.innerHTML = "<div class='rel-erro'><b>Não foi possível carregar os resultados.</b><br>" + h(S.resultErro) + "</div>"; return; }
+    if (!S.result) { c.innerHTML = "<div class='rel-vazio'>Carregando resultados…</div>"; return; }
+    var R = S.result, A = R.abordagens, T = R.retornos, D = R.antes_depois, k, s = "";
+    function taxa(n, d) { return d ? (n * 100 / d).toLocaleString("pt-BR", { maximumFractionDigits: 0 }) + "%" : "n/a"; }
+    s += "<div class='rel-saude' style='margin-bottom:12px'>Tudo aqui vem do que foi aberto e registrado pelo app. “Mensagem aberta” não comprova envio; respostas são as que a equipe registrou." +
+         (A.primeira ? " Desde " + dataHoraBR(A.primeira) + "." : "") + "</div>";
+    s += "<div class='rel-kpis'>" +
+      "<div class='rel-kpi'><div class='l'>Mensagens abertas</div><div class='v'>" + num(A.total) + "</div><div class='s'>Últimos 30 dias: " + num(A.ultimos_30d) + " · hoje: " + num(A.hoje) + "</div></div>" +
+      "<div class='rel-kpi'><div class='l'>Cadastros abordados</div><div class='v'>" + num(A.cadastros) + "</div><div class='s'>Telefones distintos: " + num(A.telefones) + " (um telefone pode servir a mais de um cadastro)</div></div>" +
+      "<div class='rel-kpi'><div class='l'>Abordados com resposta registrada</div><div class='v'>" + num(T.abordados_com_resposta) + "</div><div class='s'>" + taxa(T.abordados_com_resposta, A.cadastros) + " dos " + num(A.cadastros) + " cadastros abordados. “Sem resposta” não conta.</div></div>" +
+      "<div class='rel-kpi'><div class='l'>Não querem mensagens</div><div class='v'>" + num(T.recusas_ativas) + "</div><div class='s'>Recusas ativas (cadastros)</div></div>" +
+      "</div>";
+    s += "<div class='rel-g2'><div class='rel-card'><h3>Retornos registrados por tipo</h3><div class='sub'>" + num(T.total) + " registros (um cadastro pode ter vários).</div>";
+    var algum = false;
+    for (k in TIPOS) if (R.por_tipo[k]) {
+      algum = true;
+      s += "<div class='rel-sit' style='cursor:default'><span class='badge " + TIPOS[k].css + "'>" + TIPOS[k].rot + "</span><b>" + num(R.por_tipo[k]) + "</b></div>";
+    }
+    if (!algum) s += "<div class='rel-vazio'>Nenhum retorno registrado ainda.</div>";
+    s += "</div><div class='rel-card'><h3>Reclamações e retornos</h3><div class='sub'>Situação atual.</div>" +
+      "<div class='rel-sit' style='cursor:pointer' data-rel='sub' data-v='pend'><span>Reclamações em aberto</span><b>" + num(T.reclamacoes_abertas) + "</b></div>" +
+      "<div class='rel-sit' style='cursor:default'><span>Reclamações concluídas</span><b>" + num(T.reclamacoes_concluidas) + "</b></div>" +
+      "<div class='rel-sit' style='cursor:pointer' data-rel='sub' data-v='pend'><span>Retornos vencidos</span><b>" + num(T.retornos_vencidos) + "</b></div></div></div>";
+    s += "<div class='rel-card'><h3>Encaminhamentos antes e depois da primeira abordagem</h3>" +
+      "<div class='sub'>Atendimentos realizados nos " + D.janela_dias + " dias anteriores × nos " + D.janela_dias + " dias a partir da primeira mensagem aberta, só para cadastros com a janela completa. " +
+      "<b>É observação, não prova de efeito</b>: sazonalidade e outros fatores também mudam o volume.</div>";
+    if (!D.cadastros) s += "<div class='rel-vazio'>Ainda não há cadastros com " + D.janela_dias + " dias completos desde a primeira abordagem" + (D.aguardando_janela ? " (" + num(D.aguardando_janela) + " aguardando)" : "") + ".</div>";
+    else s += "<div class='rel-kpis' style='margin-bottom:0'>" +
+      "<div class='rel-kpi'><div class='l'>Cadastros na conta</div><div class='v'>" + num(D.cadastros) + "</div><div class='s'>" + num(D.aguardando_janela) + " ainda sem janela completa</div></div>" +
+      "<div class='rel-kpi'><div class='l'>" + D.janela_dias + " dias antes</div><div class='v'>" + num(D.antes) + "</div><div class='s'>atendimentos realizados</div></div>" +
+      "<div class='rel-kpi'><div class='l'>" + D.janela_dias + " dias depois</div><div class='v'>" + num(D.depois) + "</div><div class='s'>" + sinal(D.depois - D.antes) + " (" + pct(D.depois, D.antes) + ")</div></div>" +
+      "<div class='rel-kpi'><div class='l'>Por cadastro</div><div class='v' style='font-size:1.1rem;line-height:1.5'>↑ " + num(D.aumentaram) + " · = " + num(D.iguais) + " · ↓ " + num(D.diminuiram) + "</div><div class='s'>aumentaram · iguais · diminuíram</div></div></div>";
+    s += "</div><div class='rel-mini' style='margin-top:10px'>Consultado em " + dataHoraBR(R.gerado_em) + ".</div>";
+    c.innerHTML = s;
   }
 
   /* ── ficha individual ────────────────────────────────────────────── */
@@ -953,7 +1133,7 @@
     var a = t.getAttribute("data-rel"), v = t.getAttribute("data-v"), id = parseInt(t.getAttribute("data-id"), 10);
     if (a === "escopo") { if (S.escopo !== v) { S.escopo = v; S.pag = 0; carregar(); } }
     else if (a === "recarregar") carregar();
-    else if (a === "sub") { S.sub = v; render(); }
+    else if (a === "sub") { S.sub = v; render(); if (v === "result" && !S.result) carregarResultados(); }
     else if (a === "irclasse") { S.filtro.classe = v; S.filtro.base10 = false; S.pag = 0; S.sub = "lista"; render(); }
     else if (a === "ordem") {
       if (S.ordem.col === v) S.ordem.dir = -S.ordem.dir; else { S.ordem.col = v; S.ordem.dir = (v === "nome") ? 1 : -1; }
@@ -966,6 +1146,8 @@
     else if (a === "whats") { ev.stopPropagation(); dlgWhats(); }
     else if (a === "retorno") { ev.stopPropagation(); dlgRetorno(); }
     else if (a === "reverter") { ev.stopPropagation(); dlgReverter(); }
+    else if (a === "concluir") { ev.stopPropagation(); dlgConcluir(id, t.getAttribute("data-nome")); }
+    else if (a === "adiar") { ev.stopPropagation(); dlgAdiar(id, t.getAttribute("data-nome"), t.getAttribute("data-v")); }
     else if (a === "excluir") { ev.stopPropagation(); dlgExcluir(id, t.getAttribute("data-nome")); }
     else if (a === "reincluir") { ev.stopPropagation(); dlgReincluir(id, t.getAttribute("data-nome")); }
   }
@@ -975,6 +1157,8 @@
     if (t.id === "relBusca") { S.filtro.busca = t.value; S.pag = 0; desenharTabela(); }
     else if (t.id === "relClasse") { S.filtro.classe = t.value; S.pag = 0; desenharTabela(); }
     else if (t.id === "relTel") { S.filtro.tel = t.value; S.pag = 0; desenharTabela(); }
+    else if (t.id === "relContato") { S.filtro.contato = t.value; S.pag = 0; desenharTabela(); }
+    else if (t.id === "relPendFiltro") { S.pendFiltro = t.value; renderPendencias(); }
     else if (t.id === "relBase") { S.filtro.base10 = !!t.checked; S.pag = 0; desenharTabela(); }
   }
 
