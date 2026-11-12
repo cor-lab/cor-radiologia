@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════
    relacionamento_cor.js — appCOR · Módulo RELACIONAMENTO · Etapa 1
-   v20261112b — botão WhatsApp Web na ficha (mensagem pronta, envio manual)
+   v20261112d — WhatsApp Web na ficha: 5 variações de texto e contador diário
+                (referência de 5/dia; avisa ao passar, não bloqueia)
 
    Aba exclusiva de ADMINISTRADORES: evolução dos encaminhamentos (volume de
    ATENDIMENTOS REALIZADOS), lista de oportunidades, ficha individual do
@@ -675,39 +676,94 @@
     var p = String(nome || "").trim().split(/\s+/)[0] || "";
     return p ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : "";
   }
-  function msgPadrao(C) {
-    var eu = primeiroNome(typeof CU !== "undefined" && CU ? CU.nome : "");
-    return "Olá, Dr(a). " + primeiroNome(C.nome) + "! Aqui é " + (eu || "a equipe") +
-      ", da COR - Centro Odontológico de Radiologia. Estamos ouvindo nossos parceiros para entender " +
-      "como podemos melhorar sua rotina de exames. Podemos conversar por aqui?";
+  /* 5 variações do texto de abertura: evitam mandar o mesmo bloco para todos */
+  function variacoes(C) {
+    var dr = "Dr(a). " + primeiroNome(C.nome);
+    var eu = primeiroNome(typeof CU !== "undefined" && CU ? CU.nome : "") || "a equipe";
+    var hr = 12;
+    try { hr = parseInt(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "2-digit", hour12: false }), 10); } catch (e) {}
+    var sauda = hr < 12 ? "Bom dia" : (hr < 18 ? "Boa tarde" : "Boa noite");
+    return [
+      "Olá, " + dr + "! Aqui é " + eu + ", da COR - Centro Odontológico de Radiologia. Estamos ouvindo nossos parceiros para entender como podemos melhorar sua rotina de exames. Podemos conversar por aqui?",
+      "Oi, " + dr + ", tudo bem? Sou " + eu + ", da COR Radiologia. Queremos saber como tem sido a sua experiência com os nossos exames e o que podemos melhorar. Tem um minutinho para conversar por aqui?",
+      sauda + ", " + dr + "! " + eu + ", da COR - Centro Odontológico de Radiologia. Estamos conversando com os dentistas parceiros para ajustar o nosso atendimento. Posso lhe fazer uma pergunta rápida por aqui?",
+      dr + ", aqui é " + eu + ", da COR. Gostaríamos de ouvir a sua opinião sobre nossos exames, prazos e atendimento, para melhorar o que for preciso. Podemos falar por este número?",
+      "Olá, " + dr + "! " + eu + ", da COR Radiologia, falando. Estamos revendo a nossa rotina com os parceiros e a sua opinião é importante para nós. Seria possível conversarmos rapidamente por aqui?"
+    ];
   }
   function dlgWhats() {
     var F = S.ficha;
     if (!F) return;
     var C = F.cadastro, t = telWhats(C.telefone);
     if (!t) { avisar("⚠️", "Telefone do cadastro inválido para WhatsApp"); return; }
+    /* o contador vem do servidor; se não vier, não abre (a abordagem ficaria sem registro) */
+    rpc("rel_abordagens_hoje", { p_dentista_id: C.id }).then(function (st) {
+      if (!S.ficha || S.ficha.cadastro.id !== C.id) return;
+      montarDlgWhats(F, C, t, st);
+    }).catch(function (e) {
+      avisar("❌", "Não foi possível consultar o limite diário: " + e.message);
+    });
+  }
+  function montarDlgWhats(F, C, t, st) {
+    var textos = variacoes(C);
+    var idx = st.hoje % textos.length;          /* cada abordagem do dia começa em um texto diferente */
+    var acima = st.hoje >= st.limite;
     var avisos = "";
+    if (st.ultima && st.ultima.em)
+      avisos += "<div class='rel-aviso'>⚠️ Este cadastro já teve uma abordagem aberta em " + dataHoraBR(st.ultima.em) +
+        (st.ultima.por ? " por " + h(st.ultima.por) : "") + ". Evite repetir sem que ele tenha respondido.</div>";
     if (F.tel_compartilhado_com && F.tel_compartilhado_com.length)
       avisos += "<div class='rel-aviso'>⚠️ Este telefone também está em outro(s) cadastro(s): " +
         F.tel_compartilhado_com.map(function (o) { return h(o.nome); }).join(", ") + ". Confirme com quem vai falar.</div>";
     if (F.exclusao && F.exclusao.ativo)
       avisos += "<div class='rel-aviso'>Este cadastro está fora do foco comercial.</div>";
-    openM("Mensagem pelo WhatsApp Web",
-      avisos +
+
+    var corpo = avisos +
       "<p style='color:var(--gr);font-size:.82rem;margin-bottom:10px'>Para <b style='color:var(--wh)'>" + h(C.nome) + "</b> · +" + t.slice(0, 2) + " " + t.slice(2, 4) + " " + t.slice(4) +
-      "<br>Confira e ajuste o texto. Ao continuar, o WhatsApp Web abre com a mensagem preenchida — <b>o envio é feito por você lá</b>.</p>" +
-      "<div class='field'><label>Mensagem</label><textarea id='relWaMsg' style='min-height:150px' maxlength='1000'>" + h(msgPadrao(C)) + "</textarea></div>" +
-      "<p style='color:#fdba74;font-size:.76rem;margin-top:10px'>Confirme que o WhatsApp Web deste navegador está no número da clínica (55 99166-8228). " +
-      "Telefone de cadastro não garante que o número é do dentista nem que ele aceita ser contatado.</p>",
+      "<br>Abordagens abertas hoje pelo app: <b id='relWaCont' style='color:" + (acima ? "#fdba74" : "var(--wh)") + "'>" + st.hoje + " de " + st.limite + "</b></p>" +
+      "<div class='field'><label>Mensagem <span id='relWaVar' style='text-transform:none;font-weight:500'>· texto " + (idx + 1) + " de " + textos.length + "</span></label>" +
+      "<textarea id='relWaMsg' style='min-height:150px' maxlength='1000'>" + h(textos[idx]) + "</textarea></div>" +
+      "<div style='margin-top:8px'><button type='button' class='btn btno bsm' id='relWaTroca'>🔁 Usar outro texto</button></div>";
+    if (acima)
+      corpo += "<div class='rel-aviso' style='margin-top:12px'>⚠️ Já foram abertas " + st.hoje + " abordagens hoje (referência: " + st.limite +
+        " por dia). Mais mensagens no mesmo dia aumentam o risco de bloqueio do número.</div>";
+    corpo += "<p style='color:#fdba74;font-size:.76rem;margin-top:10px'>Ao continuar, o WhatsApp Web abre com a mensagem preenchida — <b>o envio é feito por você lá</b>. " +
+      "Confirme que ele está no número da clínica (55 99166-8228). Telefone de cadastro não garante que o número é do dentista nem que ele aceita ser contatado.</p>";
+
+    var enviando = false;
+    openM("Mensagem pelo WhatsApp Web", corpo,
       [{ lbl: "Cancelar", cls: "btno", fn: closeM },
        { lbl: "Abrir WhatsApp Web", cls: "btng", fn: function () {
+          if (enviando) return;                  /* clique duplo não registra duas vezes */
           var msg = (document.getElementById("relWaMsg").value || "").trim();
-          if (!msg) { avisar("⚠️", "Escreva a mensagem"); return; }
-          var w = window.open("https://web.whatsapp.com/send?phone=" + t + "&text=" + encodeURIComponent(msg), "cor_whatsapp_web");
+          if (msg.length < 10) { avisar("⚠️", "Escreva a mensagem"); return; }
+          /* a aba é aberta já no clique (senão o navegador bloqueia); recebe o endereço depois de registrar */
+          var w = window.open("", "cor_whatsapp_web");
           if (!w) { avisar("⚠️", "O navegador bloqueou a nova aba. Libere pop-ups para o App COR."); return; }
-          closeM();
-          avisar("💬", "WhatsApp Web aberto — confira e envie por lá");
+          function desistir() {
+            try { if (w.location && w.location.href === "about:blank") w.close(); } catch (e) { /* aba do WhatsApp já aberta: deixa como está */ }
+          }
+          enviando = true;
+          rpc("rel_abordagem_registrar", { p_dentista_id: C.id, p_telefone: t, p_texto: msg, p_variacao: idx + 1 })
+            .then(function (r) {
+              enviando = false;
+              if (r && r.ok) {
+                w.location.href = "https://web.whatsapp.com/send?phone=" + t + "&text=" + encodeURIComponent(msg);
+                closeM();
+                avisar("💬", "WhatsApp Web aberto — confira e envie por lá (" + r.hoje + " de " + r.limite + " hoje)");
+                return;
+              }
+              desistir();
+              avisar("❌", "Resposta inesperada do servidor");
+            })
+            .catch(function (e) { enviando = false; desistir(); avisar("❌", "Não foi possível registrar: " + e.message); });
        } }]);
+    var bt = document.getElementById("relWaTroca");
+    if (bt) bt.onclick = function () {
+      idx = (idx + 1) % textos.length;
+      document.getElementById("relWaMsg").value = textos[idx];
+      document.getElementById("relWaVar").textContent = "· texto " + (idx + 1) + " de " + textos.length;
+    };
   }
 
   /* ── ficha individual ────────────────────────────────────────────── */
