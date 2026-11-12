@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════
    relacionamento_cor.js — appCOR · Módulo RELACIONAMENTO · Etapa 1
-   v20261112d — WhatsApp Web na ficha: 5 variações de texto e contador diário
-                (referência de 5/dia; avisa ao passar, não bloqueia)
+   v20261112e — ficha: registrar contato/recusa, histórico, recusa bloqueia o WhatsApp;
+                WhatsApp Web com 5 variações de texto e contador diário (avisa, não bloqueia)
 
    Aba exclusiva de ADMINISTRADORES: evolução dos encaminhamentos (volume de
    ATENDIMENTOS REALIZADOS), lista de oportunidades, ficha individual do
@@ -40,6 +40,8 @@
     fichaId: null,
     ficha: null,
     fichaErro: null,
+    hist: null,
+    histErro: null,
     fichaMeses: 24,
     scrollLista: 0
   };
@@ -355,7 +357,7 @@
     var pg = document.getElementById("page-" + PAG);
     var sc = raiz();
     S.scrollLista = sc ? sc.scrollTop : 0;
-    S.fichaId = id; S.ficha = null; S.fichaErro = null;
+    S.fichaId = id; S.ficha = null; S.fichaErro = null; S.hist = null; S.histErro = null;
     render();
     rpc("rel_dentista_ficha", { p_id: id }).then(function (d) {
       if (S.fichaId !== id) return;
@@ -364,10 +366,20 @@
       if (S.fichaId !== id) return;
       S.fichaErro = (e && e.message) || "erro desconhecido"; render();
     });
+    carregarHist(id);
     if (pg && sc) sc.scrollTop = 0;
   }
+  function carregarHist(id) {
+    return rpc("rel_dentista_historico", { p_id: id }).then(function (d) {
+      if (S.fichaId !== id) return;
+      S.hist = d; S.histErro = null; if (S.ficha) render();
+    }).catch(function (e) {
+      if (S.fichaId !== id) return;
+      S.hist = null; S.histErro = (e && e.message) || "erro desconhecido"; if (S.ficha) render();
+    });
+  }
   function fecharFicha() {
-    S.fichaId = null; S.ficha = null; S.fichaErro = null;
+    S.fichaId = null; S.ficha = null; S.fichaErro = null; S.hist = null; S.histErro = null;
     render();
     var sc = raiz();
     if (sc) sc.scrollTop = S.scrollLista || 0;
@@ -751,10 +763,12 @@
                 w.location.href = "https://web.whatsapp.com/send?phone=" + t + "&text=" + encodeURIComponent(msg);
                 closeM();
                 avisar("💬", "WhatsApp Web aberto — confira e envie por lá (" + r.hoje + " de " + r.limite + " hoje)");
+                carregarHist(C.id);
                 return;
               }
               desistir();
-              avisar("❌", "Resposta inesperada do servidor");
+              if (r && r.motivo === "recusa") { closeM(); avisar("🚫", "Este dentista pediu para não receber mensagens"); carregarHist(C.id); }
+              else avisar("❌", "Resposta inesperada do servidor");
             })
             .catch(function (e) { enviando = false; desistir(); avisar("❌", "Não foi possível registrar: " + e.message); });
        } }]);
@@ -764,6 +778,105 @@
       document.getElementById("relWaMsg").value = textos[idx];
       document.getElementById("relWaVar").textContent = "· texto " + (idx + 1) + " de " + textos.length;
     };
+  }
+
+  /* ── registro de contato / recusa e histórico ────────────────────── */
+  var TIPOS = {
+    respondeu:    { rot: "Respondeu",                    css: "bt"  },
+    interesse:    { rot: "Demonstrou interesse",         css: "bg"  },
+    falar_depois: { rot: "Pediu para falar depois",      css: "bo"  },
+    sem_resposta: { rot: "Sem resposta",                 css: "bgr" },
+    recusou:      { rot: "Não quer receber mensagens",   css: "br"  },
+    reclamacao:   { rot: "Reclamação",                   css: "br"  },
+    sugestao:     { rot: "Sugestão",                     css: "bp"  },
+    elogio:       { rot: "Elogio",                       css: "bg"  },
+    outro:        { rot: "Outro",                        css: "bgr" }
+  };
+  var CANAIS = { whatsapp: "WhatsApp", telefone: "Telefone", presencial: "Presencial", email: "E-mail", outro: "Outro" };
+
+  function htmlHistorico() {
+    if (S.histErro) return "<div class='rel-erro'>Não foi possível carregar o histórico: " + h(S.histErro) + "</div>";
+    if (!S.hist) return "<div class='rel-vazio'>Carregando histórico…</div>";
+    var itens = [], i;
+    for (i = 0; i < S.hist.retornos.length; i++) itens.push({ k: "r", em: S.hist.retornos[i].em, d: S.hist.retornos[i] });
+    for (i = 0; i < S.hist.abordagens.length; i++) itens.push({ k: "a", em: S.hist.abordagens[i].em, d: S.hist.abordagens[i] });
+    if (!itens.length) return "<div class='rel-vazio'>Nenhum contato registrado para este cadastro.</div>";
+    itens.sort(function (x, y) { return String(y.em).localeCompare(String(x.em)); });
+    var s = "";
+    for (i = 0; i < itens.length; i++) {
+      var it = itens[i], d = it.d;
+      s += "<div style='padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)'>";
+      if (it.k === "a") {
+        s += "<div><span class='badge bgr'>Mensagem aberta no WhatsApp Web</span> <span class='rel-mini'>" + dataHoraBR(d.em) + (d.por ? " · " + h(d.por) : "") + "</span></div>" +
+             "<div style='font-size:.82rem;color:#c5d1e3;margin-top:5px;white-space:pre-wrap;word-break:break-word'>" + h(d.texto) + "</div>";
+      } else {
+        var tp = TIPOS[d.tipo] || { rot: d.tipo, css: "bgr" };
+        s += "<div><span class='badge " + tp.css + "'" + (d.anulado_em ? " style='text-decoration:line-through;opacity:.6'" : "") + ">" + tp.rot + "</span> " +
+             "<span class='rel-mini'>" + dataHoraBR(d.em) + " · " + (CANAIS[d.canal] || h(d.canal)) + (d.por ? " · " + h(d.por) : "") + "</span></div>";
+        if (d.relato) s += "<div style='font-size:.84rem;margin-top:5px;white-space:pre-wrap;word-break:break-word'><span class='rel-mini'>Relato do dentista:</span> " + h(d.relato) + "</div>";
+        if (d.nota) s += "<div style='font-size:.82rem;color:#c5d1e3;margin-top:4px;white-space:pre-wrap;word-break:break-word'><span class='rel-mini'>Nota interna:</span> " + h(d.nota) + "</div>";
+        if (d.retornar_em) s += "<div class='rel-mini' style='margin-top:4px;color:#fdba74'>Retornar em " + dataBR(d.retornar_em) + "</div>";
+        if (d.anulado_em) s += "<div class='rel-mini' style='margin-top:4px'>Recusa revertida em " + dataHoraBR(d.anulado_em) + (d.anulado_por ? " por " + h(d.anulado_por) : "") + ": " + h(d.anulado_motivo || "") + "</div>";
+      }
+      s += "</div>";
+    }
+    return s;
+  }
+  function dlgRetorno() {
+    var F = S.ficha;
+    if (!F) return;
+    var C = F.cadastro, k, ops = "", cns = "";
+    for (k in TIPOS) ops += "<option value='" + k + "'>" + TIPOS[k].rot + "</option>";
+    for (k in CANAIS) cns += "<option value='" + k + "'>" + CANAIS[k] + "</option>";
+    var salvando = false;
+    openM("Registrar contato",
+      "<p style='color:var(--gr);font-size:.82rem;margin-bottom:10px'><b style='color:var(--wh)'>" + h(C.nome) + "</b> (#" + C.id + ")</p>" +
+      "<div class='fg2' style='margin-bottom:10px'><div class='field'><label>O que aconteceu</label><select id='relRtTipo'>" + ops + "</select></div>" +
+      "<div class='field'><label>Canal</label><select id='relRtCanal'>" + cns + "</select></div></div>" +
+      "<div id='relRtAviso'></div>" +
+      "<div class='field' style='margin-bottom:10px'><label>O que o dentista disse</label><textarea id='relRtRelato' maxlength='2000' placeholder='Nas palavras dele, quando possível'></textarea></div>" +
+      "<div class='field' style='margin-bottom:10px'><label>Nota interna (não vai para nenhuma mensagem)</label><textarea id='relRtNota' maxlength='2000'></textarea></div>" +
+      "<div class='field'><label>Retornar em (opcional)</label><input type='date' id='relRtData'></div>",
+      [{ lbl: "Cancelar", cls: "btno", fn: closeM },
+       { lbl: "Salvar registro", cls: "btng", fn: function () {
+          if (salvando) return;
+          var tipo = document.getElementById("relRtTipo").value;
+          var relato = (document.getElementById("relRtRelato").value || "").trim();
+          if ((tipo === "recusou" || tipo === "reclamacao" || tipo === "sugestao") && relato.length < 3) {
+            avisar("⚠️", "Descreva o que o dentista disse"); document.getElementById("relRtRelato").focus(); return;
+          }
+          salvando = true;
+          rpc("rel_retorno_registrar", {
+            p_dentista_id: C.id, p_tipo: tipo, p_canal: document.getElementById("relRtCanal").value,
+            p_relato: relato || null, p_nota: (document.getElementById("relRtNota").value || "").trim() || null,
+            p_retornar_em: document.getElementById("relRtData").value || null
+          }).then(function () {
+            closeM(); avisar("✅", tipo === "recusou" ? "Recusa registrada — WhatsApp desativado para este cadastro" : "Contato registrado");
+            carregarHist(C.id);
+          }).catch(function (e) { salvando = false; avisar("❌", "Não foi possível salvar: " + e.message); });
+       } }]);
+    var sel = document.getElementById("relRtTipo");
+    if (sel) sel.onchange = function () {
+      document.getElementById("relRtAviso").innerHTML = sel.value === "recusou"
+        ? "<div class='rel-erro' style='margin-bottom:10px'>Ao salvar, o botão do WhatsApp fica desativado para este cadastro até alguém reverter a recusa.</div>" : "";
+    };
+  }
+  function dlgReverter() {
+    var F = S.ficha;
+    if (!F) return;
+    var C = F.cadastro;
+    openM("Reverter recusa",
+      "<p style='color:var(--gr);font-size:.86rem;margin-bottom:12px'><b style='color:var(--wh)'>" + h(C.nome) + "</b> voltará a poder ser contatado pelo app. " +
+      "Só reverta se o próprio dentista pediu ou autorizou.</p>" +
+      "<div class='field'><label>Justificativa (obrigatória)</label><textarea id='relRvMot' maxlength='500'></textarea></div>",
+      [{ lbl: "Cancelar", cls: "btno", fn: closeM },
+       { lbl: "Reverter recusa", cls: "btnp", fn: function () {
+          var mot = (document.getElementById("relRvMot").value || "").trim();
+          if (mot.length < 3) { avisar("⚠️", "Informe a justificativa"); return; }
+          rpc("rel_recusa_reverter", { p_dentista_id: C.id, p_motivo: mot }).then(function () {
+            closeM(); avisar("✅", "Recusa revertida"); carregarHist(C.id);
+          }).catch(function (e) { avisar("❌", "Não foi possível salvar: " + e.message); });
+       } }]);
   }
 
   /* ── ficha individual ────────────────────────────────────────────── */
@@ -783,16 +896,22 @@
     var atu3 = soma(serie, fim - 3, fim), ant3 = soma(serie, fim - 15, fim - 12);
     var par = serie[fim];
     var foraFoco = !!(X && X.ativo);
+    var recusa = S.hist && S.hist.recusa ? S.hist.recusa : null;
 
     s += "<div class='rel-fh'><div style='min-width:0;flex:1 1 320px'><div class='tit'>" + h(C.nome) + "</div><div class='meta'>Cadastro #" + C.id +
          (C.cro ? " · CRO " + h(C.cro) : " · sem CRO no cadastro") + (C.especialidade ? " · " + h(C.especialidade) : "") + (C.cidade ? " · " + h(C.cidade) : "") +
          "<br>Telefone: " + (C.telefone ? h(C.telefone) + " <span class='rel-mini'>(cadastro; não confirma WhatsApp nem autorização de contato)</span>" : "<span style='color:#fdba74'>não cadastrado</span>") +
          (C.email ? "<br>E-mail: " + h(C.email) : "") + "</div></div>" +
          "<div style='display:flex;flex-wrap:wrap;gap:8px'>" +
-         (telWhats(C.telefone) ? "<button class='btn btng bsm' data-rel='whats'>💬 WhatsApp Web</button>" : "") + (foraFoco
+         (telWhats(C.telefone) && !recusa ? "<button class='btn btng bsm' data-rel='whats'>💬 WhatsApp Web</button>" : "") +
+         "<button class='btn btnt bsm' data-rel='retorno'>📝 Registrar contato</button>" + (foraFoco
             ? "<button class='btn btng bsm' data-rel='reincluir' data-id='" + C.id + "' data-nome='" + h(C.nome) + "'>Reincluir no foco</button>"
             : "<button class='btn btnp bsm' data-rel='excluir' data-id='" + C.id + "' data-nome='" + h(C.nome) + "'>Excluir do foco comercial</button>") + "</div></div>";
 
+    if (recusa)
+      s += "<div class='rel-erro' style='margin-bottom:14px'>🚫 <b>Não quer receber mensagens</b> — registrado em " + dataHoraBR(recusa.em) + (recusa.por ? " por " + h(recusa.por) : "") +
+           (recusa.relato ? ". Relato: “" + h(recusa.relato) + "”" : "") + ". O botão do WhatsApp fica desativado para este cadastro. " +
+           "<button class='btn btno bsm' data-rel='reverter' style='margin-left:6px'>Reverter recusa</button></div>";
     if (foraFoco)
       s += "<div class='rel-aviso' style='background:rgba(167,139,250,.1);border-color:rgba(167,139,250,.3);color:#c4b5fd'>Fora do foco comercial desde " + dataHoraBR(X.criado_em) +
            " (" + h(X.criado_por_nome || "—") + "). Justificativa: " + h(X.motivo) + (X.revisar_em ? " · Revisar em " + dataBR(X.revisar_em) : "") + "</div>";
@@ -818,7 +937,11 @@
          "<button data-rel='meses' data-v='60' class='" + (S.fichaMeses === 60 ? "on" : "") + "'>5 anos</button></div></div>" +
          "<div class='sub'>Meses sem atendimento aparecem como zero (ponto na linha de base). A última barra, tracejada, é o mês em andamento.</div>" +
          "<div class='rel-chart' id='relGF'></div></div>";
-    s += "<div class='rel-mini' style='margin-top:12px'>Contatos, tarefas, ocorrências e mensagens entram na Etapa 2. Consultado em " + dataHoraBR(F.gerado_em) + ".</div>";
+    s += "<div class='rel-card' style='margin-top:14px'><div style='display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:6px'><h3 style='margin-right:auto'>Histórico de contatos</h3>" +
+         "<button class='btn btnt bsm' data-rel='retorno'>📝 Registrar contato</button></div>" +
+         "<div class='sub'>Registros informados pela equipe. “Mensagem aberta” indica que o WhatsApp Web foi aberto pelo app — não comprova envio, entrega nem leitura.</div>" +
+         htmlHistorico() + "</div>";
+    s += "<div class='rel-mini' style='margin-top:12px'>Consultado em " + dataHoraBR(F.gerado_em) + ".</div>";
     el.innerHTML = s;
     grafBarras(document.getElementById("relGF"), serie.slice(n - (S.fichaMeses + 1)));
   }
@@ -841,6 +964,8 @@
     else if (a === "voltar") fecharFicha();
     else if (a === "meses") { S.fichaMeses = parseInt(v, 10); render(); }
     else if (a === "whats") { ev.stopPropagation(); dlgWhats(); }
+    else if (a === "retorno") { ev.stopPropagation(); dlgRetorno(); }
+    else if (a === "reverter") { ev.stopPropagation(); dlgReverter(); }
     else if (a === "excluir") { ev.stopPropagation(); dlgExcluir(id, t.getAttribute("data-nome")); }
     else if (a === "reincluir") { ev.stopPropagation(); dlgReincluir(id, t.getAttribute("data-nome")); }
   }
