@@ -11,6 +11,7 @@
 //
 //   [✓] Busca no Supabase por nome ou CPF (≥2 chars)
 //       Marcadores: "buscarPacientes", "ilike"
+//       (2026-11-14) Busca e vinculação por nome IGNORAM ACENTO: "_pacNormBusca", "nome_busca"
 //
 //   [✓] Dropdown de autocomplete com debounce
 //       Marcadores: "renderDropdownPac", "_pacBuscaTimer"
@@ -98,6 +99,16 @@
 var _pacBuscaTimer = null;
 var _pacSelecionado = null;
 
+// (2026-11-14) BUSCA SEM ACENTO — mesmo critério do banco (norm_nome_paciente):
+// MAIÚSCULAS, sem acento, sem espaço sobrando. As consultas filtram pelo campo
+// calculado "nome_busca" da tabela pacientes (a trava de duplicidade do banco
+// usa o mesmo critério, então BARBARA e BÁRBARA são a mesma pessoa).
+function _pacNormBusca(s) {
+    s = String(s == null ? "" : s);
+    if (s.normalize) s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return s.toUpperCase().replace(/\s+/g, " ").replace(/^ +| +$/g, "");
+}
+
 // Buscar pacientes no Supabase por nome ou CPF
 async function buscarPacientes(termo) {
     if (!termo || termo.length < 2) return [];
@@ -109,7 +120,7 @@ async function buscarPacientes(termo) {
     if (termoLimpo.length >= 6 && /^\d+$/.test(termoLimpo)) {
         filtro = "cpf=ilike.*" + termoLimpo + "*";
     } else {
-        filtro = "nome=ilike.*" + encodeURIComponent(termo.toUpperCase()) + "*";
+        filtro = "nome_busca=ilike.*" + encodeURIComponent(_pacNormBusca(termo)) + "*";
     }
 
     try {
@@ -171,7 +182,7 @@ async function criarPacienteSupa(dados) {
                 if (body.nome && body.data_nascimento) {
                     var rf = await supaFetch(
                         "/rest/v1/pacientes?select=*&ativo=eq.true&limit=1" +
-                        "&nome=ilike." + encodeURIComponent(body.nome) +
+                        "&nome_busca=eq." + encodeURIComponent(_pacNormBusca(body.nome)) +
                         "&data_nascimento=eq." + body.data_nascimento);
                     var ex = await rf.json();
                     if (Array.isArray(ex) && ex.length) return ex[0];
@@ -466,7 +477,7 @@ async function confAgComPaciente(isAtendimento) {
         var candidatos = [];
         try {
             var rNome = await supaFetch(
-                "/rest/v1/pacientes?select=*&nome=ilike." + encodeURIComponent(nm) + "&ativo=eq.true&limit=10"
+                "/rest/v1/pacientes?select=*&nome_busca=eq." + encodeURIComponent(_pacNormBusca(nm)) + "&ativo=eq.true&limit=10"
             );
             candidatos = await rNome.json();
             if (!Array.isArray(candidatos)) candidatos = [];
@@ -492,7 +503,7 @@ async function confAgComPaciente(isAtendimento) {
                 var porCpf = await rCpf.json();
                 if (Array.isArray(porCpf) && porCpf.length > 0) {
                     var matchCpf = porCpf.find(function (c) {
-                        return c.nome === nm && c.data_nascimento === dataNascForm;
+                        return _pacNormBusca(c.nome) === _pacNormBusca(nm) && c.data_nascimento === dataNascForm;
                     });
                     if (matchCpf) {
                         _pacSelecionado = matchCpf;
