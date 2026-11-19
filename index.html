@@ -237,6 +237,16 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-19 (v8.25): ORÇAMENTO DIFERENCIADO (cobrir orçamento da concorrência).
+              Por agendamento: colunas agendamentos.orcamento_diferenciado/_texto/
+              _marcado_por(_nome)/_em. Admin ou recepção marcam no "Editar
+              Agendamento" (seção 🔒, texto obrigatório). Com a trava, exames,
+              valores, forma de pagamento e a própria seção ficam travados; para
+              liberar, popup com o texto + caixa "li e estou ciente" — cada leitura
+              grava em orcamento_leituras (quem/quando/texto). Banner vermelho na
+              ficha do atendimento (agEV). Marcadores: orcBannerHtml,
+              orcSecaoEdicaoHtml, orcAplicarTravaEdicao, orcAbrirPopup, orcSalvar.
+
   2026-11-14 (v8.24): BUSCA SEM ACENTO + ABAS RENOMEADAS. (1) Buscas por nome nas abas
               Atendimentos e Cadastro (e no autocomplete de pacientes_busca.js) ignoram
               acento: "barbara" acha BÁRBARA e vice-versa. Usa corSemAcento() + campos
@@ -4261,7 +4271,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.24 - 2026-11-14";
+var APP_VERSION = "v8.25 - 2026-11-19";
 
 // v8.24 — BUSCA SEM ACENTO. Normaliza o termo digitado do mesmo jeito que o
 // banco (função norm_nome_paciente): MAIÚSCULAS, sem acento, sem espaço sobrando.
@@ -7422,6 +7432,8 @@ async function loadAllData(){
           ,metodo_pagamento: a.metodo_pagamento || null
           ,desconto_pontos: Number(a.desconto_pontos || 0)
           ,desconto_pontos_dentista_id: a.desconto_pontos_dentista_id || null
+          ,orcamento_diferenciado: !!a.orcamento_diferenciado, orcamento_texto: a.orcamento_texto || ""
+          ,orcamento_marcado_por_nome: a.orcamento_marcado_por_nome || null, orcamento_marcado_em: a.orcamento_marcado_em || null
           ,obs: a.observacoes || ''
           ,observacoes: a.observacoes || ''
           ,forma_entrega: a.forma_entrega || null
@@ -9008,6 +9020,8 @@ function iniciarAutoRefresh(){
             metodo_pagamento:a.metodo_pagamento||null,
             desconto_pontos:Number(a.desconto_pontos||0),
             desconto_pontos_dentista_id:a.desconto_pontos_dentista_id||null,
+            orcamento_diferenciado:!!a.orcamento_diferenciado, orcamento_texto:a.orcamento_texto||"",
+            orcamento_marcado_por_nome:a.orcamento_marcado_por_nome||null, orcamento_marcado_em:a.orcamento_marcado_em||null,
             obs:a.observacoes||'', observacoes:a.observacoes||'',
             forma_entrega:a.forma_entrega||null,
             previsao_entrega:a.previsao_entrega||null,
@@ -10277,6 +10291,8 @@ function _mapAgFromRow(a, itens) {
     metodo_pagamento: a.metodo_pagamento || null,
     desconto_pontos: Number(a.desconto_pontos || 0),
     desconto_pontos_dentista_id: a.desconto_pontos_dentista_id || null,
+    orcamento_diferenciado: !!a.orcamento_diferenciado, orcamento_texto: a.orcamento_texto || "",
+    orcamento_marcado_por_nome: a.orcamento_marcado_por_nome || null, orcamento_marcado_em: a.orcamento_marcado_em || null,
     obs: a.observacoes || "",
     observacoes: a.observacoes || "",
     forma_entrega: a.forma_entrega || null,
@@ -11555,6 +11571,7 @@ function agEV(ev, id) {
 
   var b = "<div style=\"display:flex;flex-direction:column;gap:0;font-size:.88rem\">";
   b += "<div style=\"font-size:1.15rem;font-weight:700;font-family:Playfair Display,serif;margin-bottom:4px\">" + esc(a.pac) + "</div>";
+  b += orcBannerHtml(a);   // v8.25 — orçamento diferenciado
   b += "<div style=\"display:flex;flex-wrap:wrap;gap:6px 14px;padding:12px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:10px;margin-bottom:8px\">";
   b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📅</span> <strong>" + esc(a.dt) + "</strong> — " + esc(a.hr) + " ate " + em3 + "</div>";
   // ⚡ FIX 06/05/2026 — usa calcValoresAg em vez de a.vl direto. a.vl é
@@ -12094,6 +12111,126 @@ function agEV(ev, id) {
     try { carregarStatusAvisoDentista(a.id); } catch(e){ console.error("[avisoDentistaStatus]", e); }
   }
 }
+// ════════════════════════════════════════════════════════════
+// 🔒 v8.25 — ORÇAMENTO DIFERENCIADO (cobertura de orçamento da concorrência)
+// ════════════════════════════════════════════════════════════
+// Marcado POR AGENDAMENTO (admin ou recepção) com o texto do combinado. Com a
+// trava ativa, exames, valores e forma de pagamento ficam bloqueados no
+// "Editar Agendamento"; para liberar, a pessoa lê o texto num popup e marca
+// "li e estou ciente". Cada leitura fica gravada em orcamento_leituras.
+function orcPodeMarcar(){ return !!(CU && (CU.role === "admin" || CU.role === "agenda")); }
+function orcBannerHtml(a){
+  if(!a || !a.orcamento_diferenciado) return "";
+  var quem = a.orcamento_marcado_por_nome ? " — marcado por " + esc(a.orcamento_marcado_por_nome) : "";
+  return "<div style='margin:4px 0 8px;padding:10px 12px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.55);border-radius:10px'>" +
+    "<div style='font-weight:800;color:#f87171;margin-bottom:4px'>🔒 ORÇAMENTO DIFERENCIADO" + "<span style='font-weight:400;font-size:.75rem;color:var(--gr)'>" + quem + "</span></div>" +
+    "<div style='white-space:pre-wrap;font-size:.86rem'>" + esc(a.orcamento_texto || "") + "</div></div>";
+}
+function orcSecaoEdicaoHtml(a){
+  var on = !!a.orcamento_diferenciado, pode = orcPodeMarcar();
+  var h = "<div id='eOrcBox' style='padding:10px 12px;border:1px solid " + (on ? "rgba(239,68,68,.55)" : "rgba(255,255,255,.1)") + ";border-radius:10px;" + (on ? "background:rgba(239,68,68,.08)" : "") + "'>";
+  h += "<label style='display:flex;align-items:center;gap:8px;font-size:.88rem;cursor:pointer;font-weight:700'>" +
+       "<input type='checkbox' id='eOrcDif' style='width:auto'" + (on ? " checked" : "") + (pode ? "" : " disabled") +
+       " onchange=\"document.getElementById('eOrcTxtWrap').style.display=this.checked?'block':'none'\">" +
+       "🔒 Orçamento diferenciado <span style='font-weight:400;color:var(--gr);font-size:.75rem'>(valor combinado fora da tabela — trava exames e valores)</span></label>";
+  h += "<div id='eOrcTxtWrap' style='display:" + (on ? "block" : "none") + ";margin-top:8px'>" +
+       "<textarea id='eOrcTxt' placeholder='Ex.: Cobrir orçamento da clínica X. Tomografia 2 regiões por R$ 350,00 à vista. NÃO alterar valores.' style='min-height:64px'" + (pode ? "" : " disabled") + ">" + esc(a.orcamento_texto || "") + "</textarea>" +
+       (a.orcamento_marcado_por_nome ? "<div style='font-size:.72rem;color:var(--gr);margin-top:4px'>Marcado por " + esc(a.orcamento_marcado_por_nome) + (a.orcamento_marcado_em ? " em " + new Date(a.orcamento_marcado_em).toLocaleString("pt-BR") : "") + "</div>" : "") +
+       "</div></div>";
+  return h;
+}
+function orcLerSecaoEdicao(a){
+  var cb = document.getElementById("eOrcDif"), tx = document.getElementById("eOrcTxt");
+  if(!cb) return null;
+  var on = !!cb.checked, texto = (tx ? tx.value : "").trim();
+  if(on && !texto) return { erro: "Orçamento diferenciado: escreva o texto do combinado (o que foi orçado e o valor)." };
+  if(!on) texto = "";
+  var mudou = (on !== !!a.orcamento_diferenciado) || (texto !== String(a.orcamento_texto || "").trim());
+  if(mudou && !orcPodeMarcar()) return { erro: "Sem permissão para alterar o orçamento diferenciado." };
+  return { on: on, texto: texto, mudou: mudou };
+}
+async function orcSalvar(a, o){
+  var agora = new Date().toISOString();
+  var upd = o.on
+    ? { orcamento_diferenciado: true, orcamento_texto: o.texto, orcamento_marcado_por: (CU && CU.id) || null, orcamento_marcado_por_nome: (CU && CU.nome) || null, orcamento_marcado_em: agora }
+    : { orcamento_diferenciado: false, orcamento_texto: null, orcamento_marcado_por: null, orcamento_marcado_por_nome: null, orcamento_marcado_em: null };
+  try {
+    var r = await supa.from("agendamentos").update(upd).eq("id", a.id);
+    if (r.error) { toast("⚠️", "Agendamento salvo, mas o orçamento diferenciado não: " + r.error.message); return; }
+  } catch(e) { toast("⚠️", "Agendamento salvo, mas o orçamento diferenciado não: " + e.message); return; }
+  var alvo = [a].concat((ags || []).filter(function(x){ return x.id === a.id && x !== a; }));
+  alvo.forEach(function(x){
+    x.orcamento_diferenciado = !!upd.orcamento_diferenciado;
+    x.orcamento_texto = upd.orcamento_texto || "";
+    x.orcamento_marcado_por_nome = upd.orcamento_marcado_por_nome;
+    x.orcamento_marcado_em = upd.orcamento_marcado_em;
+  });
+}
+// Trava os campos de exame/valor/forma de pagamento (e a própria seção da trava).
+function orcAplicarTravaEdicao(a){
+  if(!a || !a.orcamento_diferenciado) return;
+  var alvos = [];
+  var wrap = document.getElementById("eExWrap");
+  if(wrap) wrap.querySelectorAll("input, select, button").forEach(function(el){ alvos.push(el); });
+  ["eExSearch", "eFormaPg", "eOrcDif", "eOrcTxt"].forEach(function(id){ var el = document.getElementById(id); if(el) alvos.push(el); });
+  alvos.forEach(function(el){
+    if(el.disabled) return;   // já travado por outro motivo (ex.: pontos) — não mexe
+    el.disabled = true; el.setAttribute("data-orclock", "1");
+  });
+  var aviso = document.createElement("div");
+  aviso.id = "eOrcAviso";
+  aviso.style.cssText = "margin:6px 0;padding:9px 12px;background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.6);border-radius:9px;font-size:.82rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap";
+  aviso.innerHTML = "<span style='flex:1;min-width:180px'>🔒 <b>Orçamento diferenciado.</b> Exames, valores e forma de pagamento travados.</span>" +
+    "<button type='button' class='btn btno bsm' onclick='orcAbrirPopup(" + Number(a.id) + ")'>🔓 Ler e liberar</button>";
+  if(wrap && wrap.parentNode) wrap.parentNode.insertBefore(aviso, wrap);
+  // Clicar na área travada também abre o popup
+  if(wrap){
+    wrap.addEventListener("click", function(){
+      if(document.querySelector("#eExWrap [data-orclock='1']")) orcAbrirPopup(a.id);
+    });
+  }
+}
+function orcAbrirPopup(agId){
+  var a = (ags || []).find(function(x){ return x.id === agId; });
+  if(!a) return;
+  if(document.getElementById("orcPopup")) return;
+  var ov = document.createElement("div");
+  ov.id = "orcPopup";
+  ov.style.cssText = "position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px";
+  ov.innerHTML =
+    "<div style='background:var(--bg2,#111a2e);color:var(--wh,#fff);border:2px solid #ef4444;border-radius:14px;max-width:520px;width:100%;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.6);font-size:.9rem'>" +
+      "<div style='font-size:1.05rem;font-weight:800;color:#f87171;margin-bottom:10px'>⚠️ ORÇAMENTO DIFERENCIADO</div>" +
+      "<div style='margin-bottom:6px'>Este atendimento tem valor combinado <b>fora da tabela</b>. Leia antes de alterar exames ou valores:</div>" +
+      "<div style='white-space:pre-wrap;padding:12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.45);border-radius:10px;margin-bottom:12px;font-size:.92rem'>" + esc(a.orcamento_texto || "(sem texto)") + "</div>" +
+      (a.orcamento_marcado_por_nome ? "<div style='font-size:.74rem;color:var(--gr);margin:-6px 0 10px'>Marcado por " + esc(a.orcamento_marcado_por_nome) + "</div>" : "") +
+      "<label style='display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-weight:700;margin-bottom:14px'>" +
+        "<input type='checkbox' id='orcLiCk' style='width:auto;margin-top:3px' onchange=\"document.getElementById('orcLiBtn').disabled=!this.checked\">" +
+        "<span>Li e estou ciente do orçamento diferenciado. Vou cobrar conforme o combinado acima.</span></label>" +
+      "<div style='display:flex;gap:8px;justify-content:flex-end'>" +
+        "<button type='button' class='btn btno' id='orcCancelBtn'>Cancelar</button>" +
+        "<button type='button' class='btn btng' id='orcLiBtn' disabled>🔓 Liberar edição</button>" +
+      "</div></div>";
+  document.body.appendChild(ov);
+  document.getElementById("orcCancelBtn").onclick = function(){ ov.remove(); };
+  document.getElementById("orcLiBtn").onclick = async function(){
+    var btn = this; btn.disabled = true; btn.textContent = "Registrando…";
+    try {
+      var r = await supa.from("orcamento_leituras").insert({
+        agendamento_id: a.id, usuario_id: (CU && CU.id) || null, usuario_nome: (CU && CU.nome) || null, texto_lido: a.orcamento_texto || null
+      });
+      if (r.error) throw r.error;
+    } catch(e) {
+      toast("⚠️", "Não foi possível registrar a leitura: " + (e.message || e) + ". Edição continua travada.");
+      btn.disabled = false; btn.textContent = "🔓 Liberar edição"; return;
+    }
+    document.querySelectorAll("[data-orclock='1']").forEach(function(el){ el.disabled = false; el.removeAttribute("data-orclock"); });
+    var av = document.getElementById("eOrcAviso");
+    if(av) av.innerHTML = "🔓 Edição liberada por <b>" + esc((CU && CU.nome) || "você") + "</b> após leitura do orçamento diferenciado. Confira o valor combinado antes de salvar.";
+    ov.remove();
+    toast("🔓", "Edição liberada — leitura registrada.");
+  };
+}
+
 function openEditAg(id) {
   var a = ags.find(function(x){ return x.id === id; });
   if(!a) return;
@@ -12152,6 +12289,8 @@ function openEditAg(id) {
        "<input type='checkbox' id='eNfTerc' style='width:auto' disabled onchange='nfPagFlagEditSalvar(" + (_pIdNf ? Number(_pIdNf) : "null") + ", this)'>" +
        "<span>🧾 Paciente não é o pagador <span style='color:var(--gr);font-size:.75rem'>(nota pede CPF/CNPJ de quem paga)</span></span></label>";
   setTimeout(function(){ if (typeof nfPagFlagEditCarregar === "function") nfPagFlagEditCarregar(_pIdNf); }, 60);
+
+  b += orcSecaoEdicaoHtml(a);   // v8.25 — orçamento diferenciado (trava)
 
   b += "<div class='field'><label>Exames</label>";
   b += "<input type='text' id='eExSearch' placeholder='Buscar exame...' oninput=\"filtrarExames(this,'eExames')\" style='margin-bottom:6px'>";
@@ -12318,11 +12457,16 @@ function openEditAg(id) {
       // Belt-and-suspenders com o fix em dbSaveAg/dbSaveAgRpc.
       if (a && a.id) a._new = false;
 
+      // v8.25 — orçamento diferenciado: lê e valida ANTES de salvar
+      var _orc = orcLerSecaoEdicao(a);
+      if (_orc && _orc.erro) { toast("⚠️", _orc.erro); return; }
+
       var ok = await dbSaveAg(a);
       if (!ok) {
         toast("⚠️","Erro ao salvar alterações do agendamento");
         return;
       }
+      if (_orc && _orc.mudou) { await orcSalvar(a, _orc); }
 
       // ⚡ FIX v3.8 — propagação completa de paciente vinculado.
       // Antes (fix 05/05/2026 caso GABRIEL VESTENA): update bruto
@@ -12427,6 +12571,7 @@ function openEditAg(id) {
   }
 
   updAgSumEdit();
+  orcAplicarTravaEdicao(a);   // v8.25 — trava exames/valores se orçamento diferenciado
 }
 function onCepInputAuto(el, isEdit){
   if(!el) return;
