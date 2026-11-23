@@ -237,6 +237,10 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-23 (v8.26.2): Filtro Agendados em ordem crescente do horario
+              marcado; empates por codigo e id. Realizados mantem ordem
+              por codigo. Numeros completos preservados nos cards.
+
   2026-11-23 (v8.26.1): Atendimento sempre em ordem crescente de codigo.
               Sem agrupamento por hora. Codigo completo destacado no card,
               sem reticencias; registros sem codigo ficam ao final.
@@ -4282,7 +4286,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.26.1 - 2026-11-23";
+var APP_VERSION = "v8.26.2 - 2026-11-23";
 
 // v8.24 — BUSCA SEM ACENTO. Normaliza o termo digitado do mesmo jeito que o
 // banco (função norm_nome_paciente): MAIÚSCULAS, sem acento, sem espaço sobrando.
@@ -9820,6 +9824,15 @@ function _atCompararCodigos(a,b){
   if(av !== bv) return av < bv ? -1 : 1;
   return Number(a.id)-Number(b.id);
 }
+function _atMinutosAgendados(a){
+  var horario = String(a.hr || "").trim().match(/^([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
+  return horario ? Number(horario[1])*60+Number(horario[2]) : Infinity;
+}
+function _atCompararAgendados(a,b){
+  var av = _atMinutosAgendados(a), bv = _atMinutosAgendados(b);
+  if(av !== bv) return av < bv ? -1 : 1;
+  return _atCompararCodigos(a,b);
+}
 async function _atCarregarHorarioReal(ag){
   if(!ag || !ag.id) return;
   try{
@@ -10034,8 +10047,8 @@ function renderAtendimento() {
     });
   }
 
-  // A sequencia visivel segue sempre o codigo, independentemente do horario.
-  filtered.sort(_atCompararCodigos);
+  var ordenarPorHorario = atFilter === "agendado";
+  filtered.sort(ordenarPorHorario ? _atCompararAgendados : _atCompararCodigos);
 
   // Dias da semana extenso
   var diasSemana = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
@@ -10093,7 +10106,7 @@ function renderAtendimento() {
   }
   h += "</div>";
 
-  // Lista de atendimentos em sequencia unica de codigos.
+  // Sequencia unica, sem grupos que alterem a ordenacao do filtro.
   h += "<div class='at-list'>";
 
   if (!filtered.length) {
@@ -10106,7 +10119,7 @@ function renderAtendimento() {
     var sl = { agendado: "Agendado", realizado: "Realizado", cancelado: "Cancelado", aguardando: "Aguardando" };
 
       h += "<div class='at-hour-block'>";
-      h += "<div class='at-hour-hdr'>Código de atendimento <span class='at-hour-count'>" + filtered.length + " paciente" + (filtered.length > 1 ? "s" : "") + "</span></div>";
+      h += "<div class='at-hour-hdr'>" + (ordenarPorHorario ? "Horário agendado" : "Código de atendimento") + " <span class='at-hour-count'>" + filtered.length + " paciente" + (filtered.length > 1 ? "s" : "") + "</span></div>";
       h += "<div class='at-hour-grid'>";
 
       filtered.forEach(function(a) {
