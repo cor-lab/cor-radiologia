@@ -237,6 +237,10 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-23 (v8.26.3): Dentista recem-cadastrado ja abre com a secao Acesso FotonWeb
+      liberada (dbSaveDent guarda o firebird_id gerado pelo banco). Antes aparecia
+      "sem firebird_id. Sync pendente" ate dar F5.
+
   2026-11-23 (v8.26.2): Filtro Agendados em ordem crescente do horario
               marcado; empates por codigo e id. Realizados mantem ordem
               por codigo. Numeros completos preservados nos cards.
@@ -4286,7 +4290,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.26.2 - 2026-11-23";
+var APP_VERSION = "v8.26.3 - 2026-11-23";
 
 // v8.24 — BUSCA SEM ACENTO. Normaliza o termo digitado do mesmo jeito que o
 // banco (função norm_nome_paciente): MAIÚSCULAS, sem acento, sem espaço sobrando.
@@ -7546,7 +7550,7 @@ async function dbSaveDent(d,isNew){
     pode_ver_pontos_fotonweb: d.pvpf === true,
     recebe_aviso_atendimento_realizado: d.raar !== false};
   var r=isNew?await supa.from("dentistas").insert(data).select().single():await supa.from("dentistas").update(data).eq("id",d.id);
-  if(!r.error&&isNew&&r.data)d.id=r.data.id;
+  if(!r.error&&isNew&&r.data){d.id=r.data.id;d.fid=r.data.firebird_id||r.data.id;} // v8.26.3: guarda o codigo FotonWeb gerado pelo banco
   return !r.error;
 }
 async function dbDelDent(id){return !(await supa.from("dentistas").update({ativo:false}).eq("id",id)).error;}
@@ -14975,7 +14979,7 @@ function openDtM(eid){
     if(ed && ed.fid) dentAuthLoad(ed.fid, ed.n);
     else if(ed && !ed.fid) {
       var elAuth = document.getElementById("dentAuthContent");
-      if(elAuth) elAuth.innerHTML = "<div style='color:#f59e0b;font-size:12px;padding:6px'>⚠️ Dentista sem firebird_id. Sync pendente.</div>";
+      if(elAuth) elAuth.innerHTML = "<div style='color:#f59e0b;font-size:12px;padding:6px'>⚠️ Cadastro ainda sem código de acesso FotonWeb. Feche, atualize a página (F5) e abra o dentista de novo.</div>";
     }
   } else if(ed){
     var elAuthRO = document.getElementById("dentAuthContent");
