@@ -237,6 +237,12 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-23 (v8.26): Horario real de realizacao separado da agenda.
+              Atendimentos usa realizado_em do servidor para data, ordem,
+              agrupamento e exibicao dos realizados. Agenda preservada.
+              Legados sem timestamp ficam identificados, sem horario inventado.
+              Requer 01_horario_real.sql no Supabase antes de publicar.
+
   2026-11-19 (v8.25): ORÇAMENTO DIFERENCIADO (cobrir orçamento da concorrência).
               Por agendamento: colunas agendamentos.orcamento_diferenciado/_texto/
               _marcado_por(_nome)/_em. Admin ou recepção marcam no "Editar
@@ -4271,7 +4277,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.25 - 2026-11-19";
+var APP_VERSION = "v8.26 - 2026-11-23";
 
 // v8.24 — BUSCA SEM ACENTO. Normaliza o termo digitado do mesmo jeito que o
 // banco (função norm_nome_paciente): MAIÚSCULAS, sem acento, sem espaço sobrando.
@@ -6425,7 +6431,7 @@ async function marcarRealizadoEEmitir(agendamentoId){
         status: "realizado",
         status_clinico: "realizado"
       })
-      .eq("id", agendamentoId);
+      .eq("id", agendamentoId).select("*").single();
 
     if(upd.error){
       console.error("marcarRealizadoEEmitir.update:", upd.error);
@@ -6436,6 +6442,7 @@ async function marcarRealizadoEEmitir(agendamentoId){
     ag.st = "realizado";
     ag.status = "realizado";
     ag.status_clinico = "realizado";
+    ag.realizado_em = upd.data.realizado_em || null;
 
     // ⚡ FIX 05/05/2026 — recarrega ag fresco do Supabase pra atualizar
     // ags[i].exames com os itens novos (caso reverter+editar+realizar)
@@ -7402,6 +7409,7 @@ async function loadAllData(){
           exames: itens,
           dt: iso2br(a.data_exame),
           hr: (a.hora_exame || "08:00").substring(0,5),
+          realizado_em: a.realizado_em || null,
           dur: a.duracao || 30,
           dId: a.dentista_id,
           cv: a.convenio_id || "",
@@ -7594,6 +7602,7 @@ async function dbSaveAgRpc(ag, payload, rows){
     // Fix: depois do INSERT a flag vai pra false; edicoes subsequentes do mesmo
     // objeto em memoria vao caminhar pro UPDATE corretamente.
     if(ag._new) ag._new = false;
+    if((ag.status_clinico || ag.st) === "realizado") await _atCarregarHorarioReal(ag);
     return {used:true, ok:true};
   }catch(e){
     if(rpcAgendamentoNaoExiste(e)){
@@ -7835,6 +7844,7 @@ async function dbSaveAg(ag){
     : await supa.from("agendamentos").update(d).eq("id", ag.id).select().single();
 
   if (!r.error && ag._new && r.data) ag.id = r.data.id;
+  if (!r.error && r.data) ag.realizado_em = r.data.realizado_em || null;
   if (r.error) {
     console.error("dbSaveAg:", r.error);
     return false;
@@ -8037,7 +8047,7 @@ async function dbUpdAgSt(id, st){
       status: st,
       status_clinico: st
     })
-    .eq("id", id);
+    .eq("id", id).select("*").single();
 
   if(r.error){
     console.error("dbUpdAgSt:", r.error);
@@ -8046,6 +8056,7 @@ async function dbUpdAgSt(id, st){
 
   ag.st = st;
   ag.status_clinico = st;
+  ag.realizado_em = r.data.realizado_em || null;
   return true;
 }
 async function dbUpdStatusFiscalAgendamento(agendamentoId, statusFiscal, nfseId){
@@ -9000,6 +9011,7 @@ function iniciarAutoRefresh(){
             paciente_uf:a.paciente_uf||"",
             ex:a.exame_id, exames:itens,
             dt:iso2br(a.data_exame), hr:(a.hora_exame||"08:00").substring(0,5),
+            realizado_em:a.realizado_em||null,
             dur:a.duracao||30, dId:a.dentista_id, cv:a.convenio_id||"",
             vl:parseFloat(a.valor||0),
             valor_bruto:parseFloat(a.valor_bruto||a.valor||0),
@@ -9770,6 +9782,78 @@ function histVoltarBusca() {
 var atDate = null;
 var atFilter = "realizado";
 
+// BEGIN HORARIO_REAL_V826 - hora da agenda nunca e sobrescrita.
+var _atFusoFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone:"America/Sao_Paulo", year:"numeric", month:"2-digit", day:"2-digit",
+  hour:"2-digit", minute:"2-digit", second:"2-digit", hourCycle:"h23"
+});
+function _atRealizacaoInfo(a){
+  if(!a || (a.status_clinico || a.st) !== "realizado" || !a.realizado_em) return null;
+  // Timestamp sem offset nao identifica um instante; nao assumir fuso do PC.
+  if(!/(Z|[+-]\d{2}:\d{2})$/i.test(String(a.realizado_em))) return null;
+  var ms = Date.parse(a.realizado_em);
+  if(!Number.isFinite(ms)) return null;
+  var p = {};
+  _atFusoFormatter.formatToParts(new Date(ms)).forEach(function(x){ p[x.type] = x.value; });
+  return {ms:ms, data:p.day+"/"+p.month+"/"+p.year, hora:p.hour+":"+p.minute,
+    segundos:Number(p.hour)*3600+Number(p.minute)*60+Number(p.second)};
+}
+function _atDiaDoRegistro(a){
+  var real = _atRealizacaoInfo(a);
+  return real ? real.data : a.dt;
+}
+function _atHoraDoRegistro(a){
+  var real = _atRealizacaoInfo(a);
+  return real ? real.hora : ((a.status_clinico || a.st) === "realizado" ? "" : (a.hr || ""));
+}
+function _atCompararHorarios(a,b){
+  var ar = _atRealizacaoInfo(a), br = _atRealizacaoInfo(b);
+  if(ar && br) return ar.ms-br.ms || Number(a.id)-Number(b.id);
+  var av = ar ? ar.segundos : ((a.status_clinico || a.st) === "realizado" ? Infinity : t2m(a.hr)*60);
+  var bv = br ? br.segundos : ((b.status_clinico || b.st) === "realizado" ? Infinity : t2m(b.hr)*60);
+  if(av !== bv) return av < bv ? -1 : 1;
+  return Number(a.id)-Number(b.id);
+}
+async function _atCarregarHorarioReal(ag){
+  if(!ag || !ag.id) return;
+  try{
+    var r = await supa.from("agendamentos").select("*").eq("id",ag.id).single();
+    if(r.error) throw r.error;
+    ag.realizado_em = r.data.realizado_em || null;
+  }catch(e){ console.warn("Nao foi possivel atualizar o horario real:",e); }
+}
+// END HORARIO_REAL_V826
+
+var _atDiasReais = {};
+async function _atGarantirDiaReal(data){
+  var iso = agFI(data), cache = _atDiasReais[iso];
+  if(cache && (cache.pendente || Date.now()-cache.em < 30000)) return;
+  cache = _atDiasReais[iso] = {pendente:true, em:Date.now()};
+  try{
+    var inicio = new Date(iso+"T00:00:00-03:00");
+    var fim = new Date(inicio.getTime()+86400000);
+    var rows = [], offset = 0, page;
+    do{
+      var r = await supa.from("agendamentos").select("*,agendamento_exames(*)")
+        .eq("status_clinico","realizado").gte("realizado_em",inicio.toISOString())
+        .lt("realizado_em",fim.toISOString()).order("id").range(offset,offset+499);
+      if(r.error) throw r.error;
+      page = r.data || []; rows = rows.concat(page); offset += page.length;
+    }while(page.length === 500);
+    // Inclui agendas antigas realizadas hoje, fora do carregamento inicial.
+    var ids = new Set(ags.map(function(a){return a.id;}));
+    rows.forEach(function(row){
+      if(!ids.has(row.id)){
+        ags.push(_mapAgFromRow(row,row.agendamento_exames || [])); ids.add(row.id);
+      }
+    });
+  }catch(e){ console.warn("Falha ao carregar realizacoes do dia:",e); }
+  finally{
+    cache.pendente = false; cache.em = Date.now();
+    if(atDate && agFI(atDate) === iso) renderAtendimento();
+  }
+}
+
 function ratendimento() {
   if (!canAcc("atendimento")) { deny(document.getElementById("pgAt")); return; }
   if (!atDate) {
@@ -9909,13 +9993,14 @@ function renderAtendimento() {
   if (!atDate) return;
 
   var ds = agF(atDate);
+  _atGarantirDiaReal(atDate);
   var hoje = new Date();
   var hojeS = agF(hoje);
   var isHoje = ds === hojeS;
 
   // Filtrar agendamentos do dia
   var dayAgs = ags.filter(function(a) {
-    return a.dt === ds;
+    return _atDiaDoRegistro(a) === ds;
   });
 
   // Contadores
@@ -9943,8 +10028,8 @@ function renderAtendimento() {
     });
   }
 
-  // Ordenar por hora
-  filtered.sort(function(a, b) { return t2m(a.hr) - t2m(b.hr); });
+  // Realizados seguem o instante do atendimento, nao o horario agendado.
+  filtered.sort(_atCompararHorarios);
 
   // Dias da semana extenso
   var diasSemana = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
@@ -10015,7 +10100,8 @@ function renderAtendimento() {
     // Agrupar por hora cheia
     var hourGroups = {};
     filtered.forEach(function(a) {
-      var hk = a.hr ? a.hr.substring(0, 2) + ":00" : "00:00";
+      var horaRegistro = _atHoraDoRegistro(a);
+      var hk = horaRegistro ? horaRegistro.substring(0, 2) + ":00" : "Sem horario real registrado";
       if (!hourGroups[hk]) hourGroups[hk] = [];
       hourGroups[hk].push(a);
     });
@@ -10064,7 +10150,9 @@ function renderAtendimento() {
         h += _seloFiscalCard(a);
         // v3.93 — selo "Email ✓/✕" (aviso ao dentista) logo após o de Nota, à direita.
         h += _seloEmailCard(a);
-        h += "<div class='at-mini-hr'>" + esc(a.hr) + "</div>";
+        var horaRegistro = _atHoraDoRegistro(a);
+        var horaTitulo = horaRegistro && st === "realizado" ? "Realizado em " + _atRealizacaoInfo(a).data + " as " + horaRegistro : (st === "realizado" ? "Horario real nao registrado" : "Horario agendado");
+        h += "<div class='at-mini-hr' title='" + esc(horaTitulo + " | Agendado: " + a.dt + " " + (a.hr || "")) + "'>" + esc(horaRegistro || "—") + "</div>";
         h += "</div>";
 
         // Linha 2: exame
@@ -10267,6 +10355,7 @@ function _mapAgFromRow(a, itens) {
     ex: a.exame_id, exames: itens || [],
     dt: iso2br(a.data_exame),
     hr: (a.hora_exame || "08:00").substring(0, 5),
+    realizado_em: a.realizado_em || null,
     dur: a.duracao || 30,
     dId: a.dentista_id, cv: a.convenio_id || "",
     vl: parseFloat(a.valor || 0),
@@ -10365,7 +10454,7 @@ function renderAtCalendario() {
     if (dds === selS) cls += " sel";
 
     // Verificar se tem agendamentos nesse dia
-    var temAg = ags.some(function(a) { return a.dt === dds; });
+    var temAg = ags.some(function(a) { return _atDiaDoRegistro(a) === dds; });
 
     h += "<div class='" + cls + "' onclick='atSelectDay(" + yr + "," + mo + "," + d + ")'>" + d;
     if (temAg) h += "<div class='dot'></div>";
@@ -11520,11 +11609,12 @@ function abrirModalDescontoPontos(id){
         window._walkinPontosId = null;
         var _updWk = await supa.from("agendamentos")
           .update({ status: "realizado", status_clinico: "realizado" })
-          .eq("id", id);
+          .eq("id", id).select("*").single();
         if (_updWk.error) {
           toast("⚠️", "Pontos aplicados, mas não consegui marcar como realizado: " + _updWk.error.message);
         } else {
           a.st = "realizado"; a.status = "realizado"; a.status_clinico = "realizado";
+          a.realizado_em = _updWk.data.realizado_em || null;
           if (typeof rndAg === "function") rndAg();
           if (typeof renderAtendimento === "function") renderAtendimento();
         }
@@ -11573,7 +11663,12 @@ function agEV(ev, id) {
   b += "<div style=\"font-size:1.15rem;font-weight:700;font-family:Playfair Display,serif;margin-bottom:4px\">" + esc(a.pac) + "</div>";
   b += orcBannerHtml(a);   // v8.25 — orçamento diferenciado
   b += "<div style=\"display:flex;flex-wrap:wrap;gap:6px 14px;padding:12px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:10px;margin-bottom:8px\">";
-  b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📅</span> <strong>" + esc(a.dt) + "</strong> — " + esc(a.hr) + " ate " + em3 + "</div>";
+  b += "<div style=\"display:flex;align-items:center;gap:6px\"><span style=\"opacity:.7\">📅</span> Agendado: <strong>" + esc(a.dt) + "</strong> — " + esc(a.hr) + " ate " + em3 + "</div>";
+  if((a.status_clinico || a.st) === "realizado"){
+    var realizacaoModal = _atRealizacaoInfo(a);
+    b += "<div style='flex-basis:100%;font-weight:600'>Realizado: " +
+      (realizacaoModal ? esc(realizacaoModal.data+" às "+realizacaoModal.hora) : "horário real não registrado (legado)") + "</div>";
+  }
   // ⚡ FIX 06/05/2026 — usa calcValoresAg em vez de a.vl direto. a.vl é
   // populado de a.valor (campo legado) no load (linha 2208), pode estar
   // STALE em relação aos exames atuais (caso ELDER 214548: a.vl=360 mas
