@@ -237,6 +237,10 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-23 (v8.26.1): Atendimento sempre em ordem crescente de codigo.
+              Sem agrupamento por hora. Codigo completo destacado no card,
+              sem reticencias; registros sem codigo ficam ao final.
+
   2026-11-23 (v8.26): Horario real de realizacao separado da agenda.
               Atendimentos usa realizado_em do servidor para data, ordem,
               agrupamento e exibicao dos realizados. Agenda preservada.
@@ -2490,6 +2494,7 @@ select:focus{
 .at-mini.sem-req:hover{border-color:#ef4444!important}
 .at-mini-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
 .at-mini-nome{font-size:.92rem;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.at-mini-codigo{font-family:"DM Mono",monospace;font-size:.82rem;color:var(--tl);font-weight:700;margin-bottom:6px;white-space:normal;overflow-wrap:anywhere}
 .at-mini-hr{font-family:"DM Mono",monospace;font-size:.76rem;color:var(--g);font-weight:650;flex-shrink:0}
 .at-mini-exame{font-size:.78rem;line-height:1.35;color:rgba(255,255,255,.76);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-height:2.1em;margin-bottom:7px}
 .at-mini-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -4277,7 +4282,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.26 - 2026-11-23";
+var APP_VERSION = "v8.26.1 - 2026-11-23";
 
 // v8.24 — BUSCA SEM ACENTO. Normaliza o termo digitado do mesmo jeito que o
 // banco (função norm_nome_paciente): MAIÚSCULAS, sem acento, sem espaço sobrando.
@@ -9806,11 +9811,12 @@ function _atHoraDoRegistro(a){
   var real = _atRealizacaoInfo(a);
   return real ? real.hora : ((a.status_clinico || a.st) === "realizado" ? "" : (a.hr || ""));
 }
-function _atCompararHorarios(a,b){
-  var ar = _atRealizacaoInfo(a), br = _atRealizacaoInfo(b);
-  if(ar && br) return ar.ms-br.ms || Number(a.id)-Number(b.id);
-  var av = ar ? ar.segundos : ((a.status_clinico || a.st) === "realizado" ? Infinity : t2m(a.hr)*60);
-  var bv = br ? br.segundos : ((b.status_clinico || b.st) === "realizado" ? Infinity : t2m(b.hr)*60);
+function _atCodigoDoAtendimento(a){
+  var codigo = Number(a.firebird_seq_atend);
+  return Number.isSafeInteger(codigo) && codigo > 0 ? codigo : Infinity;
+}
+function _atCompararCodigos(a,b){
+  var av = _atCodigoDoAtendimento(a), bv = _atCodigoDoAtendimento(b);
   if(av !== bv) return av < bv ? -1 : 1;
   return Number(a.id)-Number(b.id);
 }
@@ -10028,8 +10034,8 @@ function renderAtendimento() {
     });
   }
 
-  // Realizados seguem o instante do atendimento, nao o horario agendado.
-  filtered.sort(_atCompararHorarios);
+  // A sequencia visivel segue sempre o codigo, independentemente do horario.
+  filtered.sort(_atCompararCodigos);
 
   // Dias da semana extenso
   var diasSemana = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
@@ -10087,7 +10093,7 @@ function renderAtendimento() {
   }
   h += "</div>";
 
-  // Lista de atendimentos — agrupados por hora
+  // Lista de atendimentos em sequencia unica de codigos.
   h += "<div class='at-list'>";
 
   if (!filtered.length) {
@@ -10097,25 +10103,13 @@ function renderAtendimento() {
     h += "<div class='at-empty-sub'>" + (dayAgs.length ? "Tente mudar o filtro acima" : "Clique em outro dia no calendário ou agende um novo") + "</div>";
     h += "</div>";
   } else {
-    // Agrupar por hora cheia
-    var hourGroups = {};
-    filtered.forEach(function(a) {
-      var horaRegistro = _atHoraDoRegistro(a);
-      var hk = horaRegistro ? horaRegistro.substring(0, 2) + ":00" : "Sem horario real registrado";
-      if (!hourGroups[hk]) hourGroups[hk] = [];
-      hourGroups[hk].push(a);
-    });
-
-    var hourKeys = Object.keys(hourGroups).sort();
     var sl = { agendado: "Agendado", realizado: "Realizado", cancelado: "Cancelado", aguardando: "Aguardando" };
 
-    hourKeys.forEach(function(hk) {
-      var grupo = hourGroups[hk];
       h += "<div class='at-hour-block'>";
-      h += "<div class='at-hour-hdr'>" + hk + " <span class='at-hour-count'>" + grupo.length + " paciente" + (grupo.length > 1 ? "s" : "") + "</span></div>";
+      h += "<div class='at-hour-hdr'>Código de atendimento <span class='at-hour-count'>" + filtered.length + " paciente" + (filtered.length > 1 ? "s" : "") + "</span></div>";
       h += "<div class='at-hour-grid'>";
 
-      grupo.forEach(function(a) {
+      filtered.forEach(function(a) {
         var st = a.status_clinico || a.st;
         var d = fdent(a.dId) || { n: "—" };
 
@@ -10141,6 +10135,8 @@ function renderAtendimento() {
           }
         }
         h += "<div class='at-mini st-" + st + ((_semReq || _semGuia) ? " sem-req" : "") + "' onclick='agEV(" + a.id + ")'>";
+        h += "<div class='at-mini-codigo' title='Código de atendimento'>" +
+          (_atCodigoDoAtendimento(a) !== Infinity ? "#" + esc(String(a.firebird_seq_atend)) : "Aguardando código") + "</div>";
 
         // Linha 1: nome + hora
         h += "<div class='at-mini-top'>";
@@ -10165,7 +10161,6 @@ function renderAtendimento() {
         h += execInlineBadge(a);
         if(_semReq) h += "<span style='background:#ef4444;color:#fff;font-weight:700;font-size:.56rem;padding:1px 5px;border-radius:4px;flex-shrink:0'>SEM REQUISIÇÃO</span>";
         if(_semGuia) h += "<span style='background:#ef4444;color:#fff;font-weight:700;font-size:.56rem;padding:1px 5px;border-radius:4px;flex-shrink:0'>SEM GUIA</span>";
-        if(a.firebird_seq_atend) h += "<span style='color:var(--tl);font-weight:700;font-size:.7rem'>#" + a.firebird_seq_atend + "</span>";
         h += "<span>🦷 " + esc(d.n) + "</span>";
         // ⚡ Sessão 1 simplificação 06/05/2026 — usa fmtValorAg em vez de a.vl
         h += "<span>R$ " + fmtValorAg(a) + "</span>";
@@ -10187,7 +10182,6 @@ function renderAtendimento() {
       });
 
       h += "</div></div>";
-    });
   }
 
   h += "</div>";
