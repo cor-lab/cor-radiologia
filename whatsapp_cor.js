@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v18 (busca ampla: nome/mensagem) — 2026-07-10
+   VERSÃO: WHATSAPP-WEB v25 (botões de orçamento do concorrente) — 2026-11-26
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v24-xss-fix-20260815";
+  var _VERSAO = "whatsapp-web-v25-orcamento-20261126";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -524,6 +524,197 @@ var WHATSAPP = (function () {
     }
   }
 
+  // ── v25 — ORÇAMENTO DO CONCORRENTE (26/11/2026) ──
+  // Dois botões no cabeçalho do chat: "Aprovar orçamento" e "Não cobrir".
+  // Abrem um formulário (exame, valor, parcelas) e chamam /cora_orcamento.
+  // O SERVIDOR monta o texto (fixo), envia ao paciente, devolve a conversa
+  // para a CORA e grava a decisão em orcamentos_concorrencia. A prévia aqui
+  // embaixo só espelha esse texto — quem manda é o servidor.
+  // O formulário fica em document.body (fora do #pgWa) para o auto-refresh
+  // de 4s não apagar o que a recepção está digitando.
+  var _orc = null;   // { numero, decisao, enviando }
+
+  function _orcReais(v) {
+    try {
+      return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    } catch (e) { return "R$ " + Number(v).toFixed(2).replace(".", ","); }
+  }
+  // "170" | "170,00" | "R$ 1.250,50" | "1.250" -> número; vazio -> null; lixo -> NaN
+  function _orcNum(txt) {
+    var t = String(txt == null ? "" : txt).replace(/r\$/i, "").replace(/\s/g, "");
+    if (!t) return null;
+    if (t.indexOf(",") !== -1) t = t.replace(/\./g, "").replace(",", ".");
+    else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
+    if (!/^\d+(\.\d{1,2})?$/.test(t)) return NaN;
+    return parseFloat(t);
+  }
+  function _orcVal(id) {
+    var el = document.getElementById(id);
+    return el ? String(el.value || "").trim() : "";
+  }
+  // Lê e valida o formulário. Devolve { erro } ou { dados }.
+  function _orcLer() {
+    if (!_orc) return { erro: "Formulário fechado." };
+    var exame = _orcVal("waOrcExame").replace(/\s+/g, " ");
+    if (!exame) return { erro: "Informe o exame." };
+    if (exame.length > 80 || exame.indexOf("*") !== -1) return { erro: "Nome do exame inválido (até 80 letras, sem asterisco)." };
+    var valor = _orcNum(_orcVal("waOrcValor"));
+    if (valor !== null && isNaN(valor)) return { erro: "Valor inválido. Use só números, ex.: 170 ou 170,00." };
+    if (_orc.decisao === "aprovar" && valor === null) return { erro: "Informe o valor aprovado." };
+    if (valor !== null && (valor < 20 || valor > 5000)) return { erro: "Valor fora da faixa (R$ 20 a R$ 5.000). Confira a digitação." };
+    var parcelas = parseInt(_orcVal("waOrcParc") || "1", 10);
+    if (!(parcelas >= 1 && parcelas <= 10)) return { erro: "Parcelas: de 1 a 10." };
+    var conc = _orcNum(_orcVal("waOrcConc"));
+    var nosso = _orcNum(_orcVal("waOrcNosso"));
+    if ((conc !== null && isNaN(conc)) || (nosso !== null && isNaN(nosso))) return { erro: "Valor do concorrente ou valor de tabela inválido." };
+    return { dados: {
+      exame: exame, valor: valor, parcelas: parcelas,
+      valor_concorrente: conc, valor_nosso: nosso,
+      observacao: _orcVal("waOrcObs").substring(0, 300)
+    } };
+  }
+  // Espelho dos textos fixos do servidor (regras.py). Só para a prévia.
+  function _orcTexto(decisao, d) {
+    var parc = d.parcelas > 1 ? ", em até " + d.parcelas + "x" : "";
+    if (decisao === "aprovar") {
+      return "Boa notícia! 😊 A nossa equipe avaliou e consegue fazer o exame *" + d.exame + "* por *" +
+             _orcReais(d.valor) + "*" + parc + ". Quer que eu já veja um horário para você?";
+    }
+    if (d.valor !== null) {
+      return "A nossa equipe avaliou com atenção o orçamento que você enviou. 😊 Para o exame *" + d.exame +
+             "*, o melhor valor que conseguimos é *" + _orcReais(d.valor) + "*" + parc +
+             ". Se quiser, já vejo um horário para você.";
+    }
+    return "A nossa equipe avaliou com atenção o orçamento que você enviou. 😊 Desta vez não conseguimos " +
+           "chegar nesse valor para o exame *" + d.exame + "*; o nosso valor continua o que te passei. " +
+           "Se quiser seguir com a gente, já vejo um horário para você.";
+  }
+  function orcPrevia() {
+    var pv = document.getElementById("waOrcPrevia");
+    if (!pv || !_orc) return;
+    var l = _orcLer();
+    if (l.erro) { pv.textContent = l.erro; pv.style.color = "#e6a700"; }
+    else { pv.textContent = _orcTexto(_orc.decisao, l.dados); pv.style.color = "#0f6e56"; }
+  }
+  function orcFechar() {
+    var m = document.getElementById("waOrcModal");
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+    _orc = null;
+  }
+  function orcAbrir(decisao) {
+    if (!_sel) return;
+    if (decisao !== "aprovar" && decisao !== "recusar") return;
+    orcFechar();
+    var conv = null;
+    for (var i = 0; i < _convs.length; i++) if (_convs[i].numero === _sel) { conv = _convs[i]; break; }
+    if (conv && conv.modo_humano && conv.humano_por && conv.humano_por !== _quemSou()) {
+      if (typeof toast === "function") toast("🔒", esc(conv.humano_por) + " está com esta conversa.");
+      return;
+    }
+    _orc = { numero: _sel, decisao: decisao, enviando: false };
+    var aprovar = decisao === "aprovar";
+    var inp = "width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid #2a3550;" +
+              "background:#0f1626;color:#e6e6e6;font-size:.88rem;font-family:inherit";
+    var lab = "display:block;font-size:.74rem;color:#9fb0cc;margin:10px 0 4px";
+    var h = "";
+    h += "<div style='background:#141c2e;border:1px solid #2a3550;border-radius:12px;padding:18px;width:440px;max-width:94vw;max-height:92vh;overflow-y:auto;color:#e6e6e6'>";
+    h += "<div style='font-weight:600;font-size:1rem'>" + (aprovar ? "✅ Aprovar orçamento" : "🚫 Não cobrir orçamento") + "</div>";
+    h += "<div style='font-size:.76rem;color:#9fb0cc;margin-top:2px'>Paciente " + esc(fmtNumero(_sel)) +
+         " — a CORA envia a mensagem abaixo e segue com o agendamento.</div>";
+    h += "<label style='" + lab + "'>Exame</label>";
+    h += "<input id='waOrcExame' type='text' maxlength='80' placeholder='Ex.: Tomografia 1 Região' autocomplete='off' style='" + inp + "'>";
+    h += "<div style='display:flex;gap:10px'>";
+    h += "<div style='flex:2'><label style='" + lab + "'>" + (aprovar ? "Valor aprovado (R$)" : "Melhor valor que conseguimos (R$) — opcional") + "</label>";
+    h += "<input id='waOrcValor' type='text' inputmode='decimal' placeholder='" + (aprovar ? "170,00" : "em branco = mantém o valor já passado") + "' autocomplete='off' style='" + inp + "'></div>";
+    h += "<div style='flex:1'><label style='" + lab + "'>Parcelas</label><select id='waOrcParc' style='" + inp + "'>";
+    for (var p = 1; p <= 10; p++) h += "<option value='" + p + "'>" + (p === 1 ? "à vista / 1x" : "até " + p + "x") + "</option>";
+    h += "</select></div></div>";
+    h += "<div style='display:flex;gap:10px'>";
+    h += "<div style='flex:1'><label style='" + lab + "'>Valor do concorrente (R$)</label><input id='waOrcConc' type='text' inputmode='decimal' placeholder='opcional' autocomplete='off' style='" + inp + "'></div>";
+    h += "<div style='flex:1'><label style='" + lab + "'>Nosso valor de tabela (R$)</label><input id='waOrcNosso' type='text' inputmode='decimal' placeholder='opcional' autocomplete='off' style='" + inp + "'></div>";
+    h += "</div>";
+    h += "<label style='" + lab + "'>Observação interna (o paciente não vê)</label>";
+    h += "<input id='waOrcObs' type='text' maxlength='300' placeholder='Ex.: clínica X, orçamento por foto' autocomplete='off' style='" + inp + "'>";
+    h += "<label style='" + lab + "'>Mensagem que o paciente vai receber</label>";
+    h += "<div id='waOrcPrevia' style='background:#d8f5e3;color:#0f6e56;padding:8px 12px;border-radius:12px;font-size:.84rem;white-space:pre-wrap;min-height:38px'></div>";
+    h += "<div style='display:flex;justify-content:flex-end;gap:8px;margin-top:16px'>";
+    h += "<button class='btn' style='padding:7px 14px;font-size:.84rem' onclick='WHATSAPP.orcFechar()'>Cancelar</button>";
+    h += "<button id='waOrcEnviar' class='btn' style='padding:7px 14px;font-size:.84rem;font-weight:600;color:#fff;background:" +
+         (aprovar ? "#1f8a4c" : "#8a3b1f") + "' onclick='WHATSAPP.orcEnviar()'>" + (aprovar ? "Aprovar e enviar" : "Enviar resposta") + "</button>";
+    h += "</div></div>";
+    var m = document.createElement("div");
+    m.id = "waOrcModal";
+    m.style.cssText = "position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center";
+    m.innerHTML = h;
+    document.body.appendChild(m);
+    // Exame: aproveita o que a CORA coletou no pedido, se houver (a recepção confere).
+    var ags = _agsLista(conv && conv.agendamento_dados);
+    var ex = (ags.length === 1 && typeof ags[0].exame === "string") ? ags[0].exame.replace(/\*/g, "").replace(/\s+/g, " ").trim() : "";
+    var elEx = document.getElementById("waOrcExame");
+    if (elEx) { elEx.value = ex.substring(0, 80); }
+    ["waOrcExame", "waOrcValor", "waOrcParc", "waOrcConc", "waOrcNosso"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) { el.addEventListener("input", orcPrevia); el.addEventListener("change", orcPrevia); }
+    });
+    orcPrevia();
+    var foco = document.getElementById(ex ? "waOrcValor" : "waOrcExame");
+    if (foco) foco.focus();
+  }
+  async function orcEnviar() {
+    if (!_orc || _orc.enviando) return;
+    var l = _orcLer();
+    if (l.erro) { if (typeof toast === "function") toast("⚠️", l.erro); return; }
+    var d = l.dados, decisao = _orc.decisao, numero = _orc.numero;
+    var resumo = (decisao === "aprovar" ? "APROVAR " : "NÃO COBRIR — ") + d.exame +
+                 (d.valor !== null ? " por " + _orcReais(d.valor) + (d.parcelas > 1 ? " em até " + d.parcelas + "x" : "") : "") +
+                 "\npara " + fmtNumero(numero) + "?\n\nA mensagem vai direto ao paciente.";
+    if (!confirm(resumo)) return;
+    _orc.enviando = true;
+    var bt = document.getElementById("waOrcEnviar");
+    if (bt) { bt.disabled = true; bt.textContent = "Enviando…"; }
+    function _soltar() {
+      if (_orc) _orc.enviando = false;
+      var b = document.getElementById("waOrcEnviar");
+      if (b) { b.disabled = false; b.textContent = (decisao === "aprovar" ? "Aprovar e enviar" : "Enviar resposta"); }
+    }
+    try {
+      var r = await _chamarBot("/cora_orcamento", {
+        numero: numero, decisao: decisao, exame: d.exame, valor: d.valor, parcelas: d.parcelas,
+        valor_concorrente: d.valor_concorrente, valor_nosso: d.valor_nosso,
+        observacao: d.observacao, atendente: _quemSou()
+      });
+      if (r && r.ok) {
+        var j = {}; try { j = await r.json(); } catch (e) {}
+        orcFechar();
+        if (typeof toast === "function") {
+          toast("✅", (decisao === "aprovar" ? "Orçamento aprovado" : "Resposta enviada") + " — CORA segue com o paciente" +
+                (j && j.registrado === false ? " (atenção: a decisão NÃO ficou gravada no relatório)" : ""));
+        }
+        await _refresh();
+        return;
+      }
+      var det = "";
+      if (r && r.status !== 401 && r.status !== 403) {
+        try { var dj = await r.json(); det = String(dj.detail || ""); } catch (e) {}
+      }
+      var msg;
+      if (!r) msg = null;   // sessão morta: _chamarBot já avisou
+      else if (r.status === 401 || r.status === 403) msg = null;
+      else if (r.status === 409 && det.indexOf("fora_da_janela_24h") !== -1) msg = "Fora da janela de 24h da Meta — o paciente precisa escrever primeiro.";
+      else if (r.status === 409 && det.indexOf("ja_assumida") !== -1) msg = det.replace("ja_assumida:", "") + " está com esta conversa.";
+      else if (r.status === 400) msg = "Dados recusados: " + (det || "confira os campos");
+      else if (r.status === 404) msg = "O servidor da CORA ainda não tem esta função (falta o deploy).";
+      else if (r.status === 502) msg = "O WhatsApp não aceitou o envio. Nada foi enviado; tente de novo.";
+      else msg = "Falha ao enviar (HTTP " + r.status + ")";
+      if (msg && typeof toast === "function") toast("⚠️", msg);
+      _soltar();
+    } catch (e) {
+      console.error("orcEnviar:", e);
+      if (typeof toast === "function") toast("⚠️", "Erro de rede — confira na conversa se a mensagem saiu antes de tentar de novo.");
+      _soltar();
+    }
+  }
+
   async function devolverCora() {
     if (!_sel) return;
     try {
@@ -694,6 +885,11 @@ var WHATSAPP = (function () {
       if (!jaResolvida) {
         // v23 — pede que a CORA volte a falar (retomada); some em resolvidas
         h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:#1d3a5f;color:#cfe3ff' title='A CORA relê a conversa e manda uma mensagem que faz o atendimento andar' onclick='WHATSAPP.coraRetomar()'>🔄 CORA retoma</button>";
+        // v25 — resposta da equipe ao orçamento do concorrente (some se OUTRO atendente detém a conversa)
+        if (!(emHumano && conv.humano_por && conv.humano_por !== _quemSou())) {
+          h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:#1f8a4c;color:#fff;font-weight:600' title='Cobrir o orçamento do concorrente: a CORA informa o valor aprovado e segue com o agendamento' onclick='WHATSAPP.orcAbrir(\"aprovar\")'>✅ Aprovar orçamento</button>";
+          h += "<button class='btn' style='padding:5px 12px;font-size:.8rem;background:#5a2e1f;color:#ffd9cc' title='Não cobrir: a CORA avisa com educação e oferece seguir com o nosso valor' onclick='WHATSAPP.orcAbrir(\"recusar\")'>🚫 Não cobrir</button>";
+        }
         h += "<button class='btn btng' style='padding:5px 12px;font-size:.8rem' onclick='WHATSAPP.resolver()'>✓ Resolver</button>";
       } else {
         h += "<button class='btn' style='padding:5px 12px;font-size:.8rem' onclick='WHATSAPP.reabrir()'>↩️ Reabrir</button>";
@@ -869,6 +1065,9 @@ var WHATSAPP = (function () {
     assumirConversa: assumirConversa,
     coraRetomar: coraRetomar,
     devolverCora: devolverCora,
+    orcAbrir: orcAbrir,
+    orcFechar: orcFechar,
+    orcEnviar: orcEnviar,
     enviarResposta: enviarResposta,
     versao: _VERSAO
   };
