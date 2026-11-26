@@ -21,7 +21,7 @@
   "use strict";
 
   var PERFIS_CHAT = ["admin", "agenda", "cashback"];
-  var _CHAT_VER = "6.7 (20261020a)";   // versão deste módulo (aparece no menu 🔔)
+  var _CHAT_VER = "6.8 (20261126a)";   // versão deste módulo (aparece no menu 🔔)
   try { console.info("[chat_cor] versão " + _CHAT_VER); } catch (e) {}
 
   var _iniciado = false, _sessaoTimer = null;
@@ -117,7 +117,7 @@
       + ".cc-item .cc-cnt{margin-left:auto;background:#ef4444;color:#fff;font-size:.68rem;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px;font-weight:700}"
       + ".cc-item.on .cc-cnt{background:#fff;color:#ef4444}"
       + ".cc-main{position:relative;flex:1;display:flex;flex-direction:column;min-width:0}"
-      + ".cc-head{padding:12px 16px;border-bottom:1px solid var(--bd,#e5e7eb);font-weight:600;font-size:.95rem;display:flex;align-items:center;gap:8px}"
+      + ".cc-head{padding:12px 16px;border-bottom:1px solid var(--bd,#e5e7eb);font-weight:600;font-size:.95rem;display:flex;align-items:center;gap:8px;color:var(--tx,#334155)}"
       + ".cc-head small{font-weight:400;color:var(--gr,#94a3b8);font-size:.78rem}"
       + ".cc-mais-antigas{align-self:center;margin:4px 0 10px;padding:6px 14px;border:1px solid #cbd5e1;border-radius:16px;background:#fff;color:#334155;font-size:12px;cursor:pointer}"
       + ".cc-mais-antigas:hover{background:#e2e8f0}"
@@ -231,12 +231,86 @@
       + ".cc-pick{padding:10px 14px;overflow-y:auto}"
       + ".cc-pick h4{font-size:.9rem;margin:6px 2px 10px;color:var(--tx,#334155)}"
       + ".cc-pick .cc-item{border:1px solid var(--bd,#e5e7eb);margin-bottom:6px}"
-      + "@media(max-width:640px){.cc-side{width:140px}.cc-wrap{height:calc(100vh - 130px)}.cc-row{max-width:90%}}";
+      + "@media(max-width:640px){.cc-side{width:140px}.cc-wrap{height:calc(100vh - 130px)}.cc-row{max-width:90%}}"
+      // v6.8 — CELULAR (até 760px, mesmo corte do index.html): UM painel por vez.
+      // A lista (canais + equipe) ocupa a tela; ao tocar, a conversa abre em tela
+      // cheia com "←" para voltar. Acima de 760px nada muda.
+      + ".cc-voltar{display:none}"
+      + "@media(max-width:760px){"
+      +   ".cc-wrap{height:calc(100dvh - 170px);min-height:0;margin-bottom:calc(6px + env(safe-area-inset-bottom))}"
+      +   ".cc-side{width:100%;border-right:0}"
+      +   ".cc-main{display:none}"
+      +   ".cc-wrap.cc-aberta .cc-side{display:none}"
+      +   ".cc-wrap.cc-aberta .cc-main{display:flex}"
+      +   ".cc-grp{padding:14px 14px 6px}"
+      +   ".cc-newbtn{width:34px;height:34px;border-radius:9px;font-size:1.2rem}"
+      +   ".cc-list,.cc-canais{padding-left:10px;padding-right:10px}"
+      +   ".cc-item{padding:11px 12px;font-size:1rem;gap:11px}"
+      +   ".cc-mini{width:32px;height:32px;font-size:.74rem}"
+      +   ".cc-item .cc-cnt{min-width:22px;height:22px;border-radius:11px;font-size:.76rem}"
+      +   ".cc-voltar{display:inline-flex;align-items:center;justify-content:center;font-size:1.2rem;border:1px solid var(--bd,#e5e7eb)}"
+      +   ".cc-head{padding:8px 10px;gap:4px}"
+      +   ".cc-head small{display:none}"
+      +   "#cc-head-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:4px}"
+      +   "#cc-head-title .cc-mini{display:inline-flex;vertical-align:middle;margin-right:2px}"
+      +   ".cc-hbtn{min-width:40px;min-height:40px;flex-shrink:0}"
+      +   ".cc-msgs{padding:10px}"
+      +   ".cc-row{max-width:92%}"
+      +   ".cc-img{max-width:min(230px,100%)}"
+      +   ".cc-file{max-width:100%}"
+      +   ".cc-foot{padding:8px;gap:6px}"
+      +   ".cc-clip{width:38px}"
+      +   ".cc-send{padding:0 13px}"
+      +   ".cc-foot textarea{min-width:0}"
+      +   ".cc-foot textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+      +   ".cc-foot textarea,.cc-search input,.cc-emoji-addwrap input{font-size:16px}"   // <16px faz o iPhone dar zoom ao focar
+      +   ".cc-emoji-panel,.cc-sticker-panel{left:8px;max-width:calc(100% - 16px)}"
+      +   ".cc-cfg{max-width:calc(100% - 16px)}"
+      +   ".cc-nhost{max-width:calc(100vw - 28px)}"
+      + "}";
     var st = document.createElement("style"); st.id = "cc-style"; st.textContent = css;
     document.head.appendChild(st);
   }
 
   // ══ Navbar + página ══
+  // ══ v6.8: layout de celular (um painel por vez) ══
+  var _celConv = false;      // no celular: true = conversa na tela; false = lista
+  function _ehCel() {
+    try { return !!(window.matchMedia && window.matchMedia("(max-width:760px)").matches); } catch (e) { return false; }
+  }
+  // A conversa atual está de fato na tela? (no PC sempre; no celular só com ela aberta)
+  function _vendoConversa() { return !_ehCel() || _celConv; }
+  function _setCelConv(v) {
+    _celConv = !!v;
+    var w = document.querySelector("#page-chat .cc-wrap");
+    if (w) w.classList.toggle("cc-aberta", _celConv);
+    _ajustarAltura();
+  }
+  // "←": volta para a lista (a conversa deixa de contar como lida enquanto está fora da tela)
+  function _voltarLista() {
+    _fecharBusca(); _fecharConfig(); _fecharEmojis(); _fecharStickers();
+    _setCelConv(false);
+  }
+  // No celular a altura do quadro é o que sobra da tela abaixo do cabeçalho do app.
+  function _ajustarAltura() {
+    var w = document.querySelector("#page-chat .cc-wrap");
+    if (!w) return;
+    if (!_ehCel()) { w.style.removeProperty("height"); return; }
+    if (w.offsetParent === null) return;   // página do chat oculta: fica a altura do CSS
+    var mb = 0;
+    try { mb = parseFloat(window.getComputedStyle(w).marginBottom) || 0; } catch (e) {}
+    var topo = w.getBoundingClientRect().top + (window.pageYOffset || 0);
+    var alt = Math.max(300, Math.round(window.innerHeight - topo - mb));
+    w.style.setProperty("height", alt + "px", "important");
+  }
+  var _altOuvindo = false;
+  function _ouvirAltura() {
+    if (_altOuvindo) return;
+    _altOuvindo = true;
+    window.addEventListener("resize", _ajustarAltura);
+    window.addEventListener("orientationchange", function () { setTimeout(_ajustarAltura, 250); });
+  }
+
   function _liberarPerms() {
     try { if (typeof PERMS !== "undefined") PERFIS_CHAT.forEach(function (r) { if (PERMS[r]) PERMS[r].chat = 1; }); } catch (e) {}
   }
@@ -249,7 +323,7 @@
       b.innerHTML = "💬 Chat<span id='chatNavBadge' class='rp-nav-badge' style='display:none'>0</span>";
       nav.appendChild(b);
       b.addEventListener("click", function () {
-        setTimeout(function () { if (_canalAtual) _marcarLido(_canalAtual); if (_grudarFim) _scrollFim(); }, 60);
+        setTimeout(function () { _ajustarAltura(); if (_canalAtual && _vendoConversa()) _marcarLido(_canalAtual); if (_grudarFim) _scrollFim(); }, 60);
       });
     }
     if (!document.getElementById("page-chat")) {
@@ -348,6 +422,7 @@
       var salvo = null; try { salvo = localStorage.getItem("cc_ultimo_canal"); } catch (e) {}
       if (alvo && _canais.some(function (c) { return c.id === alvo; })) {
         _canalAtual = alvo;
+        _celConv = true;   // v6.8: veio da notificação -> no celular já abre a conversa
         try { history.replaceState(null, "", location.pathname); } catch (e) {}  // limpa a URL
       } else if (salvo && _canais.some(function (c) { return c.id === salvo; })) {
         _canalAtual = salvo;   // restaura a última conversa aberta
@@ -357,7 +432,7 @@
       }
     }
     _renderTudo();
-    if (_canalAtual) await _abrirCanal(_canalAtual);
+    if (_canalAtual) await _abrirCanal(_canalAtual, true);   // v6.8: recarga não troca lista/conversa no celular
   }
 
   // Atualização LEVE da lista de canais (não reconstrói a tela nem reabre a
@@ -433,8 +508,9 @@
     }
   }
 
-  async function _abrirCanal(canalId) {
+  async function _abrirCanal(canalId, semMostrar) {
     _canalAtual = canalId;
+    if (!semMostrar) _setCelConv(true);   // v6.8: no celular, mostra a conversa
     try { localStorage.setItem("cc_ultimo_canal", canalId); } catch (e) {}  // lembra a última conversa
     _limparNotifCanal(canalId);   // fecha pop-ups fixados dessa conversa (= lido)
     _painelPendAberto = false;
@@ -455,7 +531,8 @@
     _temMaisAntigas = lista.length >= _PAGINA;
     _maisAntiga = lista.length ? lista[0].criada_em : null;
     _renderMensagens(lista);
-    await _marcarLido(canalId);
+    // v6.8: no celular com a lista na tela a conversa não foi vista -> não marca como lida
+    if (_vendoConversa()) await _marcarLido(canalId);
     _atualizarHead();
     _mostrarRodape(true);
   }
@@ -915,7 +992,7 @@
   }
   function _telaChatAtiva() {
     var pg = document.getElementById("page-chat");
-    return !!(pg && pg.classList.contains("active"));
+    return !!(pg && pg.classList.contains("active")) && _vendoConversa();
   }
 
   // ══ Helpers de canal ══
@@ -931,7 +1008,7 @@
   function _renderTudo() {
     var pg = document.getElementById("page-chat"); if (!pg) return;
     pg.innerHTML =
-      "<div class='cc-wrap'>" +
+      "<div class='cc-wrap" + (_celConv ? " cc-aberta" : "") + "'>" +
         "<div class='cc-side'>" +
           "<div class='cc-grp'><b>Canais</b><button class='cc-newbtn' id='cc-new-canal' title='Novo canal'>+</button></div>" +
           "<div class='cc-canais' id='cc-lista-canais' style='flex:0 0 auto;max-height:32%'></div>" +
@@ -940,6 +1017,7 @@
         "</div>" +
         "<div class='cc-main'>" +
           "<div class='cc-head' id='cc-head'>" +
+            "<button class='cc-hbtn cc-voltar' id='cc-voltar' title='Voltar para a lista' aria-label='Voltar para a lista'>←</button>" +
             "<span id='cc-head-title'>—</span><span style='flex:1'></span>" +
             "<button class='cc-hbtn' id='cc-head-som' title='Som das notificações'>🔔</button>" +
             "<button class='cc-hbtn' id='cc-head-pend' title='Minhas pendências'>📌 <span id='cc-pend-cnt' style='font-size:.82rem;font-weight:700'>0</span></button>" +
@@ -964,6 +1042,8 @@
         "</div>" +
       "</div>";
     _renderLista(); _atualizarHead();
+    _ajustarAltura(); _ouvirAltura();
+    var vb = document.getElementById("cc-voltar"); if (vb) vb.addEventListener("click", _voltarLista);
 
     var nc = document.getElementById("cc-new-canal"); if (nc) nc.addEventListener("click", _novoCanal);
     var send = document.getElementById("cc-send"); if (send) send.addEventListener("click", _enviar);
