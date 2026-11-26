@@ -237,6 +237,16 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-26 (v8.27.1): ABA WHATSAPP NO CELULAR (whatsapp_cor.js v26). Ate 760px mostra um
+              painel por vez: a lista ocupa a tela e, ao tocar numa conversa, o chat abre em
+              tela cheia com "<- Voltar". Botoes do cabecalho do chat em uma linha que rola
+              para o lado; "Atualizar" vira icone ao lado de "Conversas"; baloes com 86%;
+              campos com fonte 16px (iPhone nao da zoom). Acima de 760px nada muda. Em todas
+              as telas: a previa da lista nao mostra mais o ** do markdown da CORA.
+              Marcadores (whatsapp_cor.js): voltar, _cssCelular, _ajustarAltura, waRoot.
+              Nada muda no index.html alem do APP_VERSION, deste historico e de 1 linha
+              de script (whatsapp_cor.js?v=20261126b).
+
   2026-11-26 (v8.27): BOTOES DE ORCAMENTO NO WHATSAPP (whatsapp_cor.js v25). No cabecalho
               do chat, ao lado do "CORA retoma": "Aprovar orcamento" e "Nao cobrir".
               Formulario (exame, valor, parcelas, valor do concorrente) chama
@@ -4300,7 +4310,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.27 - 2026-11-26";
+var APP_VERSION = "v8.27.1 - 2026-11-26";
 
 // v8.24 — BUSCA SEM ACENTO. Normaliza o termo digitado do mesmo jeito que o
 // banco (função norm_nome_paciente): MAIÚSCULAS, sem acento, sem espaço sobrando.
@@ -18091,7 +18101,7 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
 <script src="fichas.js"></script>
 <script src="requisicao.js?v=20260819-email-dentista-v2"></script>
 <script src="reportes.js"></script>
-<script src="whatsapp_cor.js?v=20261126a"></script>
+<script src="whatsapp_cor.js?v=20261126b"></script>
 <script src="protocolo.js"></script>
 <script src="nfse_pj.js?v=20261027g"></script>
 <!-- Chat interno da equipe (módulos externos — ver CHAT_COR_INSTALACAO.md).

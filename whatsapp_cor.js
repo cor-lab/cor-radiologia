@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v25 (botões de orçamento do concorrente) — 2026-11-26
+   VERSÃO: WHATSAPP-WEB v26 (layout de celular: um painel por vez) — 2026-11-26
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v25-orcamento-20261126";
+  var _VERSAO = "whatsapp-web-v26-celular-20261126";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -85,6 +85,8 @@ var WHATSAPP = (function () {
       return "📷 Imagem" + c;
     }
     var t = (m && m.content) ? String(m.content) : "";
+    // v26: a prévia não mostra o markdown cru da CORA (**negrito**) nem quebras de linha
+    t = t.replace(/\*\*/g, "").replace(/\s+/g, " ");
     return t.length > 42 ? t.substring(0, 42) + "…" : t;
   }
   function _quemSou() {
@@ -749,6 +751,63 @@ var WHATSAPP = (function () {
   }
 
   function abrir(numero) { _sel = numero; render(); }
+  // v26 (celular): fecha a conversa e volta para a lista
+  function voltar() { _sel = null; render(); }
+
+  // ── v26: layout de celular ──
+  // Até 760px (mesmo corte do index.html) mostra UM painel por vez: a lista
+  // ocupa a tela toda e, ao tocar numa conversa, o chat abre em tela cheia com
+  // "← Voltar". Acima de 760px nada muda (as regras ficam dentro do @media).
+  var _MQ_CEL = "(max-width:760px)";
+  function _ehCelular() {
+    try { return !!(window.matchMedia && window.matchMedia(_MQ_CEL).matches); } catch (e) { return false; }
+  }
+  function _cssCelular() {
+    if (document.getElementById("waCssCel")) return;
+    var st = document.createElement("style");
+    st.id = "waCssCel";
+    st.textContent =
+      ".wa-voltar,.wa-so-cel{display:none}" +
+      ".wa-cab-id{display:flex;align-items:center;gap:8px;min-width:0}" +
+      "@media" + _MQ_CEL + "{" +
+        "#pgWa{padding-top:8px!important;padding-bottom:calc(8px + env(safe-area-inset-bottom))!important}" +
+        ".wa-root{height:calc(100dvh - 170px)!important}" +
+        ".wa-lista{width:100%!important;border-right:0!important}" +
+        ".wa-conv{display:none!important}" +
+        ".wa-root.wa-aberta .wa-lista{display:none!important}" +
+        ".wa-root.wa-aberta .wa-conv{display:flex!important}" +
+        ".wa-voltar,.wa-so-cel{display:inline-flex;align-items:center;justify-content:center}" +
+        ".wa-rodape-lista{display:none!important}" +
+        ".wa-item{padding:12px 14px!important}" +
+        ".wa-cab{flex-direction:column;align-items:stretch!important;gap:8px;padding:8px 10px!important}" +
+        ".wa-acoes{flex-wrap:nowrap!important;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}" +
+        ".wa-acoes .btn{flex:0 0 auto;white-space:nowrap;min-height:38px}" +
+        ".wa-msgs{padding:10px!important}" +
+        ".wa-bolha{max-width:86%!important}" +
+        ".wa-barra{padding:8px 10px!important}" +
+        "#waResp,#waBusca{font-size:16px!important}" +   // <16px faz o iPhone dar zoom ao focar
+      "}";
+    document.head.appendChild(st);
+  }
+  // No celular a altura do quadro é o que sobra da tela abaixo do cabeçalho do app.
+  function _ajustarAltura() {
+    var root = document.getElementById("waRoot");
+    var pg = document.getElementById("pgWa");
+    if (!root || !pg || pg.offsetParent === null) return;
+    if (!_ehCelular()) { root.style.setProperty("height", "calc(100vh - 150px)"); return; }
+    var pb = 0;
+    try { pb = parseFloat(window.getComputedStyle(pg).paddingBottom) || 0; } catch (e) {}
+    var topo = root.getBoundingClientRect().top + (window.pageYOffset || 0);
+    var alt = Math.max(320, Math.round(window.innerHeight - topo - pb));
+    root.style.setProperty("height", alt + "px", "important");
+  }
+  var _altOuvindo = false;
+  function _ouvirAltura() {
+    if (_altOuvindo) return;
+    _altOuvindo = true;
+    window.addEventListener("resize", _ajustarAltura);
+    window.addEventListener("orientationchange", function () { setTimeout(_ajustarAltura, 250); });
+  }
   function setAba(a) { _aba = a; _sel = null; _busca = ""; render(); }
 
   function setBusca(v) {
@@ -778,13 +837,18 @@ var WHATSAPP = (function () {
     var h = "";
 
     // Layout WhatsApp Web: 2 colunas
-    h += "<div style='display:flex;gap:0;border:0.5px solid #2a3550;border-radius:12px;overflow:hidden;height:calc(100vh - 150px)'>";
+    h += "<div id='waRoot' class='wa-root" + (_sel ? " wa-aberta" : "") + "' style='display:flex;gap:0;border:0.5px solid #2a3550;border-radius:12px;overflow:hidden;height:calc(100vh - 150px)'>";
 
     // ── COLUNA ESQUERDA: lista de conversas ──
-    h += "<div style='width:270px;border-right:0.5px solid #2a3550;display:flex;flex-direction:column;flex-shrink:0'>";
+    h += "<div class='wa-lista' style='width:270px;border-right:0.5px solid #2a3550;display:flex;flex-direction:column;flex-shrink:0'>";
     // cabeçalho + abas
     h += "<div style='padding:12px 14px;border-bottom:0.5px solid #2a3550'>";
-    h += "<div style='font-weight:600;font-size:15px;margin-bottom:10px'>💬 Conversas</div>";
+    h += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px'>";
+    h += "<div style='font-weight:600;font-size:15px'>💬 Conversas</div>";
+    // v26: no celular o "Atualizar" vira um ícone aqui (o rodapé da lista some)
+    h += "<button class='wa-so-cel' title='Atualizar' aria-label='Atualizar' onclick='WHATSAPP.refresh()' " +
+         "style='background:transparent;border:0.5px solid #2a3550;border-radius:8px;color:inherit;cursor:pointer;font-size:1.05rem;width:40px;height:40px'>↻</button>";
+    h += "</div>";
     h += "<div style='display:flex;gap:6px'>";
     h += "<button onclick=\"WHATSAPP.setAba('pendentes')\" class='btn' style='padding:5px 12px;font-size:.78rem;" +
          (_aba === "pendentes" ? "background:var(--ac,#4ab848);color:#fff" : "background:transparent;color:var(--gr)") + "'>Pendentes (" + nPend + ")</button>";
@@ -814,7 +878,7 @@ var WHATSAPP = (function () {
       lista.forEach(function (c) {
         var ativo = c.numero === _sel;
         var numJs = jsArg(c.numero);   // v24: escapa aspas/apóstrofos corretamente
-        h += "<div onclick='WHATSAPP.abrir(" + numJs + ")' style='padding:10px 14px;border-bottom:0.5px solid #2a3550;cursor:pointer;" +
+        h += "<div class='wa-item' onclick='WHATSAPP.abrir(" + numJs + ")' style='padding:10px 14px;border-bottom:0.5px solid #2a3550;cursor:pointer;" +
              (ativo ? "background:rgba(74,184,72,.12)" : "") + "'>";
         h += "<div style='display:flex;justify-content:space-between;align-items:center'>";
         h += "<span style='font-weight:500;font-size:13px'>" + esc(fmtNumero(c.numero)) + "</span>";
@@ -834,11 +898,11 @@ var WHATSAPP = (function () {
       });
     }
     h += "</div>";  // fim itens
-    h += "<div style='padding:8px 12px;border-top:0.5px solid #2a3550'><button class='btn btng' style='width:100%;padding:6px;font-size:.78rem' onclick='WHATSAPP.refresh()'>↻ Atualizar</button></div>";
+    h += "<div class='wa-rodape-lista' style='padding:8px 12px;border-top:0.5px solid #2a3550'><button class='btn btng' style='width:100%;padding:6px;font-size:.78rem' onclick='WHATSAPP.refresh()'>↻ Atualizar</button></div>";
     h += "</div>";  // fim coluna esquerda
 
     // ── COLUNA DIREITA: chat ──
-    h += "<div style='flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden'>";
+    h += "<div class='wa-conv' style='flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden'>";
     if (!_sel) {
       h += "<div style='flex:1;display:flex;align-items:center;justify-content:center;color:var(--gr);font-size:.85rem;padding:40px;text-align:center'>Selecione uma conversa à esquerda para ver e responder.</div>";
     } else {
@@ -848,8 +912,12 @@ var WHATSAPP = (function () {
       var jaResolvida = !!(conv && conv.resolvida);
 
       // cabeçalho do chat
-      h += "<div style='padding:10px 16px;border-bottom:0.5px solid #2a3550;display:flex;justify-content:space-between;align-items:center'>";
-      h += "<div>";
+      h += "<div class='wa-cab' style='padding:10px 16px;border-bottom:0.5px solid #2a3550;display:flex;justify-content:space-between;align-items:center'>";
+      h += "<div class='wa-cab-id'>";
+      // v26: "← Voltar" (só aparece no celular)
+      h += "<button class='wa-voltar' title='Voltar para a lista' aria-label='Voltar para a lista' onclick='WHATSAPP.voltar()' " +
+           "style='background:transparent;border:0.5px solid #2a3550;border-radius:8px;color:inherit;cursor:pointer;font-size:1.1rem;width:40px;height:40px;flex-shrink:0'>←</button>";
+      h += "<div style='min-width:0'>";
       h += "<div style='font-weight:500;font-size:14px'>" + esc(fmtNumero(_sel)) + "</div>";
       if (emHumano && conv.humano_por) {
         h += "<div style='font-size:11px;color:var(--ac,#4ab848)'>🙋 " + esc(conv.humano_por) + " assumiu — CORA pausada</div>";
@@ -857,8 +925,9 @@ var WHATSAPP = (function () {
         h += "<div style='font-size:11px;color:var(--gr)'>🤖 CORA atendendo</div>";
       }
       h += "</div>";
-      // botões do cabeçalho
-      h += "<div style='display:flex;gap:6px;flex-wrap:wrap'>";
+      h += "</div>";  // fim wa-cab-id
+      // botões do cabeçalho (no celular: uma linha que rola para o lado)
+      h += "<div class='wa-acoes' style='display:flex;gap:6px;flex-wrap:wrap'>";
       // Se a CORA coletou dados de agendamento, oferece criar o agendamento
       // pré-preenchido (a recepção confere e salva no App COR).
       // Se for FAMÍLIA (2+ pacientes), mostra um botão por paciente:
@@ -899,7 +968,7 @@ var WHATSAPP = (function () {
 
       // mensagens (cores do mockup: paciente claro c/ borda, CORA/recepção verde suave)
       var hist = (conv && Array.isArray(conv.historico)) ? conv.historico : [];
-      h += "<div id='waChatScroll' style='flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;background:#000'>";
+      h += "<div id='waChatScroll' class='wa-msgs' style='flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;background:#000'>";
       if (!hist.length) {
         h += "<div style='color:var(--gr);text-align:center;padding:20px'>Sem mensagens.</div>";
       } else {
@@ -909,7 +978,7 @@ var WHATSAPP = (function () {
           if (m.midia && m.midia.tipo === "image" && m.midia.path) {
             var cap = (m.content && m.content !== "[imagem]") ? m.content : "";
             var imgId = "waimg_" + Math.random().toString(36).slice(2, 9);
-            h += "<div style='align-self:flex-start;max-width:72%;background:#f0f0f0;color:#222;padding:6px;border-radius:12px;border:0.5px solid #ddd'>";
+            h += "<div class='wa-bolha' style='align-self:flex-start;max-width:72%;background:#f0f0f0;color:#222;padding:6px;border-radius:12px;border:0.5px solid #ddd'>";
             h += "<img id='" + imgId + "' alt='imagem do paciente' style='max-width:240px;max-height:280px;border-radius:8px;display:block;cursor:pointer;background:#e5e5e5;min-height:80px' onclick='WHATSAPP.abrirMidia(" + jsArg(m.midia.path) + ")'/>";
             if (cap) h += "<div style='font-size:.8rem;margin-top:4px;padding:0 4px'>" + esc(cap) + "</div>";
             h += "<div style='font-size:.72rem;color:#0a7;margin-top:3px;padding:0 4px;cursor:pointer' onclick='WHATSAPP.abrirMidia(" + jsArg(m.midia.path) + ")'>📎 abrir / baixar</div>";
@@ -917,16 +986,16 @@ var WHATSAPP = (function () {
             // carrega a imagem via URL assinada (bucket privado)
             _carregarMidia(m.midia.path, imgId);
           } else if (isBot) {
-            h += "<div style='align-self:flex-end;max-width:72%;background:#d8f5e3;color:#0f6e56;padding:8px 12px;border-radius:12px;font-size:.85rem;white-space:pre-wrap'>" + esc(m.content) + "</div>";
+            h += "<div class='wa-bolha' style='align-self:flex-end;max-width:72%;background:#d8f5e3;color:#0f6e56;padding:8px 12px;border-radius:12px;font-size:.85rem;white-space:pre-wrap'>" + esc(m.content) + "</div>";
           } else {
-            h += "<div style='align-self:flex-start;max-width:72%;background:#f0f0f0;color:#222;padding:8px 12px;border-radius:12px;font-size:.85rem;white-space:pre-wrap;border:0.5px solid #ddd'>" + esc(m.content) + "</div>";
+            h += "<div class='wa-bolha' style='align-self:flex-start;max-width:72%;background:#f0f0f0;color:#222;padding:8px 12px;border-radius:12px;font-size:.85rem;white-space:pre-wrap;border:0.5px solid #ddd'>" + esc(m.content) + "</div>";
           }
         });
       }
       h += "</div>";
 
       // barra de resposta (Fase C)
-      h += "<div style='padding:10px 16px;border-top:0.5px solid #2a3550'>";
+      h += "<div class='wa-barra' style='padding:10px 16px;border-top:0.5px solid #2a3550'>";
       if (!emHumano) {
         h += "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap'>";
         h += "<span style='font-size:.78rem;color:var(--gr)'>🤖 CORA está atendendo. Assuma para responder você mesmo.</span>";
@@ -977,7 +1046,10 @@ var WHATSAPP = (function () {
       _scrollAntigo = _scAntigo.scrollTop;  // guarda a posição exata pra restaurar
     }
 
+    _cssCelular();
     el.innerHTML = h;
+    _ajustarAltura();
+    _ouvirAltura();
 
     var _taNovo = document.getElementById("waResp");
     if (_taNovo && _rascunho) _taNovo.value = _rascunho;
@@ -1054,6 +1126,7 @@ var WHATSAPP = (function () {
   return {
     rWhatsApp: rWhatsApp,
     abrir: abrir,
+    voltar: voltar,
     setAba: setAba,
     setBusca: setBusca,
     refresh: _refresh,
