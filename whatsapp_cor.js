@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════════
    whatsapp_cor.js — Aba "💬 WhatsApp" do App COR
-   VERSÃO: WHATSAPP-WEB v26 (layout de celular: um painel por vez) — 2026-11-26
+   VERSÃO: WHATSAPP-WEB v27 (anexar imagem na resposta) — 2026-11-27
 
    Modelo estilo WhatsApp Web:
      - Lista de conversas à esquerda com 2 abas: Pendentes / Resolvidas
@@ -20,7 +20,7 @@
 var WHATSAPP = (function () {
   "use strict";
 
-  var _VERSAO = "whatsapp-web-v26-celular-20261126";
+  var _VERSAO = "whatsapp-web-v27-anexo-20261127";
   var _convs = [];              // todas as conversas carregadas
   var _sel = null;              // numero da conversa aberta
   var _carregando = false;
@@ -28,6 +28,12 @@ var WHATSAPP = (function () {
   var _busca = "";              // texto do campo de pesquisa (filtra por número/nome)
   var _limparCampo = false;     // após enviar, não restaurar rascunho
   var _BOT_URL = "https://wa.corsm.com.br";
+  // v27: imagem anexada à resposta (ainda não enviada). Fica em memória para
+  // sobreviver ao re-render do auto-refresh. { numero, dataUrl, nome }
+  var _anexo = null;
+  var _enviando = false;        // trava contra duplo clique no Enviar
+  var _IMG_MAX_BYTES = 5 * 1024 * 1024;   // limite da Cloud API para imagem
+  var _IMG_LADO_MAX = 2000;               // lado maior ao reduzir no navegador
 
   // ── util ──
   // Normaliza conversas.agendamento_dados para uma LISTA de pedidos.
@@ -81,13 +87,20 @@ var WHATSAPP = (function () {
     if (!Array.isArray(hist) || !hist.length) return "";
     var m = hist[hist.length - 1];
     if (m && m.midia && m.midia.tipo === "image") {
-      var c = (m.content && m.content !== "[imagem]") ? " " + m.content : "";
-      return "📷 Imagem" + c;
+      var c = _legendaMidia(m.content);
+      return "📷 Imagem" + (c ? " " + c : "");
     }
     var t = (m && m.content) ? String(m.content) : "";
     // v26: a prévia não mostra o markdown cru da CORA (**negrito**) nem quebras de linha
     t = t.replace(/\*\*/g, "").replace(/\s+/g, " ");
     return t.length > 42 ? t.substring(0, 42) + "…" : t;
+  }
+  // v27: legenda de mensagem com imagem. Do paciente vem a legenda ou "[imagem]";
+  // da equipe vem "[Nome] legenda" ou "[Nome] [imagem]" (sem legenda).
+  function _legendaMidia(content) {
+    var t = String(content == null ? "" : content);
+    if (t === "[imagem]") return "";
+    return t.replace(/\s*\[imagem\]$/, "");
   }
   function _quemSou() {
     try {
@@ -730,12 +743,129 @@ var WHATSAPP = (function () {
     } catch (e) { console.error("devolverCora:", e); }
   }
 
+  // ── v27: anexar imagem na resposta ──
+  // A Cloud API só aceita JPG/PNG até 5 MB. Arquivo fora disso (foto grande,
+  // WEBP, HEIC que o navegador consiga abrir) é redesenhado em JPG reduzido.
+  function _lerDataUrl(arq) {
+    return new Promise(function (ok, erro) {
+      var fr = new FileReader();
+      fr.onload = function () { ok(String(fr.result || "")); };
+      fr.onerror = function () { erro(new Error("leitura")); };
+      fr.readAsDataURL(arq);
+    });
+  }
+  function _reduzirImagem(dataUrl, lado, qualidade) {
+    return new Promise(function (ok, erro) {
+      var im = new Image();
+      im.onload = function () {
+        try {
+          var w = im.naturalWidth, a = im.naturalHeight;
+          var f = Math.min(1, lado / Math.max(w, a));
+          var cv = document.createElement("canvas");
+          cv.width = Math.max(1, Math.round(w * f));
+          cv.height = Math.max(1, Math.round(a * f));
+          var cx = cv.getContext("2d");
+          cx.fillStyle = "#fff";            // PNG transparente não vira fundo preto
+          cx.fillRect(0, 0, cv.width, cv.height);
+          cx.drawImage(im, 0, 0, cv.width, cv.height);
+          ok(cv.toDataURL("image/jpeg", qualidade));
+        } catch (e) { erro(e); }
+      };
+      im.onerror = function () { erro(new Error("imagem")); };
+      im.src = dataUrl;
+    });
+  }
+  function _bytesDataUrl(dataUrl) {
+    var i = dataUrl.indexOf(",");
+    return Math.floor((dataUrl.length - i - 1) * 3 / 4);
+  }
+  async function _definirAnexo(arq) {
+    if (!_sel || !arq) return;
+    var numero = _sel;
+    if (!arq.type || arq.type.indexOf("image/") !== 0) {
+      if (typeof toast === "function") toast("⚠️", "Só é possível anexar imagem");
+      return;
+    }
+    try {
+      var dataUrl = await _lerDataUrl(arq);
+      var aceito = (arq.type === "image/jpeg" || arq.type === "image/png");
+      if (!aceito || arq.size > _IMG_MAX_BYTES) {
+        dataUrl = await _reduzirImagem(dataUrl, _IMG_LADO_MAX, 0.85);
+        if (_bytesDataUrl(dataUrl) > _IMG_MAX_BYTES) dataUrl = await _reduzirImagem(dataUrl, 1400, 0.75);
+      }
+      if (_bytesDataUrl(dataUrl) > _IMG_MAX_BYTES) {
+        if (typeof toast === "function") toast("⚠️", "Imagem acima de 5 MB mesmo reduzida");
+        return;
+      }
+      if (_sel !== numero) return;   // trocou de conversa enquanto lia o arquivo
+      _anexo = { numero: numero, dataUrl: dataUrl, nome: arq.name || "imagem colada" };
+      render();
+      var ta = document.getElementById("waResp");
+      if (ta) ta.focus();
+    } catch (e) {
+      console.error("anexo:", e);
+      if (typeof toast === "function") toast("⚠️", "Não consegui abrir esta imagem. Use JPG ou PNG.");
+    }
+  }
+  function anexarImagem() {
+    var inp = document.getElementById("waAnexoInput");
+    if (inp) { inp.value = ""; inp.click(); }
+  }
+  function anexoEscolhido(inp) {
+    var arq = inp && inp.files && inp.files[0];
+    if (arq) _definirAnexo(arq);
+  }
+  // Ctrl+V de print/imagem no campo de resposta vira anexo; texto colado segue normal.
+  function colarImagem(ev) {
+    var itens = ev && ev.clipboardData && ev.clipboardData.items;
+    if (!itens) return;
+    for (var i = 0; i < itens.length; i++) {
+      if (itens[i].kind === "file" && itens[i].type.indexOf("image/") === 0) {
+        var arq = itens[i].getAsFile();
+        if (arq) { ev.preventDefault(); _definirAnexo(arq); }
+        return;
+      }
+    }
+  }
+  function removerAnexo() { _anexo = null; render(); }
+
+  async function _enviarImagem(texto) {
+    var anx = _anexo;
+    var r = await _chamarBot("/enviar_imagem_manual", {
+      numero: _sel, imagem_base64: anx.dataUrl, legenda: texto, atendente: _quemSou()
+    });
+    if (r && r.ok) {
+      _anexo = null;
+      _limparCampo = true;
+      var ta = document.getElementById("waResp");
+      if (ta) ta.value = "";
+      if (typeof toast === "function") toast("✅", "Imagem enviada ao paciente");
+      await _refresh();
+      return;
+    }
+    var det = "";
+    if (r) { try { var dj = await r.json(); det = String(dj.detail || ""); } catch (e) {} }
+    console.error("enviarImagem:", r && r.status, det);
+    var msg;
+    if (!r || r.status === 401 || r.status === 403) msg = null;   // sessão morta: _chamarBot já avisou
+    else if (r.status === 409) msg = "Fora da janela de 24h da Meta — o paciente precisa escrever primeiro.";
+    else if (r.status === 413) msg = "Imagem acima de 5 MB.";
+    else if (r.status === 415) msg = "Formato não aceito: use JPG ou PNG.";
+    else if (r.status === 404 || r.status === 405) msg = "O servidor da CORA ainda não tem esta função (falta o deploy).";
+    else if (r.status === 502) msg = "O WhatsApp não aceitou a imagem. Nada foi enviado; tente de novo.";
+    else msg = "Falha ao enviar a imagem (HTTP " + r.status + ")";
+    if (msg && typeof toast === "function") toast("⚠️", msg);
+  }
+
   async function enviarResposta() {
-    if (!_sel) return;
+    if (!_sel || _enviando) return;
     var ta = document.getElementById("waResp");
     var texto = ta ? ta.value.trim() : "";
-    if (!texto) { if (typeof toast === "function") toast("✍️", "Digite uma mensagem"); return; }
+    var temAnexo = !!(_anexo && _anexo.numero === _sel);
+    if (!texto && !temAnexo) { if (typeof toast === "function") toast("✍️", "Digite uma mensagem"); return; }
+    _enviando = true;
     try {
+      if (temAnexo) { await _enviarImagem(texto); return; }
       var r = await _chamarBot("/enviar_manual", { numero: _sel, texto: texto, atendente: _quemSou() });
       if (r && r.ok) {
         _limparCampo = true;
@@ -747,12 +877,15 @@ var WHATSAPP = (function () {
         console.error("enviarResposta:", r && r.status, t);
         if (typeof toast === "function") toast("⚠️", "Falha ao enviar (HTTP " + (r ? r.status : "?") + ")");
       }
-    } catch (e) { console.error("enviarResposta:", e); if (typeof toast === "function") toast("⚠️", "Erro ao enviar"); }
+    } catch (e) {
+      console.error("enviarResposta:", e);
+      if (typeof toast === "function") toast("⚠️", temAnexo ? "Erro de rede — confira na conversa se a imagem saiu antes de tentar de novo." : "Erro ao enviar");
+    } finally { _enviando = false; }
   }
 
-  function abrir(numero) { _sel = numero; render(); }
+  function abrir(numero) { if (numero !== _sel) _anexo = null; _sel = numero; render(); }
   // v26 (celular): fecha a conversa e volta para a lista
-  function voltar() { _sel = null; render(); }
+  function voltar() { _sel = null; _anexo = null; render(); }
 
   // ── v26: layout de celular ──
   // Até 760px (mesmo corte do index.html) mostra UM painel por vez: a lista
@@ -976,10 +1109,12 @@ var WHATSAPP = (function () {
           var isBot = m.role === "assistant";
           // Mensagem com IMAGEM (paciente enviou foto pela CORA)
           if (m.midia && m.midia.tipo === "image" && m.midia.path) {
-            var cap = (m.content && m.content !== "[imagem]") ? m.content : "";
+            var cap = _legendaMidia(m.content);
             var imgId = "waimg_" + Math.random().toString(36).slice(2, 9);
-            h += "<div class='wa-bolha' style='align-self:flex-start;max-width:72%;background:#f0f0f0;color:#222;padding:6px;border-radius:12px;border:0.5px solid #ddd'>";
-            h += "<img id='" + imgId + "' alt='imagem do paciente' style='max-width:240px;max-height:280px;border-radius:8px;display:block;cursor:pointer;background:#e5e5e5;min-height:80px' onclick='WHATSAPP.abrirMidia(" + jsArg(m.midia.path) + ")'/>";
+            // v27: imagem enviada pela equipe (role assistant) fica à direita, em verde
+            if (isBot) h += "<div class='wa-bolha' style='align-self:flex-end;max-width:72%;background:#d8f5e3;color:#0f6e56;padding:6px;border-radius:12px'>";
+            else h += "<div class='wa-bolha' style='align-self:flex-start;max-width:72%;background:#f0f0f0;color:#222;padding:6px;border-radius:12px;border:0.5px solid #ddd'>";
+            h += "<img id='" + imgId + "' alt='" + (isBot ? "imagem enviada" : "imagem do paciente") + "' style='max-width:240px;max-height:280px;border-radius:8px;display:block;cursor:pointer;background:#e5e5e5;min-height:80px' onclick='WHATSAPP.abrirMidia(" + jsArg(m.midia.path) + ")'/>";
             if (cap) h += "<div style='font-size:.8rem;margin-top:4px;padding:0 4px'>" + esc(cap) + "</div>";
             h += "<div style='font-size:.72rem;color:#0a7;margin-top:3px;padding:0 4px;cursor:pointer' onclick='WHATSAPP.abrirMidia(" + jsArg(m.midia.path) + ")'>📎 abrir / baixar</div>";
             h += "</div>";
@@ -1011,8 +1146,19 @@ var WHATSAPP = (function () {
           h += "<span style='font-size:.78rem;color:var(--ac,#4ab848)'>🙋 Você assumiu — CORA pausada</span>";
           h += "<button class='btn' style='padding:5px 10px;font-size:.78rem' onclick='WHATSAPP.devolverCora()'>↩️ Devolver para a CORA</button>";
           h += "</div>";
+          // v27 — imagem anexada (prévia) + botão de anexar; o texto vira a legenda
+          var anx = (_anexo && _anexo.numero === _sel) ? _anexo : null;
+          if (anx) {
+            h += "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:6px 8px;border-radius:8px;background:#0f1626;border:1px solid #2a3550'>";
+            h += "<img src='" + esc(anx.dataUrl) + "' alt='imagem a enviar' style='height:56px;max-width:90px;object-fit:cover;border-radius:6px'/>";
+            h += "<span style='flex:1;min-width:0;font-size:.78rem;color:#e6e6e6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>📎 " + esc(anx.nome) + "</span>";
+            h += "<button class='btn' style='padding:4px 10px;font-size:.78rem' title='Remover a imagem' onclick='WHATSAPP.removerAnexo()'>✕ Remover</button>";
+            h += "</div>";
+          }
+          h += "<input type='file' id='waAnexoInput' accept='image/*' style='display:none' onchange='WHATSAPP.anexoEscolhido(this)'/>";
           h += "<div style='display:flex;gap:8px;align-items:flex-end'>";
-          h += "<textarea id='waResp' rows='2' placeholder='Digite sua resposta ao paciente…' style='flex:1;padding:8px;border-radius:8px;border:1px solid #2a3550;background:#0f1626;color:#e6e6e6;font-size:.85rem;resize:vertical;font-family:inherit'></textarea>";
+          h += "<button class='btn' style='padding:8px 10px;font-size:.95rem' title='Anexar imagem (ou cole com Ctrl+V)' onclick='WHATSAPP.anexarImagem()'>📎</button>";
+          h += "<textarea id='waResp' rows='2' onpaste='WHATSAPP.colarImagem(event)' placeholder='" + (anx ? "Legenda da imagem (opcional)…" : "Digite sua resposta ao paciente…") + "' style='flex:1;padding:8px;border-radius:8px;border:1px solid #2a3550;background:#0f1626;color:#e6e6e6;font-size:.85rem;resize:vertical;font-family:inherit'></textarea>";
           h += "<button class='btn btng' style='padding:8px 16px;font-size:.85rem' onclick='WHATSAPP.enviarResposta()'>Enviar ➤</button>";
           h += "</div>";
         } else {
@@ -1142,6 +1288,10 @@ var WHATSAPP = (function () {
     orcFechar: orcFechar,
     orcEnviar: orcEnviar,
     enviarResposta: enviarResposta,
+    anexarImagem: anexarImagem,
+    anexoEscolhido: anexoEscolhido,
+    colarImagem: colarImagem,
+    removerAnexo: removerAnexo,
     versao: _VERSAO
   };
 })();

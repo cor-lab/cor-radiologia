@@ -237,6 +237,18 @@
   
   ───────── HISTÓRICO ─────────
 
+  2026-11-27 (v8.28): ANEXAR IMAGEM NO WHATSAPP (whatsapp_cor.js v27). Com a conversa
+              assumida, o botao de clipe ao lado do campo de resposta (ou Ctrl+V de um
+              print) anexa uma imagem; o texto digitado vira a legenda e o Enviar manda
+              pelo numero da CORA (rota nova /enviar_imagem_manual, mesmas travas do
+              /enviar_manual: JWT + janela de 24h). JPG/PNG ate 5 MB; fora disso o
+              navegador reduz para JPG antes de enviar. Imagem enviada pela equipe
+              aparece a direita, em verde. EXIGE o deploy do main.py da CORA antes.
+              Marcadores (whatsapp_cor.js): _anexo, anexarImagem, colarImagem,
+              _enviarImagem, _legendaMidia, waAnexoInput.
+              Nada muda no index.html alem do APP_VERSION, deste historico e de 1 linha
+              de script (whatsapp_cor.js?v=20261127a).
+
   2026-11-26 (v8.27.2): CHAT INTERNO NO CELULAR (chat_cor.js 6.8). Ate 760px mostra um painel
               por vez: a lista (canais + equipe) ocupa a tela e, ao tocar, a conversa abre em
               tela cheia com "<- Voltar". Com a lista na tela a conversa NAO e marcada como
@@ -4321,7 +4333,7 @@ var AG_EMISSAO_ATUAL = null;
 // O badge no header (id="appVerBadge") mostra essa string ao lado do logo.
 // Formato sugerido: "vX.Y" ou "vX.Y - YYYY-MM-DD".
 // Para ver no app: confira o canto superior esquerdo, ao lado do logo COR.
-var APP_VERSION = "v8.27.2 - 2026-11-26";
+var APP_VERSION = "v8.28 - 2026-11-27";
 
 // v8.24 — BUSCA SEM ACENTO. Normaliza o termo digitado do mesmo jeito que o
 // banco (função norm_nome_paciente): MAIÚSCULAS, sem acento, sem espaço sobrando.
@@ -18112,7 +18124,7 @@ function toggleEtqMenuHist(btn, fbSeqAtend) {
 <script src="fichas.js"></script>
 <script src="requisicao.js?v=20260819-email-dentista-v2"></script>
 <script src="reportes.js"></script>
-<script src="whatsapp_cor.js?v=20261126b"></script>
+<script src="whatsapp_cor.js?v=20261127a"></script>
 <script src="protocolo.js"></script>
 <script src="nfse_pj.js?v=20261027g"></script>
 <!-- Chat interno da equipe (módulos externos — ver CHAT_COR_INSTALACAO.md).
